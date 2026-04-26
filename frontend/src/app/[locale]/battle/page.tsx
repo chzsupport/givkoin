@@ -618,7 +618,7 @@ export default function BattlePage() {
                 }
             },
         });
-    }, [battleSummary, boost, summaryVisible, updateUser, user]);
+    }, [battleSummary, boost, summaryVisible, updateUser, user, t]);
     const domeCenter = useMemo(
         () => (performanceTier === 'low' ? { x: 0.5, y: 0.6 } : BASE_DOME_CENTER),
         [performanceTier]

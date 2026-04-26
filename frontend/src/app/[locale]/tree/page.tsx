@@ -433,7 +433,7 @@ export default function TreePage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [solarStatus, solarDeadlineAt, refreshUser, toast, t]);
+  }, [boost, solarStatus, solarDeadlineAt, refreshUser, toast, t]);
 
   // Interruption Handling (Reset if tab closed/hidden/panel closed)
   useEffect(() => {

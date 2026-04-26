@@ -68,7 +68,7 @@ export default function ActivityCollectPage() {
         },
       });
     }
-  }, [boost, refreshStatus, rewardGranted]);
+  }, [boost, refreshStatus, rewardGranted, t]);
 
   return (
     <div

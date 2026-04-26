@@ -9,6 +9,7 @@ interface BoostVideoModalProps {
 
 const VIDEO_DURATION_SECONDS = 30;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function BoostVideoModal({ onComplete, onClose }: BoostVideoModalProps) {
   const [secondsLeft, setSecondsLeft] = useState(VIDEO_DURATION_SECONDS);
   const [canClose, setCanClose] = useState(false);
