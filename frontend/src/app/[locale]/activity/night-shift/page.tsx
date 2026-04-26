@@ -325,8 +325,9 @@ export default function NightShiftPage() {
                     description: t('boost.night_shift_double.description'),
                     rewardText: t('boost.night_shift_double.reward').replace('{sc}', String(shiftEarnings.sc)).replace('{lm}', String(shiftEarnings.lm)),
                     onReward: () => {
-                        apiPost('/boost/claim', { type: 'night_shift_double' }).then((res: { ok?: boolean }) => {
-                            if (res?.ok) fetchStatus();
+                        apiPost('/boost/claim', { type: 'night_shift_double' }).then((res: unknown) => {
+                            const data = res as { ok?: boolean } | null;
+                            if (data?.ok) fetchStatus();
                         }).catch(() => {});
                         toast.success(t('boost.toast_title'), t('boost.night_shift_double.toast'));
                     },
