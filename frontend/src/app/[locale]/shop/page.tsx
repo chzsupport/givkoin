@@ -12,7 +12,6 @@ import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 
 type ShopItem = {
   key: string;
@@ -25,7 +24,6 @@ type ShopItem = {
 export default function ShopPage() {
   const toast = useToast();
   const { t, localePath } = useI18n();
-  const boost = useBoost();
   const { user, refreshUser } = useAuth();
   const [windowWidth, setWindowWidth] = useState(0);
   const sideAdSlot = getResponsiveSideAdSlot(windowWidth, typeof window !== 'undefined' ? window.innerHeight : 0);
@@ -69,20 +67,6 @@ export default function ShopPage() {
       await apiPost('/shop/buy', { itemKey });
       toast.success(t('shop.purchased_title'), t('shop.purchased_desc'));
       await Promise.all([refreshUser().catch(() => { }), loadCatalog().catch(() => { })]);
-
-      // Boost: random item after purchase
-      boost.offerBoost({
-        type: 'shop_random_item',
-        label: t('boost.shop_random_item.label'),
-        description: t('boost.shop_random_item.description'),
-        rewardText: t('boost.shop_random_item.reward'),
-        onReward: () => {
-          apiPost('/boost/claim', { type: 'shop_random_item' }).then((res) => {
-            const data = res as { ok?: boolean } | null;
-            if (data?.ok) refreshUser();
-          }).catch(() => {});
-        },
-      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : '';
       toast.error(t('common.error'), message || t('shop.failed_buy'));

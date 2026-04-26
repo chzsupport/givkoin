@@ -11,7 +11,6 @@ import { HeartHandshake } from 'lucide-react';
 import { apiGet, apiPost } from '@/utils/api';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 
 const STORAGE_KEY = 'givkoin_gratitude_daily_draft';
 const GRATITUDE_COUNT = 3;
@@ -71,7 +70,6 @@ export default function PracticeGratitudePage() {
   const { updateUser } = useAuth();
   const toast = useToast();
   const { t, localePath } = useI18n();
-  const boost = useBoost();
   const [windowWidth, setWindowWidth] = useState(0);
   const sideAdSlot = getResponsiveSideAdSlot(windowWidth, typeof window !== 'undefined' ? window.innerHeight : 0);
   const isDesktop = Boolean(sideAdSlot);
@@ -161,21 +159,6 @@ export default function PracticeGratitudePage() {
             .replace('{sc}', String(response.awardedSc))
             .replace('{stars}', String(response.awardedStars.toFixed(3)))
         );
-
-        // Boost: bonus reward for this gratitude
-        boost.offerBoost({
-          type: 'gratitude_bonus',
-          label: t('boost.gratitude_bonus.label').replace('{sc}', String(response.awardedSc)),
-          description: t('boost.gratitude_bonus.description'),
-          rewardText: t('boost.gratitude_bonus.reward').replace('{sc}', String(response.awardedSc)).replace('{stars}', String(response.awardedStars.toFixed(3))),
-          onReward: () => {
-            apiPost('/boost/claim', { type: 'gratitude_bonus' }).then((res) => {
-              const data = res as { ok?: boolean } | null;
-              if (data?.ok) updateUser({} as Parameters<typeof updateUser>[0]);
-            }).catch(() => {});
-            toast.success(t('boost.toast_title'), t('boost.gratitude_bonus.reward').replace('{sc}', String(response.awardedSc)).replace('{stars}', String(response.awardedStars.toFixed(3))));
-          },
-        });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '';

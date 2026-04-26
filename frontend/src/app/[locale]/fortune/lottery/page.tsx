@@ -11,7 +11,6 @@ import { useToast } from '@/context/ToastContext';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { getSiteLanguage, getSiteLanguageLocale } from '@/i18n/siteLanguage';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 
 // --- ТИПЫ И КОНСТАНТЫ ---
 interface LotteryTicket {
@@ -90,7 +89,6 @@ export default function LotteryPage() {
     const { user, refreshUser } = useAuth();
     const toast = useToast();
     const { localePath, t } = useI18n();
-    const boost = useBoost();
     const [ticketSlots, setTicketSlots] = useState<(number | null)[]>(
         Array.from({ length: TICKET_LENGTH }, () => null)
     );
@@ -217,22 +215,6 @@ export default function LotteryPage() {
             toast.success(t('fortune.ticket_purchased'), t('fortune.lottery_good_luck'));
             refreshUser();
             fetchTickets();
-
-            boost.offerBoost({
-                type: 'lottery_free_ticket',
-                label: t('boost.lottery_free_ticket.label'),
-                description: t('boost.lottery_free_ticket.description'),
-                rewardText: t('boost.lottery_free_ticket.reward'),
-                onReward: () => {
-                    apiPost('/boost/claim', { type: 'lottery_free_ticket' }).then((res: unknown) => {
-                        const data = res as { ok?: boolean } | null;
-                        if (data?.ok) {
-                            refreshUser();
-                            fetchTickets();
-                        }
-                    }).catch(() => {});
-                },
-            });
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';
             toast.error(t('common.error'), message || t('fortune.lottery_buy_error'));

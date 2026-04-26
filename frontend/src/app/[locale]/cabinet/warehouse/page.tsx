@@ -7,7 +7,6 @@ import { useAuth } from '@/context/AuthContext';
 import { PageTitle } from '@/components/PageTitle';
 import { Package } from 'lucide-react';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 import { formatDateTime } from '@/utils/formatters';
 
 type WarehouseItem = {
@@ -26,7 +25,6 @@ export default function CabinetWarehousePage() {
   const toast = useToast();
   const { refreshUser } = useAuth();
   const { language, t } = useI18n();
-  const boost = useBoost();
 
   const [items, setItems] = useState<WarehouseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,20 +51,6 @@ export default function CabinetWarehousePage() {
       const res = await apiPost<{ ok: boolean; message?: string }>('/warehouse/use', { itemId: id });
       toast.success(t('common.done'), res?.message || t('cabinet.item_used'));
       await Promise.all([load().catch(() => {}), refreshUser().catch(() => {})]);
-
-      // Boost: enhance item effect by 5%
-      boost.offerBoost({
-        type: 'inventory_enhance',
-        label: t('boost.inventory_enhance.label'),
-        description: t('boost.inventory_enhance.description'),
-        rewardText: t('boost.inventory_enhance.reward'),
-        onReward: () => {
-          apiPost('/boost/claim', { type: 'inventory_enhance' }).then((res) => {
-            const data = res as { ok?: boolean } | null;
-            if (data?.ok) refreshUser();
-          }).catch(() => {});
-        },
-      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : '';
       toast.error(t('common.error'), message || t('cabinet.item_use_error'));

@@ -13,7 +13,6 @@ import { useRouter } from 'next/navigation';
 import { useStatusTracking } from '@/hooks/useStatusTracking';
 import { useToast } from '@/context/ToastContext';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 
 const TreeScene = dynamic(() => import('./TreeScene'), { ssr: false });
 const MultiAdBlock = dynamic(
@@ -221,8 +220,6 @@ export default function TreePage() {
     return scriptBlocked;
   }, []);
 
-  const boost = useBoost();
-
   const handleTakeCharge = async () => {
     if (solarStatus !== 'ready') return;
 
@@ -286,18 +283,6 @@ export default function TreePage() {
       }
       setIsFruitAvailable(false);
       refreshUser();
-      boost.offerBoost({
-        type: 'fruit_double',
-        label: t('boost.fruit_double.label'),
-        description: t('boost.fruit_double.description'),
-        rewardText: `+${reward} ${rewardType === 'stars' ? '⭐' : rewardType === 'lumens' ? 'Lm' : 'K'}`,
-        onReward: () => {
-          apiPost('/boost/claim', { type: 'fruit_double' }).then((res) => {
-            if (res?.ok) refreshUser();
-          }).catch(() => {});
-          toast.success(t('boost.toast_title'), `+${reward} ${rewardType === 'stars' ? '⭐' : rewardType === 'lumens' ? 'Lm' : 'K'}`);
-        },
-      });
       // Reload tree data to update fruit availability status
       await loadTreeStatus();
     } catch (e: unknown) {
@@ -395,18 +380,6 @@ export default function TreePage() {
             const lumens = data?.lmAward ?? 100;
             const sc = data?.scAward ?? 10;
             toast.success(t('landing.energy'), `+${lumens} Lm, +${sc} K`);
-            boost.offerBoost({
-              type: 'solar_charge',
-              label: t('boost.solar_charge.label').replace('{lumens}', String(lumens)).replace('{lumens2}', String(lumens * 2)),
-              description: t('boost.solar_charge.description'),
-              rewardText: t('boost.solar_charge.reward').replace('{lumens}', String(lumens)),
-              onReward: () => {
-                apiPost('/boost/claim', { type: 'solar_charge' }).then((res) => {
-                  if (res?.ok) refreshUser();
-                }).catch(() => {});
-                toast.success(t('boost.toast_title'), `+${lumens} Lm`);
-              },
-            });
             const nextDeadlineAt = Date.now() + 3600 * 1000;
             setSolarStatus('charging');
             setSolarDeadlineAt(nextDeadlineAt);
@@ -433,7 +406,7 @@ export default function TreePage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [boost, solarStatus, solarDeadlineAt, refreshUser, toast, t]);
+  }, [solarStatus, solarDeadlineAt, refreshUser, toast, t]);
 
   // Interruption Handling (Reset if tab closed/hidden/panel closed)
   useEffect(() => {
@@ -1082,18 +1055,6 @@ export default function TreePage() {
                       await refreshUser();
                       await loadTreeData();
                       setIsHealOpen(false);
-                      boost.offerBoost({
-                        type: 'tree_blessing_double',
-                        label: t('boost.tree_blessing_double.label'),
-                        description: t('boost.tree_blessing_double.description'),
-                        rewardText: data?.starsAward ? `+${data.starsAward} ⭐` : t('boost.tree_blessing_double.reward').replace('{lumens}', String(lumens)),
-                        onReward: () => {
-                          apiPost('/boost/claim', { type: 'tree_blessing_double' }).then((res) => {
-                            if (res?.ok) refreshUser();
-                          }).catch(() => {});
-                          toast.success(t('boost.toast_title'), data?.starsAward ? `+${data.starsAward} ⭐` : t('boost.tree_blessing_double.reward').replace('{lumens}', String(lumens)));
-                        },
-                      });
                     } catch (e: unknown) {
                       toast.error(t('common.error'), getErrorMessage(e) || t('tree.failed_heal'));
                     } finally {

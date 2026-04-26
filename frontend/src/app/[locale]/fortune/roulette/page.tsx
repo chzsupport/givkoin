@@ -12,7 +12,6 @@ import { useToast } from '@/context/ToastContext';
 import { formatUserSc } from '@/utils/formatters';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 
 const ROULETTE_SECTORS = [
     { label: '1', value: 1, type: 'sc', color: '#3b82f6' },
@@ -146,7 +145,6 @@ export default function RoulettePage() {
     const { user, refreshUser } = useAuth();
     const toast = useToast();
     const { t, localePath } = useI18n();
-    const boost = useBoost();
     const [isSpinning, setIsSpinning] = useState(false);
     const [spinMode, setSpinMode] = useState<'idle' | 'loading' | 'settling'>('idle');
     const [rotation, setRotation] = useState(0);
@@ -400,42 +398,6 @@ export default function RoulettePage() {
                 await refreshUser();
                 await fetchGlobalStats();
                 await fetchUserStats();
-
-                // Boost: extra spin when no spins left
-                if (remainingSpins === 0) {
-                    boost.offerBoost({
-                        type: 'roulette_extra_spin',
-                        label: t('boost.roulette_extra_spin.label'),
-                        description: t('boost.roulette_extra_spin.description'),
-                        rewardText: t('boost.roulette_extra_spin.reward'),
-                        onReward: () => {
-                            apiPost('/boost/claim', { type: 'roulette_extra_spin' }).then((res: unknown) => {
-                                const data = res as { ok?: boolean; spinsLeft?: number } | null;
-                                if (data?.ok) {
-                                    setSpinsLeft(typeof data.spinsLeft === 'number' ? data.spinsLeft : 1);
-                                    refreshUser();
-                                }
-                            }).catch(() => {});
-                        },
-                    });
-                }
-
-                // Boost: double today's roulette K rewards
-                if (resultType === 'sc' && Number(resultValue) > 0) {
-                    boost.offerBoost({
-                        type: 'roulette_double_rewards',
-                        label: t('boost.roulette_double_rewards.label'),
-                        description: t('boost.roulette_double_rewards.description'),
-                        rewardText: t('boost.roulette_double_rewards.reward'),
-                        onReward: () => {
-                            apiPost('/boost/claim', { type: 'roulette_double_rewards' }).then((res: unknown) => {
-                                const data = res as { ok?: boolean } | null;
-                                if (data?.ok) refreshUser();
-                            }).catch(() => {});
-                            toast.success(t('boost.toast_title'), t('boost.roulette_double_rewards.toast'));
-                        },
-                    });
-                }
             }, 2400);
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';

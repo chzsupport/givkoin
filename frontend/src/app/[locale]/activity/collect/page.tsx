@@ -9,12 +9,9 @@ import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { useCrystal } from '@/context/CrystalContext';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
-import { apiPost } from '@/utils/api';
 
 export default function ActivityCollectPage() {
   const { t, localePath } = useI18n();
-  const boost = useBoost();
   const { collectedShards, refreshStatus, collectionDisabled, collectionDisabledMessage, rewardGranted } = useCrystal();
   const [windowWidth, setWindowWidth] = useState(0);
   const sideAdSlot = getResponsiveSideAdSlot(windowWidth, typeof window !== 'undefined' ? window.innerHeight : 0);
@@ -51,24 +48,6 @@ export default function ActivityCollectPage() {
     // Принудительно обновляем статус при входе на страницу
     refreshStatus();
   }, [refreshStatus]);
-
-  // Boost: double reward after all 12 shards collected
-  useEffect(() => {
-    if (rewardGranted) {
-      boost.offerBoost({
-        type: 'collect_shards_double',
-        label: t('boost.collect_shards_double.label'),
-        description: t('boost.collect_shards_double.description'),
-        rewardText: t('boost.collect_shards_double.reward'),
-        onReward: () => {
-          apiPost('/boost/claim', { type: 'collect_shards_double' }).then((res: unknown) => {
-            const data = res as { ok?: boolean } | null;
-            if (data?.ok) refreshStatus();
-          }).catch(() => {});
-        },
-      });
-    }
-  }, [boost, refreshStatus, rewardGranted, t]);
 
   return (
     <div

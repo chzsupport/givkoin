@@ -15,7 +15,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useI18n } from '@/context/I18nContext';
 import { useSocketContext } from '@/context/SocketContext';
 import { useToast } from '@/context/ToastContext';
-import { useBoost } from '@/context/BoostContext';
 import { BattleSummaryOverlay } from '@/components/battle/BattleSummaryOverlay';
 import { parseBattleSummaryPayload, type BattleSummary, type BattleSummaryPayload } from '@/lib/battleSummary';
 
@@ -568,7 +567,6 @@ export default function BattlePage() {
     const socket = useSocketContext();
     const toast = useToast();
     const { language, t, localePath } = useI18n();
-    const boost = useBoost();
     const [userDamage, setUserDamage] = useState(0);
     const [battleId, setBattleId] = useState<string | null>(null);
     const [battleScenario, setBattleScenario] = useState<BattleScenario | null>(null);
@@ -599,26 +597,6 @@ export default function BattlePage() {
     const [isBrowserOnline, setIsBrowserOnline] = useState(
         typeof window === 'undefined' ? true : window.navigator.onLine,
     );
-
-    useEffect(() => {
-        if (!summaryVisible || !battleSummary) return;
-        const rewardSc = Math.max(0, Math.floor(Number(battleSummary.rewardSc) || 0));
-        if (!rewardSc) return;
-
-        const bonusSc = Math.max(1, Math.floor(rewardSc * 0.1));
-        boost.offerBoost({
-            type: 'battle_bonus_k',
-            label: t('boost.battle_bonus_k.label'),
-            description: t('boost.battle_bonus_k.description'),
-            rewardText: `+${bonusSc} K`,
-            onReward: () => {
-                apiPost('/boost/claim', { type: 'battle_bonus_k', battleId: battleSummary.battleId }).catch(() => {});
-                if (user) {
-                    updateUser({ ...user, sc: (user.sc || 0) + bonusSc });
-                }
-            },
-        });
-    }, [battleSummary, boost, summaryVisible, updateUser, user, t]);
     const domeCenter = useMemo(
         () => (performanceTier === 'low' ? { x: 0.5, y: 0.6 } : BASE_DOME_CENTER),
         [performanceTier]

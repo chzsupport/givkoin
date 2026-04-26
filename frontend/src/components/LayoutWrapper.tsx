@@ -16,7 +16,6 @@ import { useI18n } from '@/context/I18nContext';
 import { useCrystal } from '@/context/CrystalContext';
 import { CrystalShard } from '@/components/CrystalShard';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
-import { BoostProvider } from '@/context/BoostContext';
 
 const NAVIGATION_RULES: Record<string, string[][]> = {
     '/fortune/roulette': [['/fortune'], ['/tree', '/fortune']],
@@ -592,7 +591,6 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     // Если есть Header/Footer — используем flex layout для правильного позиционирования
     if (shouldShowHeaderFooter) {
         return (
-            <BoostProvider>
             <ToastProvider>
                 <div className="min-h-screen flex flex-col relative">
                     <AnomalyOverlay />
@@ -631,13 +629,11 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                     <CallNotification />
                 </div>
             </ToastProvider>
-            </BoostProvider>
         );
     }
 
     // Страницы без Header/Footer
     return (
-        <BoostProvider>
         <ToastProvider>
             <LanguageSwitcher floating />
             <main className="relative">
@@ -673,6 +669,5 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                 <CallNotification />
             </main>
         </ToastProvider>
-        </BoostProvider>
     );
 }

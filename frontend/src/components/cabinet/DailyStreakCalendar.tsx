@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/context/I18nContext";
-import { useBoost } from "@/context/BoostContext";
 import { apiGet, apiPost } from "@/utils/api";
 import { getCachedDailyStreakState, setCachedDailyStreakState } from "@/utils/sessionWarmup";
 
@@ -93,10 +92,9 @@ export function DailyStreakCalendar({
   enableWelcomeModal = true,
   inline = true,
   displayMode = "summary",
-}: DailyStreakCalendarProps) {
+}: DailyStreakCalendarProps = {}) {
   const { user, updateUser } = useAuth();
   const { t } = useI18n();
-  const boost = useBoost();
 
   const userId = (user as { _id?: string; id?: string } | null)?._id || (user as { _id?: string; id?: string } | null)?.id || "";
 
@@ -219,16 +217,6 @@ export function DailyStreakCalendar({
       if (userId) {
         setCachedDailyStreakState(userId, response.state);
       }
-
-      boost.offerBoost({
-        type: 'attendance_random_reward',
-        label: t('boost.attendance_random_reward.label'),
-        description: t('boost.attendance_random_reward.description'),
-        rewardText: t('boost.attendance_random_reward.reward'),
-        onReward: () => {
-          apiPost('/boost/claim', { type: 'attendance_random_reward' }).catch(() => {});
-        },
-      });
     } finally {
       setIsSubmitting(false);
     }

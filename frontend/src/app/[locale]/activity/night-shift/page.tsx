@@ -9,9 +9,7 @@ import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
 import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { useAuth } from '@/context/AuthContext';
-import { useToast } from '@/context/ToastContext';
 import { useI18n } from '@/context/I18nContext';
-import { useBoost } from '@/context/BoostContext';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import {
     clearNightShiftRuntime,
@@ -73,9 +71,7 @@ interface EndShiftResult {
 
 export default function NightShiftPage() {
     const { isAuthenticated } = useAuth();
-    const toast = useToast();
     const { t, localePath } = useI18n();
-    const boost = useBoost();
     const [status, setStatus] = useState<NightShiftStatus | null>(null);
     const [runtime, setRuntime] = useState<NightShiftLocalRuntime | null>(null);
     const [radarTarget, setRadarTarget] = useState<string | null>(null);
@@ -317,24 +313,6 @@ export default function NightShiftPage() {
                     : null,
             } : null);
             setEndShiftData(data);
-
-            // Boost: double shift reward if at least 1 full hour
-            if (data?.payableHours && data.payableHours >= 1) {
-                const shiftEarnings = status?.stats?.totalEarnings || { sc: 0, lm: 0, stars: 0 };
-                boost.offerBoost({
-                    type: 'night_shift_double',
-                    label: t('boost.night_shift_double.label'),
-                    description: t('boost.night_shift_double.description'),
-                    rewardText: t('boost.night_shift_double.reward').replace('{sc}', String(shiftEarnings.sc)).replace('{lm}', String(shiftEarnings.lm)),
-                    onReward: () => {
-                        apiPost('/boost/claim', { type: 'night_shift_double' }).then((res: unknown) => {
-                            const data = res as { ok?: boolean } | null;
-                            if (data?.ok) fetchStatus();
-                        }).catch(() => {});
-                        toast.success(t('boost.toast_title'), t('boost.night_shift_double.toast'));
-                    },
-                });
-            }
         } catch (error) {
             alert(t('night_shift.end_failed'));
         }
