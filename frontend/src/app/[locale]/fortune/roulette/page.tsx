@@ -409,9 +409,10 @@ export default function RoulettePage() {
                         description: t('boost.roulette_extra_spin.description'),
                         rewardText: t('boost.roulette_extra_spin.reward'),
                         onReward: () => {
-                            apiPost('/boost/claim', { type: 'roulette_extra_spin' }).then((res: { ok?: boolean; spinsLeft?: number }) => {
-                                if (res?.ok) {
-                                    setSpinsLeft(typeof res.spinsLeft === 'number' ? res.spinsLeft : 1);
+                            apiPost('/boost/claim', { type: 'roulette_extra_spin' }).then((res: unknown) => {
+                                const data = res as { ok?: boolean; spinsLeft?: number } | null;
+                                if (data?.ok) {
+                                    setSpinsLeft(typeof data.spinsLeft === 'number' ? data.spinsLeft : 1);
                                     refreshUser();
                                 }
                             }).catch(() => {});
@@ -427,8 +428,9 @@ export default function RoulettePage() {
                         description: t('boost.roulette_double_rewards.description'),
                         rewardText: t('boost.roulette_double_rewards.reward'),
                         onReward: () => {
-                            apiPost('/boost/claim', { type: 'roulette_double_rewards' }).then((res: { ok?: boolean }) => {
-                                if (res?.ok) refreshUser();
+                            apiPost('/boost/claim', { type: 'roulette_double_rewards' }).then((res: unknown) => {
+                                const data = res as { ok?: boolean } | null;
+                                if (data?.ok) refreshUser();
                             }).catch(() => {});
                             toast.success(t('boost.toast_title'), t('boost.roulette_double_rewards.toast'));
                         },
