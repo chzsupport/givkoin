@@ -9,6 +9,7 @@ import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
 import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { useI18n } from '@/context/I18nContext';
 import { useBoost } from '@/context/BoostContext';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
@@ -72,6 +73,7 @@ interface EndShiftResult {
 
 export default function NightShiftPage() {
     const { isAuthenticated } = useAuth();
+    const toast = useToast();
     const { t, localePath } = useI18n();
     const boost = useBoost();
     const [status, setStatus] = useState<NightShiftStatus | null>(null);
