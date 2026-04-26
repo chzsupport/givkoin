@@ -11,11 +11,12 @@ dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5
 
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const { scene } = useLoader(
-    GLTFLoader,
+  const gltf = useLoader(
+    GLTFLoader as any,
     '/tree-model.glb',
-    (loader) => loader.setDRACOLoader(dracoLoader)
-  );
+    (loader: any) => loader.setDRACOLoader(dracoLoader)
+  ) as any;
+  const scene = gltf.scene as THREE.Group;
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
