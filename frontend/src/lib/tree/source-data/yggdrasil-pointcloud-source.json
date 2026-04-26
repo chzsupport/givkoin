@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "format": "float32",
+  "arrays": {
+    "groundPositions": {
+      "offset": 0,
+      "length": 899130,
+      "points": 299710
+    },
+    "groundColors": {
+      "offset": 899130,
+      "length": 899130,
+      "points": 299710
+    },
+    "trunkPositions": {
+      "offset": 1798260,
+      "length": 2100,
+      "points": 700
+    },
+    "trunkColors": {
+      "offset": 1800360,
+      "length": 2100,
+      "points": 700
+    },
+    "woodPositions": {
+      "offset": 1802460,
+      "length": 243966,
+      "points": 81322
+    },
+    "woodColors": {
+      "offset": 2046426,
+      "length": 243966,
+      "points": 81322
+    },
+    "foliagePositions": {
+      "offset": 2290392,
+      "length": 1131780,
+      "points": 377260
+    },
+    "foliageColors": {
+      "offset": 3422172,
+      "length": 1131780,
+      "points": 377260
+    }
+  }
+}

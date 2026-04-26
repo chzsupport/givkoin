@@ -1,0 +1,333 @@
+﻿
+> choizze-frontend@1.0.0 lint
+> next lint --format stylish
+
+node.exe : 
+строка:1 знак:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+C:\choizze\frontend\src\app\about\page.tsx
+  31:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\activity\collect\page.tsx
+  34:9  error  'isHeartComplete' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\activity\night-shift\page.tsx
+   33:12  error    'loading' is assigned a value but never used                                                                   @typescript-eslint/no-unused-vars
+   37:54  error    Unexpected any. Specify a different type                                                                       @typescript-eslint/no-explicit-any
+   99:8   warning  React Hook useEffect has a missing dependency: 'fetchRadar'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  113:50  error    Unexpected any. Specify a different type                                                                       @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\battle\EnemyLayer.tsx
+    6:5   error    'useMemo' is defined but never used                                                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+   13:18  error    'AnimatePresence' is defined but never used                                                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+   16:5   error    'ENEMY_OUTLINE' is defined but never used                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+   17:5   error    'ENEMY_OUTLINE_HEIGHT' is defined but never used                                                                                                                                                                                                                                 @typescript-eslint/no-unused-vars
+   18:5   error    'ENEMY_OUTLINE_WIDTH' is defined but never used                                                                                                                                                                                                                                  @typescript-eslint/no-unused-vars
+   19:5   error    'ENEMY_PLANE_Z' is defined but never used                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  278:27  error    Component definition is missing display name                                                                                                                                                                                                                                     react/display-name
+  321:30  warning  The ref value 'flashTimeoutsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'flashTimeoutsRef.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\app\battle\GameScene.tsx
+  306:113  error    Unexpected any. Specify a different type                                                                                                                                                                                                     @typescript-eslint/no-explicit-any
+  425:204  error    Unexpected any. Specify a different type                                                                                                                                                                                                     @typescript-eslint/no-explicit-any
+  431:11   error    'isChargingRef' is assigned a value but never used                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  571:9    warning  React Hook useCallback has a missing dependency: 'onShotAttempt'. Either include it or remove the dependency array. If 'onShotAttempt' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+  861:11   error    'handleAimMove' is assigned a value but never used                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  884:11   error    'triggerCooldown' is assigned a value but never used                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\battle\MobileControls.tsx
+  1:17  error  'useEffect' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\battle\enemyZones.ts
+   95:7  error  'aggregatedBounds' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  110:7  error  'fallbackBounds' is assigned a value but never used    @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\battle\page.tsx
+   69:12  error    'personalSlider' is assigned a value but never used                                                                     @typescript-eslint/no-unused-vars
+   69:28  error    'setPersonalSlider' is assigned a value but never used                                                                  @typescript-eslint/no-unused-vars
+   96:21  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  107:43  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  225:39  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  238:21  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  241:8   warning  React Hook useCallback has an unnecessary dependency: 'voiceCommand'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+  303:51  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  321:33  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  605:55  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  610:37  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\bridges\page.tsx
+  265:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  292:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  767:19  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\choizze\frontend\src\app\cabinet\history\page.tsx
+  139:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  193:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  209:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  211:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  231:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  261:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  273:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\cabinet\page.tsx
+  4:8   error  'Link' is defined but never used            @typescript-eslint/no-unused-vars
+  6:10  error  'PageBackground' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\cabinet\quizzes\page.tsx
+   9:42  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  13:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\cabinet\referrals\page.tsx
+  22:10  error  'loading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\cabinet\settings\page.tsx
+  35:59  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  46:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\cabinet\warehouse\page.tsx
+   38:18  error    Unexpected any. Specify a different type                                                                                                           @typescript-eslint/no-explicit-any
+   42:6   warning  React Hook useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array                                           react-hooks/exhaustive-deps
+   50:17  error    Unexpected any. Specify a different type                                                                                                           @typescript-eslint/no-explicit-any
+  102:46  error    React Hook "useItem" cannot be called inside a callback. React Hooks must be called in a React function component or a custom React Hook function  react-hooks/rules-of-hooks
+
+C:\choizze\frontend\src\app\chat\[chatId]\page.tsx
+    3:38  error    'useRef' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+   18:11  error    'User' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+   28:30  error    'checkActiveChat' is assigned a value but never used                                                                @typescript-eslint/no-unused-vars
+   29:46  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+   65:47  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+   67:52  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  189:8   warning  React Hook useEffect has a missing dependency: 'fetchMessages'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+  206:8   warning  React Hook useEffect has a missing dependency: 'waitingTimeLeft'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  290:25  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  306:43  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  308:64  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  324:8   warning  React Hook useEffect has a missing dependency: 'fetchMessages'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+  327:27  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  329:44  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  340:25  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  350:11  error    'isMobile' is assigned a value but never used                                                                       @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\app\confirm\page.tsx
+  29:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\entity\create\page.tsx
+  27:8   warning  React Hook useMemo has a missing dependency: 'changeCooldownMs'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  57:23  error    Unexpected any. Specify a different type                                                                           @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\entity\profile\page.tsx
+    9:10  error    'AdBlock' is defined but never used                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+   75:5   error    React Hook "useEffect" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?                                                                     react-hooks/rules-of-hooks
+  139:29  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\choizze\frontend\src\app\evil-root\page.tsx
+  317:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\feedback\page.tsx
+  65:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\forgot-password\page.tsx
+  23:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\fortune\lottery\page.tsx
+    6:51  error  'Zap' is defined but never used           @typescript-eslint/no-unused-vars
+   76:39  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   78:70  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  126:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\fortune\page.tsx
+   16:5   error  'ArrowLeft' is defined but never used         @typescript-eslint/no-unused-vars
+   57:12  error  'loading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   77:25  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+   84:85  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+   89:71  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+  106:45  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+  109:48  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+  138:39  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+  143:21  error  Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\fortune\roulette\page.tsx
+    6:61  error  'Zap' is defined but never used                              @typescript-eslint/no-unused-vars
+  110:52  error  Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+  115:11  error  'wheelRef' is assigned a value but never used                @typescript-eslint/no-unused-vars
+  202:23  error  'availableForAdAndWheel' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  235:40  error  Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+  246:45  error  Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+  251:44  error  Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+  271:39  error  Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+  314:21  error  Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\galaxy\page.tsx
+   57:10   error  'loading' is assigned a value but never used                     @typescript-eslint/no-unused-vars
+  180:56   error  Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  217:56   error  Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  541:89   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  541:103  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  567:25   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  567:37   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  628:23   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  628:35   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+C:\choizze\frontend\src\app\login\page.tsx
+  85:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  94:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\news\page.tsx
+  282:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  300:39  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  312:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  326:39  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  338:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  365:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  383:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  524:57  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\choizze\frontend\src\app\practice\meditation\me\page.tsx
+  393:53  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  456:53  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\choizze\frontend\src\app\practice\meditation\we\page.tsx
+   91:56   error    Unexpected any. Specify a different type                                                                                  @typescript-eslint/no-explicit-any
+   92:52   error    Unexpected any. Specify a different type                                                                                  @typescript-eslint/no-explicit-any
+  142:78   error    Unexpected any. Specify a different type                                                                                  @typescript-eslint/no-explicit-any
+  142:103  error    Unexpected any. Specify a different type                                                                                  @typescript-eslint/no-explicit-any
+  233:8    warning  React Hook useEffect has a missing dependency: 'COLLECTIVE_SESSION_MS'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\app\practice\page.tsx
+  48:18  error  'setStreak' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  49:17  error  'setLevel' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  52:62  error  Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  97:70  error  Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  97:95  error  Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\register\page.tsx
+  120:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\reset-password\page.tsx
+  56:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\roadmap\page.tsx
+  31:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\rules\page.tsx
+  37:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\shop\page.tsx
+  55:18  error    Unexpected any. Specify a different type                                                                  @typescript-eslint/no-explicit-any
+  59:6   warning  React Hook useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  67:17  error    Unexpected any. Specify a different type                                                                  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\app\tree\page.tsx
+    9:10  error    'AdaptiveAdWrapper' is defined but never used                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+   10:10  error    'AdBlock' is defined but never used                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+   18:10  error    'NewsTablet' is defined but never used                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  288:30  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  316:6   warning  React Hook useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array                                                                                                                                                        react-hooks/exhaustive-deps
+  396:9   warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  620:29  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\choizze\frontend\src\components\AdBlock.tsx
+  26:10  error    'error' is assigned a value but never used                                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+  40:21  error    Unexpected any. Specify a different type                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+  99:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\choizze\frontend\src\components\CallNotification.tsx
+  10:10  error    'apiPost' is defined but never used                                                                       @typescript-eslint/no-unused-vars
+  55:8   warning  React Hook useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\components\InteractiveWorldMap.tsx
+   31:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   55:67  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   82:28  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  106:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  112:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\components\MeditationPlanetScene.tsx
+  199:10  error  'createBlobGeometry' is defined but never used  @typescript-eslint/no-unused-vars
+  440:10  error  'MultiBeamManager' is defined but never used    @typescript-eslint/no-unused-vars
+  512:10  error  'EarthFallback' is defined but never used       @typescript-eslint/no-unused-vars
+  671:49  error  'beamOriginScreenY' is defined but never used   @typescript-eslint/no-unused-vars
+  885:10  error  'EnergyBursts' is defined but never used        @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\components\MultiAdBlock.tsx
+   75:19  error    'usedSizes' is assigned a value but never used                                                               @typescript-eslint/no-unused-vars
+  113:8   warning  React Hook useEffect has a missing dependency: 'minWidth'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\components\NightShift\Radar.tsx
+  3:17  error  'useEffect' is defined but never used  @typescript-eslint/no-unused-vars
+  3:28  error  'useState' is defined but never used   @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\components\battle\EnemyLayer.tsx
+    6:3   error    'useMemo' is defined but never used                                                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+   13:3   error    'ENEMY_OUTLINE' is defined but never used                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+   14:3   error    'ENEMY_OUTLINE_HEIGHT' is defined but never used                                                                                                                                                                                                                                 @typescript-eslint/no-unused-vars
+   15:3   error    'ENEMY_OUTLINE_WIDTH' is defined but never used                                                                                                                                                                                                                                  @typescript-eslint/no-unused-vars
+   16:3   error    'ENEMY_PLANE_Z' is defined but never used                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  259:24  warning  The ref value 'flashTimeoutsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'flashTimeoutsRef.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\components\battle\enemyZones.ts
+  206:26  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\components\cabinet\DailyStreakCalendar.tsx
+   43:42  error    Unexpected any. Specify a different type                                                                               @typescript-eslint/no-explicit-any
+  225:6   warning  React Hook useEffect has a missing dependency: 'enableWelcomeModal'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\components\cabinet\FriendsList.tsx
+  41:42  error    Unexpected any. Specify a different type                                                                  @typescript-eslint/no-explicit-any
+  42:41  error    Unexpected any. Specify a different type                                                                  @typescript-eslint/no-explicit-any
+  48:8   warning  React Hook useEffect has a missing dependency: 'toast'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  61:39  error    Unexpected any. Specify a different type                                                                  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\components\chat\IncomingCallModal.tsx
+  14:5  error  'callerId' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\components\entity\EntityAskModal.tsx
+  57:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\components\life\EntityVideo.tsx
+  13:10  error  'hovered' is assigned a value but never used     @typescript-eslint/no-unused-vars
+  13:19  error  'setHovered' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\components\life\Globe3D.tsx
+  29:3  error  'onPointClick' is defined but never used  @typescript-eslint/no-unused-vars
+  30:3  error  'onPointHover' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\choizze\frontend\src\components\life\MeditationLifePage.tsx
+  60:27  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  60:33  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+C:\choizze\frontend\src\components\news\NewsTablet.tsx
+   77:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   88:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:33  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  117:17  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\components\quiz\QuizModal.tsx
+   10:38  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+   33:8   warning  React Hook useMemo has an unnecessary dependency: 'timeLeft'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+   37:39  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+  118:23  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\context\I18nContext.tsx
+  32:6  warning  React Hook useEffect has a missing dependency: 'language'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\choizze\frontend\src\hooks\useChatSocket.ts
+   45:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  105:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\choizze\frontend\src\utils\api.ts
+  48:58  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  55:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  64:60  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  80:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  89:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+тЬЦ 204 problems (177 errors, 27 warnings)
+
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules

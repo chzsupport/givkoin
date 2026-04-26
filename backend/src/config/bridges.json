@@ -1,0 +1,1657 @@
+[
+    {
+        "from": "Canada",
+        "to": "USA",
+        "distance": 734
+    },
+    {
+        "from": "USA",
+        "to": "Mexico",
+        "distance": 3034
+    },
+    {
+        "from": "Mexico",
+        "to": "Belize",
+        "distance": 1148
+    },
+    {
+        "from": "Mexico",
+        "to": "Guatemala",
+        "distance": 1058
+    },
+    {
+        "from": "Belize",
+        "to": "Guatemala",
+        "distance": 352
+    },
+    {
+        "from": "Guatemala",
+        "to": "Honduras",
+        "distance": 357
+    },
+    {
+        "from": "Guatemala",
+        "to": "El Salvador",
+        "distance": 176
+    },
+    {
+        "from": "Honduras",
+        "to": "El Salvador",
+        "distance": 210
+    },
+    {
+        "from": "Honduras",
+        "to": "Nicaragua",
+        "distance": 240
+    },
+    {
+        "from": "Nicaragua",
+        "to": "Costa Rica",
+        "distance": 340
+    },
+    {
+        "from": "Costa Rica",
+        "to": "Panama",
+        "distance": 514
+    },
+    {
+        "from": "Panama",
+        "to": "Colombia",
+        "distance": 755
+    },
+    {
+        "from": "Haiti",
+        "to": "Dominican Republic",
+        "distance": 250
+    },
+    {
+        "from": "Saint Martin",
+        "to": "Sint Maarten",
+        "distance": 10
+    },
+    {
+        "from": "Colombia",
+        "to": "Venezuela",
+        "distance": 1023
+    },
+    {
+        "from": "Colombia",
+        "to": "Brazil",
+        "distance": 3662
+    },
+    {
+        "from": "Colombia",
+        "to": "Ecuador",
+        "distance": 731
+    },
+    {
+        "from": "Colombia",
+        "to": "Peru",
+        "distance": 1883
+    },
+    {
+        "from": "Ecuador",
+        "to": "Peru",
+        "distance": 1330
+    },
+    {
+        "from": "Venezuela",
+        "to": "Guyana",
+        "distance": 1047
+    },
+    {
+        "from": "Venezuela",
+        "to": "Brazil",
+        "distance": 3596
+    },
+    {
+        "from": "Guyana",
+        "to": "Suriname",
+        "distance": 345
+    },
+    {
+        "from": "Guyana",
+        "to": "Brazil",
+        "distance": 2686
+    },
+    {
+        "from": "Suriname",
+        "to": "French Guiana",
+        "distance": 327
+    },
+    {
+        "from": "Suriname",
+        "to": "Brazil",
+        "distance": 2445
+    },
+    {
+        "from": "French Guiana",
+        "to": "Brazil",
+        "distance": 2245
+    },
+    {
+        "from": "Peru",
+        "to": "Brazil",
+        "distance": 3170
+    },
+    {
+        "from": "Peru",
+        "to": "Bolivia",
+        "distance": 1079
+    },
+    {
+        "from": "Peru",
+        "to": "Chile",
+        "distance": 2465
+    },
+    {
+        "from": "Bolivia",
+        "to": "Brazil",
+        "distance": 2150
+    },
+    {
+        "from": "Bolivia",
+        "to": "Paraguay",
+        "distance": 1478
+    },
+    {
+        "from": "Bolivia",
+        "to": "Argentina",
+        "distance": 2230
+    },
+    {
+        "from": "Bolivia",
+        "to": "Chile",
+        "distance": 1900
+    },
+    {
+        "from": "Chile",
+        "to": "Argentina",
+        "distance": 1133
+    },
+    {
+        "from": "Argentina",
+        "to": "Paraguay",
+        "distance": 1040
+    },
+    {
+        "from": "Argentina",
+        "to": "Brazil",
+        "distance": 2340
+    },
+    {
+        "from": "Argentina",
+        "to": "Uruguay",
+        "distance": 203
+    },
+    {
+        "from": "Paraguay",
+        "to": "Brazil",
+        "distance": 1470
+    },
+    {
+        "from": "Uruguay",
+        "to": "Brazil",
+        "distance": 2280
+    },
+    {
+        "from": "United Kingdom",
+        "to": "Ireland",
+        "distance": 464
+    },
+    {
+        "from": "Norway",
+        "to": "Russia",
+        "distance": 1643
+    },
+    {
+        "from": "Norway",
+        "to": "Finland",
+        "distance": 787
+    },
+    {
+        "from": "Norway",
+        "to": "Sweden",
+        "distance": 418
+    },
+    {
+        "from": "Sweden",
+        "to": "Finland",
+        "distance": 397
+    },
+    {
+        "from": "Finland",
+        "to": "Russia",
+        "distance": 894
+    },
+    {
+        "from": "Russia",
+        "to": "Estonia",
+        "distance": 866
+    },
+    {
+        "from": "Russia",
+        "to": "Latvia",
+        "distance": 842
+    },
+    {
+        "from": "Russia",
+        "to": "Belarus",
+        "distance": 676
+    },
+    {
+        "from": "Russia",
+        "to": "Ukraine",
+        "distance": 756
+    },
+    {
+        "from": "Russia",
+        "to": "Poland",
+        "distance": 1152
+    },
+    {
+        "from": "Russia",
+        "to": "Lithuania",
+        "distance": 790
+    },
+    {
+        "from": "Estonia",
+        "to": "Latvia",
+        "distance": 278
+    },
+    {
+        "from": "Latvia",
+        "to": "Lithuania",
+        "distance": 262
+    },
+    {
+        "from": "Latvia",
+        "to": "Belarus",
+        "distance": 402
+    },
+    {
+        "from": "Lithuania",
+        "to": "Belarus",
+        "distance": 172
+    },
+    {
+        "from": "Lithuania",
+        "to": "Poland",
+        "distance": 393
+    },
+    {
+        "from": "Belarus",
+        "to": "Poland",
+        "distance": 476
+    },
+    {
+        "from": "Belarus",
+        "to": "Ukraine",
+        "distance": 433
+    },
+    {
+        "from": "Ukraine",
+        "to": "Poland",
+        "distance": 689
+    },
+    {
+        "from": "Ukraine",
+        "to": "Slovakia",
+        "distance": 1002
+    },
+    {
+        "from": "Ukraine",
+        "to": "Hungary",
+        "distance": 899
+    },
+    {
+        "from": "Ukraine",
+        "to": "Romania",
+        "distance": 740
+    },
+    {
+        "from": "Ukraine",
+        "to": "Transnistria",
+        "distance": 400
+    },
+    {
+        "from": "Ukraine",
+        "to": "Moldova",
+        "distance": 403
+    },
+    {
+        "from": "Moldova",
+        "to": "Transnistria",
+        "distance": 65
+    },
+    {
+        "from": "Moldova",
+        "to": "Romania",
+        "distance": 358
+    },
+    {
+        "from": "Poland",
+        "to": "Germany",
+        "distance": 518
+    },
+    {
+        "from": "Poland",
+        "to": "Czech Republic",
+        "distance": 519
+    },
+    {
+        "from": "Poland",
+        "to": "Slovakia",
+        "distance": 531
+    },
+    {
+        "from": "Germany",
+        "to": "Denmark",
+        "distance": 356
+    },
+    {
+        "from": "Germany",
+        "to": "Netherlands",
+        "distance": 577
+    },
+    {
+        "from": "Germany",
+        "to": "Belgium",
+        "distance": 651
+    },
+    {
+        "from": "Germany",
+        "to": "Luxembourg",
+        "distance": 604
+    },
+    {
+        "from": "Germany",
+        "to": "France",
+        "distance": 878
+    },
+    {
+        "from": "Germany",
+        "to": "Switzerland",
+        "distance": 754
+    },
+    {
+        "from": "Germany",
+        "to": "Austria",
+        "distance": 524
+    },
+    {
+        "from": "Germany",
+        "to": "Czech Republic",
+        "distance": 280
+    },
+    {
+        "from": "Netherlands",
+        "to": "Belgium",
+        "distance": 173
+    },
+    {
+        "from": "Belgium",
+        "to": "Luxembourg",
+        "distance": 187
+    },
+    {
+        "from": "Belgium",
+        "to": "France",
+        "distance": 264
+    },
+    {
+        "from": "Luxembourg",
+        "to": "France",
+        "distance": 287
+    },
+    {
+        "from": "Czech Republic",
+        "to": "Slovakia",
+        "distance": 291
+    },
+    {
+        "from": "Czech Republic",
+        "to": "Austria",
+        "distance": 252
+    },
+    {
+        "from": "Slovakia",
+        "to": "Austria",
+        "distance": 55
+    },
+    {
+        "from": "Slovakia",
+        "to": "Hungary",
+        "distance": 161
+    },
+    {
+        "from": "Hungary",
+        "to": "Austria",
+        "distance": 214
+    },
+    {
+        "from": "Hungary",
+        "to": "Slovenia",
+        "distance": 382
+    },
+    {
+        "from": "Hungary",
+        "to": "Croatia",
+        "distance": 300
+    },
+    {
+        "from": "Hungary",
+        "to": "Serbia",
+        "distance": 319
+    },
+    {
+        "from": "Hungary",
+        "to": "Romania",
+        "distance": 644
+    },
+    {
+        "from": "Romania",
+        "to": "Serbia",
+        "distance": 449
+    },
+    {
+        "from": "Romania",
+        "to": "Bulgaria",
+        "distance": 295
+    },
+    {
+        "from": "Bulgaria",
+        "to": "Serbia",
+        "distance": 330
+    },
+    {
+        "from": "Bulgaria",
+        "to": "North Macedonia",
+        "distance": 176
+    },
+    {
+        "from": "Bulgaria",
+        "to": "Greece",
+        "distance": 525
+    },
+    {
+        "from": "Bulgaria",
+        "to": "Turkey",
+        "distance": 820
+    },
+    {
+        "from": "Greece",
+        "to": "Turkey",
+        "distance": 820
+    },
+    {
+        "from": "Greece",
+        "to": "North Macedonia",
+        "distance": 487
+    },
+    {
+        "from": "Greece",
+        "to": "Albania",
+        "distance": 501
+    },
+    {
+        "from": "Albania",
+        "to": "North Macedonia",
+        "distance": 152
+    },
+    {
+        "from": "Albania",
+        "to": "Kosovo",
+        "distance": 186
+    },
+    {
+        "from": "Albania",
+        "to": "Montenegro",
+        "distance": 135
+    },
+    {
+        "from": "North Macedonia",
+        "to": "Kosovo",
+        "distance": 82
+    },
+    {
+        "from": "North Macedonia",
+        "to": "Serbia",
+        "distance": 322
+    },
+    {
+        "from": "Kosovo",
+        "to": "Serbia",
+        "distance": 245
+    },
+    {
+        "from": "Kosovo",
+        "to": "Montenegro",
+        "distance": 150
+    },
+    {
+        "from": "Serbia",
+        "to": "Montenegro",
+        "distance": 282
+    },
+    {
+        "from": "Serbia",
+        "to": "Bosnia and Herzegovina",
+        "distance": 196
+    },
+    {
+        "from": "Serbia",
+        "to": "Croatia",
+        "distance": 368
+    },
+    {
+        "from": "Montenegro",
+        "to": "Bosnia and Herzegovina",
+        "distance": 172
+    },
+    {
+        "from": "Montenegro",
+        "to": "Croatia",
+        "distance": 457
+    },
+    {
+        "from": "Bosnia and Herzegovina",
+        "to": "Croatia",
+        "distance": 290
+    },
+    {
+        "from": "Croatia",
+        "to": "Slovenia",
+        "distance": 117
+    },
+    {
+        "from": "Slovenia",
+        "to": "Austria",
+        "distance": 279
+    },
+    {
+        "from": "Slovenia",
+        "to": "Italy",
+        "distance": 489
+    },
+    {
+        "from": "Austria",
+        "to": "Italy",
+        "distance": 765
+    },
+    {
+        "from": "Austria",
+        "to": "Liechtenstein",
+        "distance": 530
+    },
+    {
+        "from": "Austria",
+        "to": "Switzerland",
+        "distance": 684
+    },
+    {
+        "from": "Switzerland",
+        "to": "Liechtenstein",
+        "distance": 160
+    },
+    {
+        "from": "Switzerland",
+        "to": "Italy",
+        "distance": 691
+    },
+    {
+        "from": "Switzerland",
+        "to": "France",
+        "distance": 436
+    },
+    {
+        "from": "Italy",
+        "to": "France",
+        "distance": 1105
+    },
+    {
+        "from": "Italy",
+        "to": "Vatican",
+        "distance": 1
+    },
+    {
+        "from": "Italy",
+        "to": "San Marino",
+        "distance": 228
+    },
+    {
+        "from": "France",
+        "to": "Monaco",
+        "distance": 690
+    },
+    {
+        "from": "France",
+        "to": "Spain",
+        "distance": 1053
+    },
+    {
+        "from": "France",
+        "to": "Andorra",
+        "distance": 709
+    },
+    {
+        "from": "Spain",
+        "to": "Andorra",
+        "distance": 494
+    },
+    {
+        "from": "Spain",
+        "to": "Portugal",
+        "distance": 502
+    },
+    {
+        "from": "Spain",
+        "to": "Gibraltar",
+        "distance": 497
+    },
+    {
+        "from": "Russia",
+        "to": "Abkhazia",
+        "distance": 1450
+    },
+    {
+        "from": "Russia",
+        "to": "South Ossetia",
+        "distance": 1550
+    },
+    {
+        "from": "Russia",
+        "to": "Georgia",
+        "distance": 1648
+    },
+    {
+        "from": "Russia",
+        "to": "Azerbaijan",
+        "distance": 1932
+    },
+    {
+        "from": "Russia",
+        "to": "Kazakhstan",
+        "distance": 2275
+    },
+    {
+        "from": "Russia",
+        "to": "Mongolia",
+        "distance": 4646
+    },
+    {
+        "from": "Russia",
+        "to": "China",
+        "distance": 5794
+    },
+    {
+        "from": "Russia",
+        "to": "North Korea",
+        "distance": 6414
+    },
+    {
+        "from": "Abkhazia",
+        "to": "Georgia",
+        "distance": 330
+    },
+    {
+        "from": "South Ossetia",
+        "to": "Georgia",
+        "distance": 92
+    },
+    {
+        "from": "Georgia",
+        "to": "Azerbaijan",
+        "distance": 447
+    },
+    {
+        "from": "Georgia",
+        "to": "Armenia",
+        "distance": 172
+    },
+    {
+        "from": "Georgia",
+        "to": "Turkey",
+        "distance": 1092
+    },
+    {
+        "from": "Azerbaijan",
+        "to": "Armenia",
+        "distance": 457
+    },
+    {
+        "from": "Azerbaijan",
+        "to": "Iran",
+        "distance": 602
+    },
+    {
+        "from": "Azerbaijan",
+        "to": "Turkey",
+        "distance": 1440
+    },
+    {
+        "from": "Armenia",
+        "to": "Turkey",
+        "distance": 989
+    },
+    {
+        "from": "Armenia",
+        "to": "Iran",
+        "distance": 789
+    },
+    {
+        "from": "Turkey",
+        "to": "Iran",
+        "distance": 1702
+    },
+    {
+        "from": "Turkey",
+        "to": "Iraq",
+        "distance": 1261
+    },
+    {
+        "from": "Turkey",
+        "to": "Syria",
+        "distance": 798
+    },
+    {
+        "from": "Syria",
+        "to": "Iraq",
+        "distance": 751
+    },
+    {
+        "from": "Syria",
+        "to": "Jordan",
+        "distance": 176
+    },
+    {
+        "from": "Syria",
+        "to": "Israel",
+        "distance": 218
+    },
+    {
+        "from": "Syria",
+        "to": "Lebanon",
+        "distance": 85
+    },
+    {
+        "from": "Lebanon",
+        "to": "Israel",
+        "distance": 237
+    },
+    {
+        "from": "Israel",
+        "to": "Jordan",
+        "distance": 71
+    },
+    {
+        "from": "Israel",
+        "to": "Egypt",
+        "distance": 423
+    },
+    {
+        "from": "Israel",
+        "to": "Gaza Strip",
+        "distance": 75
+    },
+    {
+        "from": "Israel",
+        "to": "West Bank",
+        "distance": 15
+    },
+    {
+        "from": "Gaza Strip",
+        "to": "Egypt",
+        "distance": 340
+    },
+    {
+        "from": "West Bank",
+        "to": "Jordan",
+        "distance": 40
+    },
+    {
+        "from": "Jordan",
+        "to": "Iraq",
+        "distance": 803
+    },
+    {
+        "from": "Jordan",
+        "to": "Saudi Arabia",
+        "distance": 1332
+    },
+    {
+        "from": "Iraq",
+        "to": "Saudi Arabia",
+        "distance": 991
+    },
+    {
+        "from": "Iraq",
+        "to": "Kuwait",
+        "distance": 558
+    },
+    {
+        "from": "Iraq",
+        "to": "Iran",
+        "distance": 695
+    },
+    {
+        "from": "Kuwait",
+        "to": "Saudi Arabia",
+        "distance": 501
+    },
+    {
+        "from": "Saudi Arabia",
+        "to": "Qatar",
+        "distance": 496
+    },
+    {
+        "from": "Saudi Arabia",
+        "to": "UAE",
+        "distance": 777
+    },
+    {
+        "from": "Saudi Arabia",
+        "to": "Oman",
+        "distance": 1182
+    },
+    {
+        "from": "Saudi Arabia",
+        "to": "Yemen",
+        "distance": 1007
+    },
+    {
+        "from": "Yemen",
+        "to": "Oman",
+        "distance": 1700
+    },
+    {
+        "from": "Oman",
+        "to": "UAE",
+        "distance": 382
+    },
+    {
+        "from": "Cyprus",
+        "to": "Northern Cyprus",
+        "distance": 1
+    },
+    {
+        "from": "Iran",
+        "to": "Turkmenistan",
+        "distance": 663
+    },
+    {
+        "from": "Iran",
+        "to": "Afghanistan",
+        "distance": 1622
+    },
+    {
+        "from": "Iran",
+        "to": "Pakistan",
+        "distance": 1947
+    },
+    {
+        "from": "Turkmenistan",
+        "to": "Kazakhstan",
+        "distance": 1400
+    },
+    {
+        "from": "Turkmenistan",
+        "to": "Uzbekistan",
+        "distance": 755
+    },
+    {
+        "from": "Turkmenistan",
+        "to": "Afghanistan",
+        "distance": 1055
+    },
+    {
+        "from": "Kazakhstan",
+        "to": "Uzbekistan",
+        "distance": 1105
+    },
+    {
+        "from": "Kazakhstan",
+        "to": "Kyrgyzstan",
+        "distance": 953
+    },
+    {
+        "from": "Kazakhstan",
+        "to": "China",
+        "distance": 3662
+    },
+    {
+        "from": "Uzbekistan",
+        "to": "Kyrgyzstan",
+        "distance": 477
+    },
+    {
+        "from": "Uzbekistan",
+        "to": "Tajikistan",
+        "distance": 304
+    },
+    {
+        "from": "Uzbekistan",
+        "to": "Afghanistan",
+        "distance": 759
+    },
+    {
+        "from": "Kyrgyzstan",
+        "to": "Tajikistan",
+        "distance": 651
+    },
+    {
+        "from": "Kyrgyzstan",
+        "to": "China",
+        "distance": 3450
+    },
+    {
+        "from": "Tajikistan",
+        "to": "Afghanistan",
+        "distance": 458
+    },
+    {
+        "from": "Tajikistan",
+        "to": "China",
+        "distance": 3700
+    },
+    {
+        "from": "Afghanistan",
+        "to": "Pakistan",
+        "distance": 377
+    },
+    {
+        "from": "Afghanistan",
+        "to": "China",
+        "distance": 4160
+    },
+    {
+        "from": "Pakistan",
+        "to": "India",
+        "distance": 683
+    },
+    {
+        "from": "Pakistan",
+        "to": "China",
+        "distance": 3780
+    },
+    {
+        "from": "India",
+        "to": "China",
+        "distance": 3780
+    },
+    {
+        "from": "India",
+        "to": "Nepal",
+        "distance": 807
+    },
+    {
+        "from": "India",
+        "to": "Bhutan",
+        "distance": 1205
+    },
+    {
+        "from": "India",
+        "to": "Bangladesh",
+        "distance": 1423
+    },
+    {
+        "from": "India",
+        "to": "Myanmar",
+        "distance": 1948
+    },
+    {
+        "from": "Nepal",
+        "to": "China",
+        "distance": 3080
+    },
+    {
+        "from": "Bhutan",
+        "to": "China",
+        "distance": 2700
+    },
+    {
+        "from": "Bangladesh",
+        "to": "Myanmar",
+        "distance": 638
+    },
+    {
+        "from": "Myanmar",
+        "to": "China",
+        "distance": 2600
+    },
+    {
+        "from": "Myanmar",
+        "to": "Laos",
+        "distance": 742
+    },
+    {
+        "from": "Myanmar",
+        "to": "Thailand",
+        "distance": 917
+    },
+    {
+        "from": "China",
+        "to": "Laos",
+        "distance": 2770
+    },
+    {
+        "from": "China",
+        "to": "Vietnam",
+        "distance": 2323
+    },
+    {
+        "from": "China",
+        "to": "North Korea",
+        "distance": 808
+    },
+    {
+        "from": "South Korea",
+        "to": "North Korea",
+        "distance": 195
+    },
+    {
+        "from": "Laos",
+        "to": "Vietnam",
+        "distance": 479
+    },
+    {
+        "from": "Laos",
+        "to": "Cambodia",
+        "distance": 754
+    },
+    {
+        "from": "Laos",
+        "to": "Thailand",
+        "distance": 516
+    },
+    {
+        "from": "Vietnam",
+        "to": "Cambodia",
+        "distance": 1058
+    },
+    {
+        "from": "Cambodia",
+        "to": "Thailand",
+        "distance": 532
+    },
+    {
+        "from": "Thailand",
+        "to": "Malaysia",
+        "distance": 1187
+    },
+    {
+        "from": "Malaysia",
+        "to": "Indonesia",
+        "distance": 1182
+    },
+    {
+        "from": "Malaysia",
+        "to": "Brunei",
+        "distance": 1500
+    },
+    {
+        "from": "Indonesia",
+        "to": "Papua New Guinea",
+        "distance": 4400
+    },
+    {
+        "from": "Indonesia",
+        "to": "East Timor",
+        "distance": 2100
+    },
+    {
+        "from": "Morocco",
+        "to": "Spain",
+        "distance": 763
+    },
+    {
+        "from": "Morocco",
+        "to": "Algeria",
+        "distance": 940
+    },
+    {
+        "from": "Morocco",
+        "to": "Western Sahara",
+        "distance": 950
+    },
+    {
+        "from": "Western Sahara",
+        "to": "Algeria",
+        "distance": 1700
+    },
+    {
+        "from": "Western Sahara",
+        "to": "Mauritania",
+        "distance": 750
+    },
+    {
+        "from": "Algeria",
+        "to": "Tunisia",
+        "distance": 633
+    },
+    {
+        "from": "Algeria",
+        "to": "Libya",
+        "distance": 1109
+    },
+    {
+        "from": "Algeria",
+        "to": "Niger",
+        "distance": 2577
+    },
+    {
+        "from": "Algeria",
+        "to": "Mali",
+        "distance": 2795
+    },
+    {
+        "from": "Algeria",
+        "to": "Mauritania",
+        "distance": 2750
+    },
+    {
+        "from": "Tunisia",
+        "to": "Libya",
+        "distance": 540
+    },
+    {
+        "from": "Libya",
+        "to": "Egypt",
+        "distance": 1745
+    },
+    {
+        "from": "Libya",
+        "to": "Sudan",
+        "distance": 2750
+    },
+    {
+        "from": "Libya",
+        "to": "Chad",
+        "distance": 2260
+    },
+    {
+        "from": "Libya",
+        "to": "Niger",
+        "distance": 2197
+    },
+    {
+        "from": "Egypt",
+        "to": "Sudan",
+        "distance": 1618
+    },
+    {
+        "from": "Sudan",
+        "to": "Eritrea",
+        "distance": 676
+    },
+    {
+        "from": "Sudan",
+        "to": "Ethiopia",
+        "distance": 1000
+    },
+    {
+        "from": "Sudan",
+        "to": "South Sudan",
+        "distance": 1200
+    },
+    {
+        "from": "Sudan",
+        "to": "Central African Republic",
+        "distance": 1695
+    },
+    {
+        "from": "Sudan",
+        "to": "Chad",
+        "distance": 1600
+    },
+    {
+        "from": "Eritrea",
+        "to": "Ethiopia",
+        "distance": 706
+    },
+    {
+        "from": "Eritrea",
+        "to": "Djibouti",
+        "distance": 555
+    },
+    {
+        "from": "Djibouti",
+        "to": "Ethiopia",
+        "distance": 561
+    },
+    {
+        "from": "Djibouti",
+        "to": "Somaliland",
+        "distance": 250
+    },
+    {
+        "from": "Ethiopia",
+        "to": "Somaliland",
+        "distance": 600
+    },
+    {
+        "from": "Ethiopia",
+        "to": "Somalia",
+        "distance": 1055
+    },
+    {
+        "from": "Ethiopia",
+        "to": "Kenya",
+        "distance": 1163
+    },
+    {
+        "from": "Ethiopia",
+        "to": "South Sudan",
+        "distance": 852
+    },
+    {
+        "from": "Somaliland",
+        "to": "Somalia",
+        "distance": 850
+    },
+    {
+        "from": "Somalia",
+        "to": "Kenya",
+        "distance": 1008
+    },
+    {
+        "from": "South Sudan",
+        "to": "Kenya",
+        "distance": 896
+    },
+    {
+        "from": "South Sudan",
+        "to": "Uganda",
+        "distance": 526
+    },
+    {
+        "from": "South Sudan",
+        "to": "DRC",
+        "distance": 2500
+    },
+    {
+        "from": "South Sudan",
+        "to": "Central African Republic",
+        "distance": 1070
+    },
+    {
+        "from": "Chad",
+        "to": "Central African Republic",
+        "distance": 946
+    },
+    {
+        "from": "Chad",
+        "to": "Cameroon",
+        "distance": 1098
+    },
+    {
+        "from": "Chad",
+        "to": "Niger",
+        "distance": 1492
+    },
+    {
+        "from": "Niger",
+        "to": "Nigeria",
+        "distance": 757
+    },
+    {
+        "from": "Niger",
+        "to": "Benin",
+        "distance": 820
+    },
+    {
+        "from": "Niger",
+        "to": "Burkina Faso",
+        "distance": 415
+    },
+    {
+        "from": "Niger",
+        "to": "Mali",
+        "distance": 1146
+    },
+    {
+        "from": "Mali",
+        "to": "Mauritania",
+        "distance": 900
+    },
+    {
+        "from": "Mali",
+        "to": "Senegal",
+        "distance": 1052
+    },
+    {
+        "from": "Mali",
+        "to": "Guinea",
+        "distance": 696
+    },
+    {
+        "from": "Mali",
+        "to": "Cote d'Ivoire",
+        "distance": 900
+    },
+    {
+        "from": "Mali",
+        "to": "Burkina Faso",
+        "distance": 705
+    },
+    {
+        "from": "Mauritania",
+        "to": "Senegal",
+        "distance": 406
+    },
+    {
+        "from": "Senegal",
+        "to": "Gambia",
+        "distance": 170
+    },
+    {
+        "from": "Senegal",
+        "to": "Guinea-Bissau",
+        "distance": 382
+    },
+    {
+        "from": "Senegal",
+        "to": "Guinea",
+        "distance": 704
+    },
+    {
+        "from": "Guinea-Bissau",
+        "to": "Guinea",
+        "distance": 348
+    },
+    {
+        "from": "Guinea",
+        "to": "Sierra Leone",
+        "distance": 117
+    },
+    {
+        "from": "Guinea",
+        "to": "Liberia",
+        "distance": 483
+    },
+    {
+        "from": "Guinea",
+        "to": "Cote d'Ivoire",
+        "distance": 798
+    },
+    {
+        "from": "Sierra Leone",
+        "to": "Liberia",
+        "distance": 380
+    },
+    {
+        "from": "Liberia",
+        "to": "Cote d'Ivoire",
+        "distance": 605
+    },
+    {
+        "from": "Cote d'Ivoire",
+        "to": "Burkina Faso",
+        "distance": 830
+    },
+    {
+        "from": "Cote d'Ivoire",
+        "to": "Ghana",
+        "distance": 498
+    },
+    {
+        "from": "Burkina Faso",
+        "to": "Ghana",
+        "distance": 768
+    },
+    {
+        "from": "Burkina Faso",
+        "to": "Togo",
+        "distance": 756
+    },
+    {
+        "from": "Burkina Faso",
+        "to": "Benin",
+        "distance": 794
+    },
+    {
+        "from": "Ghana",
+        "to": "Togo",
+        "distance": 170
+    },
+    {
+        "from": "Togo",
+        "to": "Benin",
+        "distance": 127
+    },
+    {
+        "from": "Benin",
+        "to": "Nigeria",
+        "distance": 605
+    },
+    {
+        "from": "Nigeria",
+        "to": "Cameroon",
+        "distance": 660
+    },
+    {
+        "from": "Cameroon",
+        "to": "Central African Republic",
+        "distance": 801
+    },
+    {
+        "from": "Cameroon",
+        "to": "Republic of the Congo",
+        "distance": 965
+    },
+    {
+        "from": "Cameroon",
+        "to": "Gabon",
+        "distance": 448
+    },
+    {
+        "from": "Cameroon",
+        "to": "Equatorial Guinea",
+        "distance": 300
+    },
+    {
+        "from": "Central African Republic",
+        "to": "DRC",
+        "distance": 1050
+    },
+    {
+        "from": "Central African Republic",
+        "to": "Republic of the Congo",
+        "distance": 1045
+    },
+    {
+        "from": "Equatorial Guinea",
+        "to": "Gabon",
+        "distance": 380
+    },
+    {
+        "from": "Gabon",
+        "to": "Republic of the Congo",
+        "distance": 843
+    },
+    {
+        "from": "Republic of the Congo",
+        "to": "Angola",
+        "distance": 556
+    },
+    {
+        "from": "Republic of the Congo",
+        "to": "DRC",
+        "distance": 5
+    },
+    {
+        "from": "DRC",
+        "to": "Angola",
+        "distance": 556
+    },
+    {
+        "from": "DRC",
+        "to": "Zambia",
+        "distance": 1745
+    },
+    {
+        "from": "DRC",
+        "to": "Tanzania",
+        "distance": 2300
+    },
+    {
+        "from": "DRC",
+        "to": "Burundi",
+        "distance": 1650
+    },
+    {
+        "from": "DRC",
+        "to": "Rwanda",
+        "distance": 1655
+    },
+    {
+        "from": "DRC",
+        "to": "Uganda",
+        "distance": 1950
+    },
+    {
+        "from": "Uganda",
+        "to": "Rwanda",
+        "distance": 380
+    },
+    {
+        "from": "Uganda",
+        "to": "Tanzania",
+        "distance": 750
+    },
+    {
+        "from": "Uganda",
+        "to": "Kenya",
+        "distance": 505
+    },
+    {
+        "from": "Kenya",
+        "to": "Tanzania",
+        "distance": 442
+    },
+    {
+        "from": "Rwanda",
+        "to": "Burundi",
+        "distance": 120
+    },
+    {
+        "from": "Rwanda",
+        "to": "Tanzania",
+        "distance": 730
+    },
+    {
+        "from": "Burundi",
+        "to": "Tanzania",
+        "distance": 620
+    },
+    {
+        "from": "Tanzania",
+        "to": "Mozambique",
+        "distance": 1980
+    },
+    {
+        "from": "Tanzania",
+        "to": "Malawi",
+        "distance": 865
+    },
+    {
+        "from": "Tanzania",
+        "to": "Zambia",
+        "distance": 1250
+    },
+    {
+        "from": "Malawi",
+        "to": "Mozambique",
+        "distance": 1350
+    },
+    {
+        "from": "Malawi",
+        "to": "Zambia",
+        "distance": 600
+    },
+    {
+        "from": "Mozambique",
+        "to": "Zambia",
+        "distance": 1150
+    },
+    {
+        "from": "Mozambique",
+        "to": "Zimbabwe",
+        "distance": 900
+    },
+    {
+        "from": "Mozambique",
+        "to": "Eswatini",
+        "distance": 150
+    },
+    {
+        "from": "Mozambique",
+        "to": "South Africa",
+        "distance": 450
+    },
+    {
+        "from": "Eswatini",
+        "to": "South Africa",
+        "distance": 297
+    },
+    {
+        "from": "South Africa",
+        "to": "Lesotho",
+        "distance": 400
+    },
+    {
+        "from": "South Africa",
+        "to": "Namibia",
+        "distance": 1165
+    },
+    {
+        "from": "South Africa",
+        "to": "Botswana",
+        "distance": 262
+    },
+    {
+        "from": "South Africa",
+        "to": "Zimbabwe",
+        "distance": 920
+    },
+    {
+        "from": "Angola",
+        "to": "Zambia",
+        "distance": 1700
+    },
+    {
+        "from": "Angola",
+        "to": "Namibia",
+        "distance": 1560
+    },
+    {
+        "from": "Namibia",
+        "to": "Zambia",
+        "distance": 1450
+    },
+    {
+        "from": "Namibia",
+        "to": "Botswana",
+        "distance": 905
+    },
+    {
+        "from": "Botswana",
+        "to": "Zimbabwe",
+        "distance": 905
+    },
+    {
+        "from": "Zimbabwe",
+        "to": "Zambia",
+        "distance": 352
+    },
+    {
+        "from": "Zambia",
+        "to": "Botswana",
+        "distance": 1100
+    },
+    {
+        "from": "Namibia",
+        "to": "Zimbabwe",
+        "distance": 1500
+    }
+]

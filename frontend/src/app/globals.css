@@ -1,0 +1,259 @@
+/* stylelint-disable at-rule-no-unknown */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+
+  /* Fluid Typography System
+   * Formula: clamp(min, preferred, max)
+   * Min width: 320px, Max width: 1920px
+   * Base text: 15px → 17px
+   */
+  --font-base: clamp(0.9375rem, 0.9125rem + 0.125vw, 1.0625rem);
+  --font-body: clamp(0.9375rem, 0.9125rem + 0.125vw, 1.0625rem);
+  --font-secondary: clamp(0.875rem, 0.8625rem + 0.0625vw, 0.9375rem);
+  --font-caption: clamp(0.75rem, 0.7375rem + 0.0625vw, 0.8125rem);
+  --font-label: clamp(0.75rem, 0.7375rem + 0.0625vw, 0.8125rem);
+  --font-tiny: var(--font-caption);
+  --font-h3: clamp(1.125rem, 1.075rem + 0.25vw, 1.375rem);
+  --font-h2: clamp(1.375rem, 1.275rem + 0.5vw, 1.875rem);
+  --font-h1: clamp(1.75rem, 1.55rem + 1vw, 2.75rem);
+  --font-xl: clamp(1.25rem, 1.175rem + 0.375vw, 1.625rem);
+  --font-display: clamp(2rem, 1.8rem + 1vw, 3rem);
+  --line-copy: 1.6;
+  --line-copy-tight: 1.55;
+  --line-copy-snug: 1.42;
+  --line-heading: 1.18;
+  --line-display: 1.08;
+  --site-shell-max: clamp(90rem, 96vw, 132rem);
+  --page-content-reading: clamp(56rem, 74vw, 82rem);
+  --page-content-wide: clamp(64rem, 82vw, 104rem);
+  --page-content-expanded: clamp(68rem, 86vw, 110rem);
+  --page-content-ultra: clamp(72rem, 90vw, 118rem);
+  --page-side-rail: clamp(10rem, 12vw, 18rem);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #05070d;
+  box-sizing: border-box;
+  color: #ffffff;
+  font-size: var(--font-body);
+  line-height: var(--line-copy);
+  min-width: 320px;
+}
+
+/* Header reserved area - 64px (h-16) + safe spacing */
+:root {
+  --header-height: 64px;
+  --header-safe-zone: 80px;
+  /* 64px + 16px spacing */
+}
+
+/* Ensure main content areas have minimum spacing and respect header */
+main {
+  box-sizing: border-box;
+}
+
+.container {
+  max-width: var(--site-shell-max);
+}
+
+/* Images and media should respect container boundaries */
+img,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Prevent text from touching container edges in tight spaces */
+@media (max-width: 640px) {
+
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    padding-left: 0.125rem;
+    padding-right: 0.125rem;
+  }
+}
+
+a {
+  color: #9ae6ff;
+}
+
+a:hover {
+  color: #b3ecff;
+}
+
+@layer components {
+  .page-content-reading {
+    @apply mx-auto w-full;
+    max-width: var(--page-content-reading);
+  }
+
+  .page-content-wide {
+    @apply mx-auto w-full;
+    max-width: var(--page-content-wide);
+  }
+
+  .page-content-expanded {
+    @apply mx-auto w-full;
+    max-width: var(--page-content-expanded);
+  }
+
+  .page-content-ultra {
+    @apply mx-auto w-full;
+    max-width: var(--page-content-ultra);
+  }
+
+  .text-h1 {
+    font-size: var(--font-h1);
+    line-height: var(--line-heading);
+    @apply font-bold uppercase tracking-wider;
+  }
+
+  .text-h2 {
+    font-size: var(--font-h2);
+    line-height: 1.2;
+    @apply font-bold uppercase tracking-wide;
+  }
+
+  .text-h3 {
+    font-size: var(--font-h3);
+    line-height: 1.25;
+    @apply font-bold;
+  }
+
+  .text-body {
+    font-size: var(--font-body);
+    line-height: var(--line-copy);
+  }
+
+  .text-secondary {
+    font-size: var(--font-secondary);
+    line-height: var(--line-copy-tight);
+  }
+
+  .text-caption {
+    font-size: var(--font-caption);
+    line-height: var(--line-copy-snug);
+  }
+
+  .text-label {
+    font-size: var(--font-label);
+    line-height: 1.35;
+    @apply font-semibold uppercase tracking-widest;
+  }
+
+  .text-tiny {
+    font-size: var(--font-caption);
+    line-height: var(--line-copy-snug);
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-white/10 px-4 py-2 text-secondary font-semibold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white;
+  }
+
+  .card-glow {
+    @apply rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur;
+    box-shadow: 0 10px 60px -20px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* Страховка для старых фиксированных микрошрифтов */
+.text-\[8px\],
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\],
+.text-\[12px\] {
+  font-size: var(--font-caption) !important;
+  line-height: var(--line-copy-snug) !important;
+}
+
+@media (min-width: 640px) {
+  .sm\:text-\[8px\],
+  .sm\:text-\[9px\],
+  .sm\:text-\[10px\],
+  .sm\:text-\[11px\],
+  .sm\:text-\[12px\] {
+    font-size: var(--font-caption) !important;
+    line-height: var(--line-copy-snug) !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:text-\[8px\],
+  .md\:text-\[9px\],
+  .md\:text-\[10px\],
+  .md\:text-\[11px\],
+  .md\:text-\[12px\] {
+    font-size: var(--font-caption) !important;
+    line-height: var(--line-copy-snug) !important;
+  }
+}
+
+/* Скрываем полосу прокрутки, но сохраняем возможность скролла внутри блоков */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* stylelint-enable at-rule-no-unknown */
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+@media (min-width: 1536px) {
+  .max-w-3xl:not([class*='2xl:max-w']):not([class*='3xl:max-w']) {
+    max-width: var(--page-content-reading);
+  }
+
+  .max-w-4xl:not([class*='2xl:max-w']):not([class*='3xl:max-w']) {
+    max-width: var(--page-content-wide);
+  }
+
+  .max-w-5xl:not([class*='2xl:max-w']):not([class*='3xl:max-w']) {
+    max-width: var(--page-content-expanded);
+  }
+
+  .max-w-6xl:not([class*='2xl:max-w']):not([class*='3xl:max-w']) {
+    max-width: var(--page-content-ultra);
+  }
+}

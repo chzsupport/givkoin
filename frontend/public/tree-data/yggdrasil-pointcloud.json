@@ -1,0 +1,182 @@
+{
+  "version": 2,
+  "format": "packed-pointcloud-v2",
+  "sections": {
+    "ground": {
+      "points": 148428,
+      "originalPoints": 299710,
+      "positions": {
+        "offsetBytes": 0,
+        "length": 445284,
+        "componentType": "uint16",
+        "min": [
+          -191.67697143554688,
+          -125.75823974609375,
+          -205.4056396484375
+        ],
+        "max": [
+          205.159912109375,
+          -4.2776198387146,
+          186.2790985107422
+        ]
+      },
+      "colorMode": "palette",
+      "singleColor": null,
+      "palette": [
+        [
+          44,
+          30,
+          22
+        ],
+        [
+          56,
+          38,
+          28
+        ],
+        [
+          68,
+          47,
+          35
+        ],
+        [
+          82,
+          58,
+          43
+        ]
+      ],
+      "colors": {
+        "offsetBytes": 890568,
+        "length": 148428,
+        "componentType": "uint8"
+      }
+    },
+    "trunk": {
+      "points": 700,
+      "originalPoints": 700,
+      "positions": {
+        "offsetBytes": 1038996,
+        "length": 2100,
+        "componentType": "uint16",
+        "min": [
+          -39.724124908447266,
+          -20,
+          -31.149105072021484
+        ],
+        "max": [
+          40.13264083862305,
+          250,
+          51.149105072021484
+        ]
+      },
+      "colorMode": "single",
+      "singleColor": [
+        68,
+        48,
+        35
+      ],
+      "palette": null,
+      "colors": null
+    },
+    "wood": {
+      "points": 76833,
+      "originalPoints": 81322,
+      "positions": {
+        "offsetBytes": 1043196,
+        "length": 230499,
+        "componentType": "uint16",
+        "min": [
+          -170.57403564453125,
+          -25.75078773498535,
+          -157.91259765625
+        ],
+        "max": [
+          151.7687225341797,
+          274.02435302734375,
+          142.72047424316406
+        ]
+      },
+      "colorMode": "palette",
+      "singleColor": null,
+      "palette": [
+        [
+          65,
+          46,
+          33
+        ],
+        [
+          88,
+          64,
+          46
+        ],
+        [
+          112,
+          81,
+          60
+        ],
+        [
+          148,
+          118,
+          92
+        ],
+        [
+          226,
+          180,
+          139
+        ]
+      ],
+      "colors": {
+        "offsetBytes": 1504194,
+        "length": 76833,
+        "componentType": "uint8"
+      }
+    },
+    "foliage": {
+      "points": 375380,
+      "originalPoints": 377260,
+      "positions": {
+        "offsetBytes": 1581028,
+        "length": 1126140,
+        "componentType": "uint16",
+        "min": [
+          -183.00450134277344,
+          116.01010131835938,
+          -171.18145751953125
+        ],
+        "max": [
+          163.93338012695312,
+          287.81549072265625,
+          156.6598358154297
+        ]
+      },
+      "colorMode": "palette",
+      "singleColor": null,
+      "palette": [
+        [
+          152,
+          112,
+          82
+        ],
+        [
+          176,
+          132,
+          99
+        ],
+        [
+          201,
+          154,
+          117
+        ],
+        [
+          226,
+          180,
+          139
+        ]
+      ],
+      "colors": {
+        "offsetBytes": 3833308,
+        "length": 375380,
+        "componentType": "uint8"
+      }
+    }
+  }
+}

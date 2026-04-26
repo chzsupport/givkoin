@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --panel-bg: #0b1220;
+    --panel-card: rgba(17, 25, 40, 0.75);
+    --panel-stroke: rgba(255, 255, 255, 0.1);
+    --accent-blue: #3b82f6;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #f43f5e;
+    --accent-violet: #8b5cf6;
+    --font-base: clamp(0.9375rem, 0.9125rem + 0.125vw, 1.0625rem);
+    --font-body: clamp(0.9375rem, 0.9125rem + 0.125vw, 1.0625rem);
+    --font-secondary: clamp(0.875rem, 0.8625rem + 0.0625vw, 0.9375rem);
+    --font-caption: clamp(0.75rem, 0.7375rem + 0.0625vw, 0.8125rem);
+    --font-label: clamp(0.75rem, 0.7375rem + 0.0625vw, 0.8125rem);
+    --font-tiny: var(--font-caption);
+    --font-h3: clamp(1.125rem, 1.075rem + 0.25vw, 1.375rem);
+    --font-h2: clamp(1.375rem, 1.275rem + 0.5vw, 1.875rem);
+    --font-h1: clamp(1.75rem, 1.55rem + 1vw, 2.75rem);
+    --font-xl: clamp(1.25rem, 1.175rem + 0.375vw, 1.625rem);
+    --font-display: clamp(2rem, 1.8rem + 1vw, 3rem);
+    --line-copy: 1.6;
+    --line-copy-tight: 1.55;
+    --line-copy-snug: 1.42;
+    --line-heading: 1.18;
+    --line-display: 1.08;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-[#0b1220] text-slate-50 antialiased;
+    font-size: var(--font-body);
+    line-height: var(--line-copy);
+    background-image: 
+      radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 40%),
+      radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .text-h1 {
+    font-size: var(--font-h1);
+    line-height: var(--line-heading);
+    @apply font-bold uppercase tracking-wider;
+  }
+
+  .text-h2 {
+    font-size: var(--font-h2);
+    line-height: 1.2;
+    @apply font-bold uppercase tracking-wide;
+  }
+
+  .text-h3 {
+    font-size: var(--font-h3);
+    line-height: 1.25;
+    @apply font-bold;
+  }
+
+  .text-body {
+    font-size: var(--font-body);
+    line-height: var(--line-copy);
+  }
+
+  .text-secondary {
+    font-size: var(--font-secondary);
+    line-height: var(--line-copy-tight);
+  }
+
+  .text-caption {
+    font-size: var(--font-caption);
+    line-height: var(--line-copy-snug);
+  }
+
+  .text-label {
+    font-size: var(--font-label);
+    line-height: 1.35;
+    @apply font-semibold uppercase tracking-widest;
+  }
+
+  .text-tiny {
+    font-size: var(--font-caption);
+    line-height: var(--line-copy-snug);
+  }
+
+  .glass-panel {
+    @apply rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl;
+  }
+
+  .card-premium {
+    @apply relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/50 p-6 transition-all duration-300 hover:border-white/20 hover:bg-slate-900/70;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 rounded-xl px-4 py-3 text-secondary font-medium text-slate-400 transition-all duration-200 hover:bg-white/5 hover:text-white;
+  }
+
+  .nav-item-active {
+    @apply bg-blue-600/20 text-blue-400 shadow-[0_0_20px_rgba(37,99,235,0.2)] border border-blue-500/30;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-secondary font-semibold text-white transition-all hover:bg-blue-500 hover:shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95 disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-secondary font-semibold text-white transition-all hover:bg-white/10 active:scale-95 disabled:opacity-50;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-white/10 bg-slate-950/50 px-4 py-2 text-body text-white placeholder-slate-500 outline-none transition-all focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20;
+  }
+
+  .badge-premium {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-caption font-medium;
+  }
+}
+
+/* Страховка для старых фиксированных микрошрифтов */
+.text-\[8px\],
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\],
+.text-\[12px\] {
+  font-size: var(--font-caption) !important;
+  line-height: var(--line-copy-snug) !important;
+}
+
+@media (min-width: 640px) {
+  .sm\:text-\[8px\],
+  .sm\:text-\[9px\],
+  .sm\:text-\[10px\],
+  .sm\:text-\[11px\],
+  .sm\:text-\[12px\] {
+    font-size: var(--font-caption) !important;
+    line-height: var(--line-copy-snug) !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:text-\[8px\],
+  .md\:text-\[9px\],
+  .md\:text-\[10px\],
+  .md\:text-\[11px\],
+  .md\:text-\[12px\] {
+    font-size: var(--font-caption) !important;
+    line-height: var(--line-copy-snug) !important;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-white/10 hover:bg-white/20;
+}
