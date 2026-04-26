@@ -1,22 +1,16 @@
 'use client';
 
 import React, { useRef, Suspense } from 'react';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
+(useGLTF as unknown as { setDecoderPath: (path: string) => void }).setDecoderPath(DRACO_DECODER_PATH);
 
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const gltf = useLoader(
-    GLTFLoader as any,
-    '/tree-model.glb',
-    (loader: any) => loader.setDRACOLoader(dracoLoader)
-  ) as any;
-  const scene = gltf.scene as THREE.Group;
+  const { scene } = useGLTF('/tree-model.glb', true);
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
