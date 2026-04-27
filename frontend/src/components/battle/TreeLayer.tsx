@@ -324,16 +324,16 @@ function TreeSatellites() {
 
   const sats = useMemo<SatelliteCfg[]>(
     () => [
-      { id: 1, color: '#6bbcff', radius: 150, yBase: 130, yAmp: 22, speed: 0.7, dir: 1, size: 10, light: 140 },
-      { id: 2, color: '#ffb16b', radius: 185, yBase: 170, yAmp: 26, speed: 0.55, dir: -1, size: 12, light: 130 },
-      { id: 3, color: '#e7d7ff', radius: 220, yBase: 210, yAmp: 34, speed: 0.42, dir: 1, size: 13, light: 150 },
-      { id: 4, color: '#7dffb3', radius: 260, yBase: 150, yAmp: 18, speed: 0.62, dir: -1, size: 11, light: 120 },
-      { id: 5, color: '#ffd36b', radius: 300, yBase: 240, yAmp: 30, speed: 0.33, dir: 1, size: 14, light: 190 },
-      { id: 6, color: '#ff6bd6', radius: 340, yBase: 190, yAmp: 22, speed: 0.48, dir: -1, size: 12, light: 140 },
-      { id: 7, color: '#6bffea', radius: 380, yBase: 260, yAmp: 36, speed: 0.28, dir: 1, size: 15, light: 220 },
-      { id: 8, color: '#b26bff', radius: 420, yBase: 230, yAmp: 28, speed: 0.22, dir: -1, size: 16, light: 200 },
-      { id: 9, color: '#ffffff', radius: 460, yBase: 170, yAmp: 26, speed: 0.36, dir: 1, size: 11, light: 160 },
-      { id: 10, color: '#ff7a6b', radius: 520, yBase: 290, yAmp: 40, speed: 0.18, dir: -1, size: 18, light: 260 },
+      { id: 1, color: '#6bbcff', radius: 120, yBase: 90, yAmp: 14, speed: 0.7, dir: 1, size: 14, light: 140 },
+      { id: 2, color: '#ffb16b', radius: 135, yBase: 120, yAmp: 16, speed: 0.55, dir: -1, size: 16, light: 130 },
+      { id: 3, color: '#e7d7ff', radius: 150, yBase: 150, yAmp: 18, speed: 0.42, dir: 1, size: 17, light: 150 },
+      { id: 4, color: '#7dffb3', radius: 165, yBase: 105, yAmp: 12, speed: 0.62, dir: -1, size: 15, light: 120 },
+      { id: 5, color: '#ffd36b', radius: 180, yBase: 170, yAmp: 16, speed: 0.33, dir: 1, size: 18, light: 190 },
+      { id: 6, color: '#ff6bd6', radius: 195, yBase: 135, yAmp: 14, speed: 0.48, dir: -1, size: 16, light: 140 },
+      { id: 7, color: '#6bffea', radius: 210, yBase: 190, yAmp: 20, speed: 0.28, dir: 1, size: 19, light: 220 },
+      { id: 8, color: '#b26bff', radius: 225, yBase: 165, yAmp: 16, speed: 0.22, dir: -1, size: 20, light: 200 },
+      { id: 9, color: '#ffffff', radius: 240, yBase: 120, yAmp: 16, speed: 0.36, dir: 1, size: 15, light: 160 },
+      { id: 10, color: '#ff7a6b', radius: 260, yBase: 210, yAmp: 22, speed: 0.18, dir: -1, size: 22, light: 260 },
     ],
     []
   );
