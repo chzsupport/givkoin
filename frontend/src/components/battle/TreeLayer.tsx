@@ -18,6 +18,8 @@ type SatelliteCfg = {
   light: number;
 };
 
+const SATELLITE_COLUMN_X = 160;
+
 function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[number, number]> }) {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -194,7 +196,7 @@ function Satellite({
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    ref.current.position.set(0, cfg.yBase + Math.sin(t * 0.9 + cfg.id) * cfg.yAmp, 0);
+    ref.current.position.set(SATELLITE_COLUMN_X, cfg.yBase + Math.sin(t * 0.9 + cfg.id) * cfg.yAmp, 0);
 
     if (cfg.id === 5) {
       const s = 1 + Math.sin(t * 2.4) * 0.25;
