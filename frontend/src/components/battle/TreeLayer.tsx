@@ -52,7 +52,10 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
 export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
   return (
     <Suspense fallback={null}>
-      <TreeModel rotate={rotate} />
+      <group>
+        <TreeModel rotate={rotate} />
+        <TreeSatellites />
+      </group>
     </Suspense>
   );
 }
@@ -132,7 +135,6 @@ export function TreeLayer({
         <ambientLight intensity={0.25} />
         <group scale={scale} position={position}>
           <YggdrasilTree rotate={rotate} />
-          <TreeSatellites />
         </group>
       </Canvas>
     </div>
