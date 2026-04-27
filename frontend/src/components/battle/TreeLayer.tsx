@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useMemo, useRef, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { useEffect, useMemo, useRef, Suspense } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Text, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
 (useGLTF as unknown as { setDecoderPath: (path: string) => void }).setDecoderPath(DRACO_DECODER_PATH);
@@ -16,16 +19,6 @@ type SatelliteCfg = {
   yAmp: number;
   size: number;
   light: number;
-  coreOpacity: number;
-  aura1Scale: number;
-  aura1Opacity: number;
-  aura2Scale: number;
-  aura2Opacity: number;
-  ray: boolean;
-  rayScale: number;
-  rayStrength: number;
-  raySoftness: number;
-  flare: boolean;
 };
 
 const SATELLITE_COLUMN_X = 160;
@@ -50,6 +43,83 @@ function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[n
   tex.needsUpdate = true;
   return tex;
 }
+
+function makeNoiseTexture(seed: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.Texture();
+
+  const img = ctx.createImageData(128, 128);
+  let s = seed;
+  const rnd = () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.floor(200 + rnd() * 55);
+    img.data[i + 0] = v;
+    img.data[i + 1] = v;
+    img.data[i + 2] = v;
+    img.data[i + 3] = Math.floor(180 + rnd() * 75);
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+const fresnelVertex = `
+varying vec3 vNormalW;
+varying vec3 vViewDirW;
+void main(){
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vNormalW = normalize(mat3(modelMatrix) * normal);
+  vViewDirW = normalize(cameraPosition - worldPos.xyz);
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`;
+
+const fresnelFragment = `
+uniform vec3 uColor;
+uniform float uPower;
+uniform float uIntensity;
+varying vec3 vNormalW;
+varying vec3 vViewDirW;
+void main(){
+  float fres = pow(1.0 - max(dot(vNormalW, vViewDirW), 0.0), uPower);
+  vec3 col = uColor * (fres * uIntensity);
+  gl_FragColor = vec4(col, fres);
+}
+`;
+
+const raymarchVertex = `
+varying vec3 vPos;
+void main(){
+  vPos = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const raymarchFragment = `
+uniform vec3 uColor;
+uniform float uRadius;
+uniform float uGlow;
+varying vec3 vPos;
+void main(){
+  float d = length(vPos);
+  float surface = smoothstep(uRadius, uRadius - 0.02, d);
+  float outside = max(d - uRadius, 0.0);
+  float glow = exp(-outside * uGlow);
+  float a = clamp(surface * 0.25 + glow * 0.55, 0.0, 1.0);
+  vec3 col = uColor * (glow * 1.2);
+  gl_FragColor = vec4(col, a);
+}
+`;
 
 function makeCircleTexture() {
   const canvas = document.createElement('canvas');
@@ -105,8 +175,10 @@ function Satellite({
   const ref = useRef<THREE.Group>(null!);
   const lensflareRef = useRef<Lensflare | null>(null);
 
+  const emissionMap = useMemo(() => makeNoiseTexture(cfg.id * 1337 + 7), [cfg.id]);
+
   const lensflare = useMemo(() => {
-    if (!cfg.flare) return null;
+    if (cfg.id !== 9) return null;
 
     const lf = new Lensflare();
     const tex = makeCircleTexture();
@@ -114,7 +186,7 @@ function Satellite({
     lf.addElement(new LensflareElement(tex, 120, 0.35, new THREE.Color('#ffffff')));
     lf.addElement(new LensflareElement(tex, 70, 0.65, new THREE.Color(cfg.color)));
     return lf;
-  }, [cfg.flare, cfg.color]);
+  }, [cfg.id, cfg.color]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -147,31 +219,156 @@ function Satellite({
     <group ref={ref}>
       <pointLight intensity={cfg.light} distance={0} decay={0} color={color} />
 
-      <group>
-        <sprite scale={[cfg.size * cfg.aura1Scale, cfg.size * cfg.aura1Scale, 1]}>
-          <spriteMaterial
-            map={auraSoft}
-            color={color}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            opacity={cfg.aura1Opacity}
-          />
-        </sprite>
-        <sprite scale={[cfg.size * cfg.aura2Scale, cfg.size * cfg.aura2Scale, 1]}>
-          <spriteMaterial
-            map={auraHard}
-            color={color}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            opacity={cfg.aura2Opacity}
-          />
-        </sprite>
-
-        {cfg.ray && (
+      {cfg.id === 1 && (
+        <group>
+          <sprite scale={[cfg.size * 10.5, cfg.size * 10.5, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.14} />
+          </sprite>
           <mesh>
-            <planeGeometry args={[cfg.size * cfg.rayScale, cfg.size * cfg.rayScale]} />
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={6} roughness={0.2} metalness={0.0} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 2 && (
+        <group>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.2} />
+          </mesh>
+          <mesh>
+            <sphereGeometry args={[cfg.size * 1.45, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.08} depthWrite={false} blending={THREE.AdditiveBlending} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 3 && (
+        <group>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <shaderMaterial
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              vertexShader={fresnelVertex}
+              fragmentShader={fresnelFragment}
+              uniforms={{
+                uColor: { value: new THREE.Color(color) },
+                uPower: { value: 2.6 },
+                uIntensity: { value: 1.9 },
+              }}
+            />
+          </mesh>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.12} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 4 && (
+        <group>
+          <mesh>
+            <planeGeometry args={[cfg.size * 12.5, cfg.size * 12.5]} />
+            <meshBasicMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
+          </mesh>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.14} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 5 && (
+        <group>
+          <sprite scale={[cfg.size * 14.0, cfg.size * 14.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
+          </sprite>
+          <sprite scale={[cfg.size * 7.0, cfg.size * 7.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.12} />
+          </sprite>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.14} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 6 && (
+        <group>
+          <sprite scale={[cfg.size * 10.5, cfg.size * 10.5, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.14} />
+          </sprite>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={4.5} roughness={0.15} metalness={0.0} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 7 && (
+        <group>
+          <sprite scale={[cfg.size * 18.0, cfg.size * 18.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.1} />
+          </sprite>
+          <sprite position={[0, 0, -cfg.size * 1.2]} scale={[cfg.size * 14.0, cfg.size * 14.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.07} />
+          </sprite>
+          <sprite position={[0, 0, cfg.size * 1.2]} scale={[cfg.size * 14.0, cfg.size * 14.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.07} />
+          </sprite>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.12} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 8 && (
+        <group>
+          <mesh>
+            <sphereGeometry args={[cfg.size, 64, 64]} />
+            <shaderMaterial
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              vertexShader={raymarchVertex}
+              fragmentShader={raymarchFragment}
+              uniforms={{
+                uColor: { value: new THREE.Color(color) },
+                uRadius: { value: cfg.size * 0.95 },
+                uGlow: { value: 0.35 },
+              }}
+            />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 9 && (
+        <group>
+          <sprite scale={[cfg.size * 12.5, cfg.size * 12.5, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
+          </sprite>
+          <sprite scale={[cfg.size * 6.0, cfg.size * 6.0, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
+          </sprite>
+          {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshBasicMaterial color={color} transparent opacity={0.14} />
+          </mesh>
+        </group>
+      )}
+
+      {cfg.id === 10 && (
+        <group>
+          <sprite scale={[cfg.size * 11.5, cfg.size * 11.5, 1]}>
+            <spriteMaterial map={emissionMap} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.22} />
+          </sprite>
+          <mesh>
+            <planeGeometry args={[cfg.size * 17.0, cfg.size * 17.0]} />
             <shaderMaterial
               transparent
               depthWrite={false}
@@ -180,26 +377,63 @@ function Satellite({
               fragmentShader={rayGlowFragment}
               uniforms={{
                 uColor: { value: new THREE.Color(color) },
-                uStrength: { value: cfg.rayStrength },
-                uSoftness: { value: cfg.raySoftness },
+                uStrength: { value: 1.15 },
+                uSoftness: { value: 0.45 },
               }}
             />
           </mesh>
-        )}
-
-        {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
-      </group>
-
-      <mesh>
-        <sphereGeometry args={[cfg.size, 32, 32]} />
-        <meshBasicMaterial color={color} transparent opacity={cfg.coreOpacity} />
-      </mesh>
+          {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
+          <mesh>
+            <sphereGeometry args={[cfg.size, 32, 32]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={7.5} roughness={0.1} metalness={0.0} />
+          </mesh>
+        </group>
+      )}
 
       <Text color="#ffffff" fontSize={cfg.size * 0.95} anchorX="center" anchorY="middle" position={[0, labelOffset, 0]}>
         {String(cfg.id)}
       </Text>
     </group>
   );
+}
+
+function SceneBloom() {
+  const { gl, scene, camera, size } = useThree();
+  const composerRef = useRef<EffectComposer | null>(null);
+
+  useEffect(() => {
+    const composer = new EffectComposer(gl);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 0.9, 0.85, 0.15);
+    bloomPass.threshold = 0.0;
+    bloomPass.strength = 0.9;
+    bloomPass.radius = 0.75;
+
+    composer.addPass(bloomPass);
+    composer.setSize(size.width, size.height);
+
+    composerRef.current = composer;
+
+    return () => {
+      composerRef.current = null;
+      composer.dispose();
+    };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    composer.setSize(size.width, size.height);
+  }, [size.width, size.height]);
+
+  useFrame(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    composer.render();
+  }, 1);
+
+  return null;
 }
 
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
@@ -293,17 +527,7 @@ function TreeSatellites() {
         yBase: 250,
         yAmp: 0,
         size: 16,
-        light: 35,
-        coreOpacity: 0.12,
-        aura1Scale: 9.5,
-        aura1Opacity: 0.12,
-        aura2Scale: 4.8,
-        aura2Opacity: 0.1,
-        ray: false,
-        rayScale: 0,
-        rayStrength: 0,
-        raySoftness: 0,
-        flare: false,
+        light: 140,
       },
       {
         id: 2,
@@ -311,17 +535,7 @@ function TreeSatellites() {
         yBase: 205,
         yAmp: 0,
         size: 16,
-        light: 45,
-        coreOpacity: 0.13,
-        aura1Scale: 10.2,
-        aura1Opacity: 0.14,
-        aura2Scale: 5.1,
-        aura2Opacity: 0.11,
-        ray: false,
-        rayScale: 0,
-        rayStrength: 0,
-        raySoftness: 0,
-        flare: false,
+        light: 110,
       },
       {
         id: 3,
@@ -329,17 +543,7 @@ function TreeSatellites() {
         yBase: 160,
         yAmp: 0,
         size: 16,
-        light: 55,
-        coreOpacity: 0.14,
-        aura1Scale: 10.8,
-        aura1Opacity: 0.16,
-        aura2Scale: 5.3,
-        aura2Opacity: 0.12,
-        ray: true,
-        rayScale: 12.0,
-        rayStrength: 0.38,
-        raySoftness: 0.75,
-        flare: false,
+        light: 100,
       },
       {
         id: 4,
@@ -347,17 +551,7 @@ function TreeSatellites() {
         yBase: 115,
         yAmp: 0,
         size: 16,
-        light: 65,
-        coreOpacity: 0.15,
-        aura1Scale: 11.5,
-        aura1Opacity: 0.18,
-        aura2Scale: 5.6,
-        aura2Opacity: 0.13,
-        ray: true,
-        rayScale: 12.5,
-        rayStrength: 0.48,
-        raySoftness: 0.7,
-        flare: false,
+        light: 90,
       },
       {
         id: 5,
@@ -365,17 +559,7 @@ function TreeSatellites() {
         yBase: 70,
         yAmp: 0,
         size: 16,
-        light: 75,
-        coreOpacity: 0.16,
-        aura1Scale: 12.2,
-        aura1Opacity: 0.2,
-        aura2Scale: 5.9,
-        aura2Opacity: 0.14,
-        ray: true,
-        rayScale: 13.0,
-        rayStrength: 0.58,
-        raySoftness: 0.65,
-        flare: false,
+        light: 90,
       },
       {
         id: 6,
@@ -383,17 +567,7 @@ function TreeSatellites() {
         yBase: 25,
         yAmp: 0,
         size: 16,
-        light: 85,
-        coreOpacity: 0.17,
-        aura1Scale: 13.0,
-        aura1Opacity: 0.22,
-        aura2Scale: 6.2,
-        aura2Opacity: 0.15,
-        ray: true,
-        rayScale: 13.5,
-        rayStrength: 0.68,
-        raySoftness: 0.62,
-        flare: false,
+        light: 125,
       },
       {
         id: 7,
@@ -401,17 +575,7 @@ function TreeSatellites() {
         yBase: -20,
         yAmp: 0,
         size: 16,
-        light: 95,
-        coreOpacity: 0.18,
-        aura1Scale: 13.8,
-        aura1Opacity: 0.24,
-        aura2Scale: 6.6,
-        aura2Opacity: 0.16,
-        ray: true,
-        rayScale: 14.2,
-        rayStrength: 0.78,
-        raySoftness: 0.58,
-        flare: false,
+        light: 105,
       },
       {
         id: 8,
@@ -419,17 +583,7 @@ function TreeSatellites() {
         yBase: -65,
         yAmp: 0,
         size: 16,
-        light: 110,
-        coreOpacity: 0.19,
-        aura1Scale: 14.6,
-        aura1Opacity: 0.26,
-        aura2Scale: 7.0,
-        aura2Opacity: 0.17,
-        ray: true,
-        rayScale: 15.0,
-        rayStrength: 0.88,
-        raySoftness: 0.55,
-        flare: false,
+        light: 90,
       },
       {
         id: 9,
@@ -437,17 +591,7 @@ function TreeSatellites() {
         yBase: -110,
         yAmp: 0,
         size: 16,
-        light: 135,
-        coreOpacity: 0.2,
-        aura1Scale: 15.5,
-        aura1Opacity: 0.28,
-        aura2Scale: 7.6,
-        aura2Opacity: 0.18,
-        ray: true,
-        rayScale: 15.8,
-        rayStrength: 0.98,
-        raySoftness: 0.52,
-        flare: true,
+        light: 140,
       },
       {
         id: 10,
@@ -455,17 +599,7 @@ function TreeSatellites() {
         yBase: -155,
         yAmp: 0,
         size: 16,
-        light: 165,
-        coreOpacity: 0.22,
-        aura1Scale: 16.8,
-        aura1Opacity: 0.3,
-        aura2Scale: 8.2,
-        aura2Opacity: 0.2,
-        ray: true,
-        rayScale: 16.8,
-        rayStrength: 1.15,
-        raySoftness: 0.48,
-        flare: true,
+        light: 180,
       },
     ],
     []
@@ -510,6 +644,7 @@ export function TreeLayer({
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
         <ambientLight intensity={0.25} />
+        <SceneBloom />
         <group scale={scale} position={position}>
           <YggdrasilTree rotate={rotate} />
         </group>
