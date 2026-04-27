@@ -48,7 +48,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
         <ResponsiveCamera />
 
         <Suspense fallback={null}>
-          <group position={[0, -235, 0]}>
+          <group position={[0, -240, 0]}>
             <YggdrasilTree />
           </group>
         </Suspense>
