@@ -57,6 +57,54 @@ export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
   );
 }
 
+function TreeSatellites() {
+  const aRef = useRef<THREE.Group>(null!);
+  const bRef = useRef<THREE.Group>(null!);
+  const cRef = useRef<THREE.Group>(null!);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (aRef.current) {
+      aRef.current.position.set(Math.cos(t * 0.55) * 260, 130 + Math.sin(t * 0.9) * 40, Math.sin(t * 0.55) * 260);
+      aRef.current.rotation.y = t * 0.7;
+    }
+    if (bRef.current) {
+      bRef.current.position.set(Math.cos(-t * 0.33) * 360, 190 + Math.sin(t * 0.6) * 55, Math.sin(-t * 0.33) * 360);
+      bRef.current.rotation.y = -t * 0.45;
+    }
+    if (cRef.current) {
+      cRef.current.position.set(Math.cos(t * 0.18) * 520, 260 + Math.sin(t * 0.4) * 70, Math.sin(t * 0.18) * 520);
+      cRef.current.rotation.y = t * 0.25;
+    }
+  });
+
+  return (
+    <group>
+      <group ref={aRef}>
+        <mesh>
+          <sphereGeometry args={[14, 32, 32]} />
+          <meshStandardMaterial color="#6bbcff" emissive="#2b6fff" emissiveIntensity={0.9} />
+        </mesh>
+      </group>
+
+      <group ref={bRef}>
+        <mesh>
+          <sphereGeometry args={[18, 32, 32]} />
+          <meshStandardMaterial color="#ffb16b" emissive="#ff6a2b" emissiveIntensity={0.85} />
+        </mesh>
+      </group>
+
+      <group ref={cRef}>
+        <pointLight intensity={6.5} distance={1800} color="#e7d7ff" />
+        <mesh>
+          <sphereGeometry args={[24, 32, 32]} />
+          <meshStandardMaterial color="#e7d7ff" emissive="#ffffff" emissiveIntensity={2.4} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
 export type TreeLayerProps = {
   transparent?: boolean;
   scale?: [number, number, number];
@@ -81,11 +129,10 @@ export function TreeLayer({
         camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
-        <ambientLight intensity={0.45} />
-        <pointLight position={[-260, 220, 240]} intensity={1.2} color="#6bbcff" />
-        <pointLight position={[260, 200, 240]} intensity={1.2} color="#ffb16b" />
+        <ambientLight intensity={0.25} />
         <group scale={scale} position={position}>
           <YggdrasilTree rotate={rotate} />
+          <TreeSatellites />
         </group>
       </Canvas>
     </div>
