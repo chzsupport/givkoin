@@ -12,11 +12,8 @@ const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5
 type SatelliteCfg = {
   id: number;
   color: string;
-  radius: number;
   yBase: number;
   yAmp: number;
-  speed: number;
-  dir: 1 | -1;
   size: number;
   light: number;
 };
@@ -197,8 +194,7 @@ function Satellite({
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const a = t * cfg.speed * cfg.dir;
-    ref.current.position.set(Math.cos(a) * cfg.radius, cfg.yBase + Math.sin(t * 0.9 + cfg.id) * cfg.yAmp, Math.sin(a) * cfg.radius);
+    ref.current.position.set(0, cfg.yBase + Math.sin(t * 0.9 + cfg.id) * cfg.yAmp, 0);
 
     if (cfg.id === 5) {
       const s = 1 + Math.sin(t * 2.4) * 0.25;
@@ -228,16 +224,25 @@ function Satellite({
       <pointLight intensity={cfg.light} distance={0} decay={0} color={color} />
 
       {cfg.id === 1 && (
-        <sprite scale={[cfg.size * 3.2, cfg.size * 3.2, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.8} />
-        </sprite>
+        <group>
+          <sprite scale={[cfg.size * 7.5, cfg.size * 7.5, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.28} />
+          </sprite>
+          <sprite scale={[cfg.size * 3.4, cfg.size * 3.4, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.35} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 2 && (
-        <mesh>
-          <sphereGeometry args={[cfg.size * 1.55, 32, 32]} />
-          <meshBasicMaterial color={color} transparent opacity={0.22} blending={THREE.AdditiveBlending} />
-        </mesh>
+        <group>
+          <sprite scale={[cfg.size * 9.0, cfg.size * 6.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.22} />
+          </sprite>
+          <sprite scale={[cfg.size * 4.2, cfg.size * 2.8, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.26} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 3 && (
@@ -251,47 +256,72 @@ function Satellite({
             fragmentShader={fresnelFragment}
             uniforms={{
               uColor: { value: new THREE.Color(color) },
-              uPower: { value: 2.2 },
-              uIntensity: { value: 2.2 },
+              uPower: { value: 2.8 },
+              uIntensity: { value: 1.6 },
             }}
           />
         </mesh>
       )}
 
       {cfg.id === 4 && (
-        <sprite scale={[cfg.size * 5.4, cfg.size * 5.4, 1]}>
-          <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.65} />
-        </sprite>
+        <group>
+          <sprite scale={[cfg.size * 11.0, cfg.size * 11.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 5 && (
-        <sprite scale={[cfg.size * 5.2, cfg.size * 5.2, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.55} />
-        </sprite>
+        <group>
+          <sprite scale={[cfg.size * 8.5, cfg.size * 8.5, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.24} />
+          </sprite>
+          <sprite scale={[cfg.size * 4.0, cfg.size * 4.0, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 6 && (
-        <sprite scale={[cfg.size * 6.2, cfg.size * 6.2, 1]}>
-          <spriteMaterial map={ring} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.95} />
-        </sprite>
+        <group>
+          <sprite scale={[cfg.size * 12.0, cfg.size * 7.5, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.14} />
+          </sprite>
+          <sprite scale={[cfg.size * 6.5, cfg.size * 4.2, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 7 && (
-        <sprite scale={[cfg.size * 6.2, cfg.size * 6.2, 1]}>
-          <spriteMaterial map={star} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.9} />
-        </sprite>
+        <group>
+          <sprite scale={[cfg.size * 7.2, cfg.size * 7.2, 1]}>
+            <spriteMaterial map={star} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
+          </sprite>
+          <sprite scale={[cfg.size * 4.2, cfg.size * 4.2, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 8 && (
-        <sprite scale={[cfg.size * 5.4, cfg.size * 5.4, 1]}>
-          <spriteMaterial map={ring} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.85} />
-        </sprite>
+        <group>
+          <sprite scale={[cfg.size * 10.0, cfg.size * 10.0, 1]}>
+            <spriteMaterial map={ring} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.12} />
+          </sprite>
+          <sprite scale={[cfg.size * 6.0, cfg.size * 6.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
+          </sprite>
+        </group>
       )}
 
       {cfg.id === 9 && (
         <group>
-          <sprite scale={[cfg.size * 6.8, cfg.size * 6.8, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.35} />
+          <sprite scale={[cfg.size * 10.5, cfg.size * 10.5, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
+          </sprite>
+          <sprite scale={[cfg.size * 5.0, cfg.size * 5.0, 1]}>
+            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
           </sprite>
           {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
         </group>
@@ -300,7 +330,7 @@ function Satellite({
       {cfg.id === 10 && (
         <group>
           <mesh>
-            <planeGeometry args={[cfg.size * 9.0, cfg.size * 9.0]} />
+            <planeGeometry args={[cfg.size * 12.0, cfg.size * 12.0]} />
             <shaderMaterial
               transparent
               depthWrite={false}
@@ -309,17 +339,20 @@ function Satellite({
               fragmentShader={rayGlowFragment}
               uniforms={{
                 uColor: { value: new THREE.Color(color) },
-                uStrength: { value: 1.0 },
-                uSoftness: { value: 0.35 },
+                uStrength: { value: 0.85 },
+                uSoftness: { value: 0.55 },
               }}
             />
           </mesh>
+          <sprite scale={[cfg.size * 7.0, cfg.size * 7.0, 1]}>
+            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
+          </sprite>
         </group>
       )}
 
       <mesh>
         <sphereGeometry args={[cfg.size, 32, 32]} />
-        <meshBasicMaterial color={color} />
+        <meshBasicMaterial color={color} transparent opacity={0.18} />
       </mesh>
 
       <Text color="#ffffff" fontSize={cfg.size * 0.95} anchorX="center" anchorY="middle" position={[0, labelOffset, 0]}>
@@ -417,16 +450,16 @@ function TreeSatellites() {
 
   const sats = useMemo<SatelliteCfg[]>(
     () => [
-      { id: 1, color: '#6bbcff', radius: 120, yBase: 90, yAmp: 14, speed: 0.7, dir: 1, size: 16, light: 140 },
-      { id: 2, color: '#ffb16b', radius: 135, yBase: 120, yAmp: 16, speed: 0.55, dir: -1, size: 16, light: 130 },
-      { id: 3, color: '#e7d7ff', radius: 150, yBase: 150, yAmp: 18, speed: 0.42, dir: 1, size: 16, light: 150 },
-      { id: 4, color: '#7dffb3', radius: 165, yBase: 105, yAmp: 12, speed: 0.62, dir: -1, size: 16, light: 120 },
-      { id: 5, color: '#ffd36b', radius: 180, yBase: 170, yAmp: 16, speed: 0.33, dir: 1, size: 16, light: 190 },
-      { id: 6, color: '#ff6bd6', radius: 195, yBase: 135, yAmp: 14, speed: 0.48, dir: -1, size: 16, light: 140 },
-      { id: 7, color: '#6bffea', radius: 210, yBase: 190, yAmp: 20, speed: 0.28, dir: 1, size: 16, light: 220 },
-      { id: 8, color: '#b26bff', radius: 225, yBase: 165, yAmp: 16, speed: 0.22, dir: -1, size: 16, light: 200 },
-      { id: 9, color: '#ffffff', radius: 240, yBase: 120, yAmp: 16, speed: 0.36, dir: 1, size: 16, light: 160 },
-      { id: 10, color: '#ff7a6b', radius: 260, yBase: 210, yAmp: 22, speed: 0.18, dir: -1, size: 16, light: 260 },
+      { id: 1, color: '#8fd3ff', yBase: 250, yAmp: 0, size: 16, light: 90 },
+      { id: 2, color: '#8fd3ff', yBase: 205, yAmp: 0, size: 16, light: 90 },
+      { id: 3, color: '#8fd3ff', yBase: 160, yAmp: 0, size: 16, light: 90 },
+      { id: 4, color: '#8fd3ff', yBase: 115, yAmp: 0, size: 16, light: 90 },
+      { id: 5, color: '#8fd3ff', yBase: 70, yAmp: 0, size: 16, light: 90 },
+      { id: 6, color: '#8fd3ff', yBase: 25, yAmp: 0, size: 16, light: 90 },
+      { id: 7, color: '#8fd3ff', yBase: -20, yAmp: 0, size: 16, light: 90 },
+      { id: 8, color: '#8fd3ff', yBase: -65, yAmp: 0, size: 16, light: 90 },
+      { id: 9, color: '#8fd3ff', yBase: -110, yAmp: 0, size: 16, light: 90 },
+      { id: 10, color: '#8fd3ff', yBase: -155, yAmp: 0, size: 16, light: 90 },
     ],
     []
   );
