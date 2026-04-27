@@ -84,24 +84,26 @@ function TreeSatellites() {
   return (
     <group>
       <group ref={aRef}>
+        <pointLight intensity={22} distance={0} decay={2} color="#6bbcff" />
         <mesh>
           <sphereGeometry args={[14, 32, 32]} />
-          <meshStandardMaterial color="#6bbcff" emissive="#2b6fff" emissiveIntensity={0.9} />
+          <meshBasicMaterial color="#6bbcff" />
         </mesh>
       </group>
 
       <group ref={bRef}>
+        <pointLight intensity={18} distance={0} decay={2} color="#ffb16b" />
         <mesh>
           <sphereGeometry args={[18, 32, 32]} />
-          <meshStandardMaterial color="#ffb16b" emissive="#ff6a2b" emissiveIntensity={0.85} />
+          <meshBasicMaterial color="#ffb16b" />
         </mesh>
       </group>
 
       <group ref={cRef}>
-        <pointLight intensity={6.5} distance={1800} color="#e7d7ff" />
+        <pointLight intensity={120} distance={0} decay={2} color="#e7d7ff" />
         <mesh>
           <sphereGeometry args={[24, 32, 32]} />
-          <meshStandardMaterial color="#e7d7ff" emissive="#ffffff" emissiveIntensity={2.4} />
+          <meshBasicMaterial color="#e7d7ff" />
         </mesh>
       </group>
     </group>
