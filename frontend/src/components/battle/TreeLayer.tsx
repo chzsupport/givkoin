@@ -81,9 +81,9 @@ export function TreeLayer({
         camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
-        <ambientLight intensity={0.3} />
-        <pointLight position={[100, 200, 100]} intensity={0.8} />
-        <pointLight position={[-100, 150, -100]} intensity={0.5} />
+        <ambientLight intensity={0.45} />
+        <pointLight position={[-260, 220, 240]} intensity={1.2} color="#6bbcff" />
+        <pointLight position={[260, 200, 240]} intensity={1.2} color="#ffb16b" />
         <group scale={scale} position={position}>
           <YggdrasilTree rotate={rotate} />
         </group>
