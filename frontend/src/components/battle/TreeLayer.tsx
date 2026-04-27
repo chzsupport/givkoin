@@ -15,9 +15,12 @@ const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5
 type SatelliteCfg = {
   color: string;
   emissive: string;
+  emissiveIntensity: number;
   y: number;
   size: number;
   light: number;
+  lightDistance: number;
+  lightDecay: number;
   radius: number;
   speed: number;
   dir: 1 | -1;
@@ -105,7 +108,7 @@ function Satellite({
 
   return (
     <group ref={ref}>
-      <pointLight intensity={cfg.light} distance={0} decay={0} color={color} />
+      <pointLight intensity={cfg.light} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
 
       <group>
         <sprite scale={[cfg.size * 9.5, cfg.size * 9.5, 1]}>
@@ -116,7 +119,7 @@ function Satellite({
           <meshStandardMaterial
             color={color}
             emissive={cfg.emissive}
-            emissiveIntensity={1.4}
+            emissiveIntensity={cfg.emissiveIntensity}
             roughness={0.25}
             metalness={0.1}
           />
@@ -239,30 +242,39 @@ function TreeSatellites() {
       {
         color: '#ffcc66',
         emissive: '#ff6622',
-        y: 210,
+        emissiveIntensity: 1.45,
+        y: 290,
         size: 18,
-        light: 170,
-        radius: 120,
+        light: 145,
+        lightDistance: 360,
+        lightDecay: 2,
+        radius: 190,
         speed: 0.55,
         dir: 1,
       },
       {
         color: '#ffffff',
-        emissive: '#ffffff',
-        y: 120,
+        emissive: '#eaf3ff',
+        emissiveIntensity: 0.95,
+        y: 160,
         size: 16,
-        light: 120,
-        radius: 150,
+        light: 70,
+        lightDistance: 260,
+        lightDecay: 2,
+        radius: 225,
         speed: 0.35,
         dir: -1,
       },
       {
         color: '#6fd1ff',
         emissive: '#2aa5ff',
-        y: 35,
+        emissiveIntensity: 1.35,
+        y: 55,
         size: 16,
-        light: 140,
-        radius: 185,
+        light: 120,
+        lightDistance: 340,
+        lightDecay: 2,
+        radius: 265,
         speed: 0.7,
         dir: 1,
       },
