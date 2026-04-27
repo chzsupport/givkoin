@@ -108,11 +108,14 @@ function Satellite({
 
   return (
     <group ref={ref}>
-      <pointLight intensity={cfg.light} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
+      <pointLight intensity={cfg.light} distance={0} decay={0} color={color} />
 
       <group>
-        <sprite scale={[cfg.size * 9.5, cfg.size * 9.5, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
+        <sprite scale={[cfg.size * 13.5, cfg.size * 13.5, 1]}>
+          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.34} />
+        </sprite>
+        <sprite scale={[cfg.size * 6.0, cfg.size * 6.0, 1]}>
+          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.22} />
         </sprite>
         <mesh>
           <sphereGeometry args={[cfg.size, 128, 128]} />
@@ -139,9 +142,9 @@ function SceneBloom() {
     composer.addPass(new RenderPass(scene, camera));
 
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 1.2, 0.8, 0.1);
-    bloomPass.threshold = 0.1;
-    bloomPass.strength = 1.5;
-    bloomPass.radius = 0.8;
+    bloomPass.threshold = 0.0;
+    bloomPass.strength = 3.0;
+    bloomPass.radius = 0.9;
 
     composer.addPass(bloomPass);
     composer.setSize(size.width, size.height);
@@ -242,12 +245,12 @@ function TreeSatellites() {
       {
         color: '#ffd200',
         emissive: '#ff7a00',
-        emissiveIntensity: 1.3,
+        emissiveIntensity: 3.6,
         y: 290,
         size: 18,
-        light: 170,
-        lightDistance: 620,
-        lightDecay: 2,
+        light: 7.0,
+        lightDistance: 0,
+        lightDecay: 0,
         radius: 190,
         speed: 0.55,
         dir: 1,
@@ -255,12 +258,12 @@ function TreeSatellites() {
       {
         color: '#f3f7ff',
         emissive: '#f3f7ff',
-        emissiveIntensity: 1.3,
+        emissiveIntensity: 3.6,
         y: 160,
         size: 16,
-        light: 170,
-        lightDistance: 620,
-        lightDecay: 2,
+        light: 7.0,
+        lightDistance: 0,
+        lightDecay: 0,
         radius: 225,
         speed: 0.35,
         dir: -1,
@@ -268,12 +271,12 @@ function TreeSatellites() {
       {
         color: '#1a7bff',
         emissive: '#0066ff',
-        emissiveIntensity: 1.3,
+        emissiveIntensity: 3.6,
         y: 55,
         size: 16,
-        light: 170,
-        lightDistance: 620,
-        lightDecay: 2,
+        light: 7.0,
+        lightDistance: 0,
+        lightDecay: 0,
         radius: 265,
         speed: 0.7,
         dir: 1,
