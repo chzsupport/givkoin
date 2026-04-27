@@ -240,13 +240,13 @@ function TreeSatellites() {
   const sats = useMemo<SatelliteCfg[]>(
     () => [
       {
-        color: '#ffcc66',
-        emissive: '#ff6622',
+        color: '#ffd200',
+        emissive: '#ff7a00',
         emissiveIntensity: 1.45,
         y: 290,
         size: 18,
-        light: 145,
-        lightDistance: 360,
+        light: 220,
+        lightDistance: 520,
         lightDecay: 2,
         radius: 190,
         speed: 0.55,
@@ -258,21 +258,21 @@ function TreeSatellites() {
         emissiveIntensity: 0.95,
         y: 160,
         size: 16,
-        light: 70,
-        lightDistance: 260,
+        light: 90,
+        lightDistance: 320,
         lightDecay: 2,
         radius: 225,
         speed: 0.35,
         dir: -1,
       },
       {
-        color: '#6fd1ff',
-        emissive: '#2aa5ff',
+        color: '#1a7bff',
+        emissive: '#0066ff',
         emissiveIntensity: 1.35,
         y: 55,
         size: 16,
-        light: 120,
-        lightDistance: 340,
+        light: 200,
+        lightDistance: 540,
         lightDecay: 2,
         radius: 265,
         speed: 0.7,
@@ -320,8 +320,6 @@ export function TreeLayer({
         camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
-        <ambientLight intensity={0.25} />
-        <directionalLight intensity={0.6} color="#ffccaa" position={[200, 260, 180]} />
         <SceneBloom />
         <group scale={scale} position={position}>
           <YggdrasilTree rotate={rotate} />
