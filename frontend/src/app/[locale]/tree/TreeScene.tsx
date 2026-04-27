@@ -46,12 +46,9 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
         camera={{ position: [0, 240, 900], fov: 45, near: 1, far: 2000 }}
       >
         <ResponsiveCamera />
-        <ambientLight intensity={0.3} />
-        <pointLight position={[100, 200, 100]} intensity={0.8} />
-        <pointLight position={[-100, 150, -100]} intensity={0.5} />
 
         <Suspense fallback={null}>
-          <group position={[0, -140, 0]}>
+          <group position={[0, -168, 0]}>
             <YggdrasilTree />
           </group>
         </Suspense>
