@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, Suspense } from 'react';
+import React, { useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -10,7 +10,31 @@ const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5
 
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const { scene } = useGLTF('/tree-model.glb', true);
+  const { scene: loadedScene } = useGLTF('/tree-model.glb', true);
+
+  const scene = useMemo(() => {
+    const cloned = loadedScene.clone(true);
+
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    cloned.position.sub(center);
+
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const targetSize = 420;
+    const scale = targetSize / maxDim;
+    cloned.scale.setScalar(scale);
+
+    const boxAfter = new THREE.Box3().setFromObject(cloned);
+    if (Number.isFinite(boxAfter.min.y)) {
+      cloned.position.y -= boxAfter.min.y;
+    }
+
+    return cloned;
+  }, [loadedScene]);
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
@@ -20,7 +44,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
 
   return (
     <group ref={groupRef}>
-      <primitive object={scene.clone(true)} />
+      <primitive object={scene} />
     </group>
   );
 }
