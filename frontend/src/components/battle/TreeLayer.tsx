@@ -4,6 +4,7 @@ import React, { useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Text, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
 (useGLTF as unknown as { setDecoderPath: (path: string) => void }).setDecoderPath(DRACO_DECODER_PATH);
@@ -40,6 +41,72 @@ function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[n
   tex.needsUpdate = true;
   return tex;
 }
+
+function makeCircleTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.Texture();
+
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.85)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const fresnelVertex = `
+varying vec3 vNormalW;
+varying vec3 vViewDirW;
+void main(){
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vNormalW = normalize(mat3(modelMatrix) * normal);
+  vViewDirW = normalize(cameraPosition - worldPos.xyz);
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`;
+
+const fresnelFragment = `
+uniform vec3 uColor;
+uniform float uPower;
+uniform float uIntensity;
+varying vec3 vNormalW;
+varying vec3 vViewDirW;
+void main(){
+  float fres = pow(1.0 - max(dot(vNormalW, vViewDirW), 0.0), uPower);
+  vec3 col = uColor * (fres * uIntensity);
+  gl_FragColor = vec4(col, fres);
+}
+`;
+
+const rayGlowVertex = `
+varying vec2 vUv;
+void main(){
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const rayGlowFragment = `
+uniform vec3 uColor;
+uniform float uStrength;
+uniform float uSoftness;
+varying vec2 vUv;
+void main(){
+  vec2 p = vUv * 2.0 - 1.0;
+  float r = length(p);
+  float glow = exp(-pow(max(r - 0.35, 0.0) / max(uSoftness, 0.0001), 2.0)) * uStrength;
+  float a = clamp(glow, 0.0, 1.0);
+  gl_FragColor = vec4(uColor * glow, a);
+}
+`;
 
 function makeRingTexture() {
   const canvas = document.createElement('canvas');
@@ -115,6 +182,18 @@ function Satellite({
   star: THREE.Texture;
 }) {
   const ref = useRef<THREE.Group>(null!);
+  const lensflareRef = useRef<Lensflare | null>(null);
+
+  const lensflare = useMemo(() => {
+    if (cfg.id !== 9) return null;
+
+    const lf = new Lensflare();
+    const tex = makeCircleTexture();
+    lf.addElement(new LensflareElement(tex, 220, 0.0, new THREE.Color(cfg.color)));
+    lf.addElement(new LensflareElement(tex, 120, 0.35, new THREE.Color('#ffffff')));
+    lf.addElement(new LensflareElement(tex, 70, 0.65, new THREE.Color(cfg.color)));
+    return lf;
+  }, [cfg.id, cfg.color]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -134,6 +213,11 @@ function Satellite({
     if (cfg.id === 8) {
       ref.current.rotation.y = t * 0.8;
     }
+
+    if (cfg.id === 9 && lensflareRef.current) {
+      const s = 1 + Math.sin(t * 1.7) * 0.12;
+      lensflareRef.current.scale.setScalar(s);
+    }
   });
 
   const color = cfg.color;
@@ -150,27 +234,34 @@ function Satellite({
       )}
 
       {cfg.id === 2 && (
-        <sprite scale={[cfg.size * 4.6, cfg.size * 4.6, 1]}>
-          <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.95} />
-        </sprite>
+        <mesh>
+          <sphereGeometry args={[cfg.size * 1.55, 32, 32]} />
+          <meshBasicMaterial color={color} transparent opacity={0.22} blending={THREE.AdditiveBlending} />
+        </mesh>
       )}
 
       {cfg.id === 3 && (
-        <group>
-          <sprite scale={[cfg.size * 3.6, cfg.size * 3.6, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.55} />
-          </sprite>
-          <sprite scale={[cfg.size * 2.2, cfg.size * 2.2, 1]}>
-            <spriteMaterial map={auraHard} color={"#ffffff"} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.5} />
-          </sprite>
-        </group>
+        <mesh>
+          <sphereGeometry args={[cfg.size, 32, 32]} />
+          <shaderMaterial
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            vertexShader={fresnelVertex}
+            fragmentShader={fresnelFragment}
+            uniforms={{
+              uColor: { value: new THREE.Color(color) },
+              uPower: { value: 2.2 },
+              uIntensity: { value: 2.2 },
+            }}
+          />
+        </mesh>
       )}
 
       {cfg.id === 4 && (
-        <mesh>
-          <sphereGeometry args={[cfg.size * 1.7, 32, 32]} />
-          <meshStandardMaterial color={color} transparent opacity={0.18} emissive={new THREE.Color(color)} emissiveIntensity={1} />
-        </mesh>
+        <sprite scale={[cfg.size * 5.4, cfg.size * 5.4, 1]}>
+          <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.65} />
+        </sprite>
       )}
 
       {cfg.id === 5 && (
@@ -180,10 +271,9 @@ function Satellite({
       )}
 
       {cfg.id === 6 && (
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[cfg.size * 2.6, cfg.size * 0.25, 16, 64]} />
-          <meshBasicMaterial color={color} transparent opacity={0.75} blending={THREE.AdditiveBlending} />
-        </mesh>
+        <sprite scale={[cfg.size * 6.2, cfg.size * 6.2, 1]}>
+          <spriteMaterial map={ring} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.95} />
+        </sprite>
       )}
 
       {cfg.id === 7 && (
@@ -200,27 +290,30 @@ function Satellite({
 
       {cfg.id === 9 && (
         <group>
-          <mesh>
-            <sphereGeometry args={[cfg.size * 1.4, 32, 32]} />
-            <meshBasicMaterial color={"#ffffff"} />
-          </mesh>
           <sprite scale={[cfg.size * 6.8, cfg.size * 6.8, 1]}>
             <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.35} />
           </sprite>
+          {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
         </group>
       )}
 
       {cfg.id === 10 && (
         <group>
-          <sprite scale={[cfg.size * 7.8, cfg.size * 7.8, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.28} />
-          </sprite>
-          <sprite scale={[cfg.size * 4.2, cfg.size * 4.2, 1]}>
-            <spriteMaterial map={ring} color={"#ffffff"} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.35} />
-          </sprite>
-          <sprite scale={[cfg.size * 2.4, cfg.size * 2.4, 1]}>
-            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.55} />
-          </sprite>
+          <mesh>
+            <planeGeometry args={[cfg.size * 9.0, cfg.size * 9.0]} />
+            <shaderMaterial
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              vertexShader={rayGlowVertex}
+              fragmentShader={rayGlowFragment}
+              uniforms={{
+                uColor: { value: new THREE.Color(color) },
+                uStrength: { value: 1.0 },
+                uSoftness: { value: 0.35 },
+              }}
+            />
+          </mesh>
         </group>
       )}
 
@@ -324,16 +417,16 @@ function TreeSatellites() {
 
   const sats = useMemo<SatelliteCfg[]>(
     () => [
-      { id: 1, color: '#6bbcff', radius: 120, yBase: 90, yAmp: 14, speed: 0.7, dir: 1, size: 14, light: 140 },
+      { id: 1, color: '#6bbcff', radius: 120, yBase: 90, yAmp: 14, speed: 0.7, dir: 1, size: 16, light: 140 },
       { id: 2, color: '#ffb16b', radius: 135, yBase: 120, yAmp: 16, speed: 0.55, dir: -1, size: 16, light: 130 },
-      { id: 3, color: '#e7d7ff', radius: 150, yBase: 150, yAmp: 18, speed: 0.42, dir: 1, size: 17, light: 150 },
-      { id: 4, color: '#7dffb3', radius: 165, yBase: 105, yAmp: 12, speed: 0.62, dir: -1, size: 15, light: 120 },
-      { id: 5, color: '#ffd36b', radius: 180, yBase: 170, yAmp: 16, speed: 0.33, dir: 1, size: 18, light: 190 },
+      { id: 3, color: '#e7d7ff', radius: 150, yBase: 150, yAmp: 18, speed: 0.42, dir: 1, size: 16, light: 150 },
+      { id: 4, color: '#7dffb3', radius: 165, yBase: 105, yAmp: 12, speed: 0.62, dir: -1, size: 16, light: 120 },
+      { id: 5, color: '#ffd36b', radius: 180, yBase: 170, yAmp: 16, speed: 0.33, dir: 1, size: 16, light: 190 },
       { id: 6, color: '#ff6bd6', radius: 195, yBase: 135, yAmp: 14, speed: 0.48, dir: -1, size: 16, light: 140 },
-      { id: 7, color: '#6bffea', radius: 210, yBase: 190, yAmp: 20, speed: 0.28, dir: 1, size: 19, light: 220 },
-      { id: 8, color: '#b26bff', radius: 225, yBase: 165, yAmp: 16, speed: 0.22, dir: -1, size: 20, light: 200 },
-      { id: 9, color: '#ffffff', radius: 240, yBase: 120, yAmp: 16, speed: 0.36, dir: 1, size: 15, light: 160 },
-      { id: 10, color: '#ff7a6b', radius: 260, yBase: 210, yAmp: 22, speed: 0.18, dir: -1, size: 22, light: 260 },
+      { id: 7, color: '#6bffea', radius: 210, yBase: 190, yAmp: 20, speed: 0.28, dir: 1, size: 16, light: 220 },
+      { id: 8, color: '#b26bff', radius: 225, yBase: 165, yAmp: 16, speed: 0.22, dir: -1, size: 16, light: 200 },
+      { id: 9, color: '#ffffff', radius: 240, yBase: 120, yAmp: 16, speed: 0.36, dir: 1, size: 16, light: 160 },
+      { id: 10, color: '#ff7a6b', radius: 260, yBase: 210, yAmp: 22, speed: 0.18, dir: -1, size: 16, light: 260 },
     ],
     []
   );
@@ -368,6 +461,11 @@ export function TreeLayer({
     <div className={`absolute inset-0 ${className}`} style={{ pointerEvents }}>
       <Canvas
         gl={{ antialias: false, alpha: transparent }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = THREE.ACESFilmicToneMapping;
+          gl.toneMappingExposure = 1.25;
+          gl.outputColorSpace = THREE.SRGBColorSpace;
+        }}
         camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
