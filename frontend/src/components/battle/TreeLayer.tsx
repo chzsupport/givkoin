@@ -71,30 +71,6 @@ function makeCircleTexture() {
   return tex;
 }
 
-const fresnelVertex = `
-varying vec3 vNormalW;
-varying vec3 vViewDirW;
-void main(){
-  vec4 worldPos = modelMatrix * vec4(position, 1.0);
-  vNormalW = normalize(mat3(modelMatrix) * normal);
-  vViewDirW = normalize(cameraPosition - worldPos.xyz);
-  gl_Position = projectionMatrix * viewMatrix * worldPos;
-}
-`;
-
-const fresnelFragment = `
-uniform vec3 uColor;
-uniform float uPower;
-uniform float uIntensity;
-varying vec3 vNormalW;
-varying vec3 vViewDirW;
-void main(){
-  float fres = pow(1.0 - max(dot(vNormalW, vViewDirW), 0.0), uPower);
-  vec3 col = uColor * (fres * uIntensity);
-  gl_FragColor = vec4(col, fres);
-}
-`;
-
 const rayGlowVertex = `
 varying vec2 vUv;
 void main(){
@@ -117,66 +93,6 @@ void main(){
 }
 `;
 
-function makeRingTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return new THREE.Texture();
-
-  ctx.clearRect(0, 0, 256, 256);
-  ctx.beginPath();
-  ctx.arc(128, 128, 92, 0, Math.PI * 2);
-  ctx.lineWidth = 20;
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(128, 128, 92, 0, Math.PI * 2);
-  ctx.lineWidth = 48;
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.stroke();
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.needsUpdate = true;
-  return tex;
-}
-
-function makeStarTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return new THREE.Texture();
-
-  ctx.clearRect(0, 0, 256, 256);
-  ctx.translate(128, 128);
-
-  const rays = 12;
-  for (let i = 0; i < rays; i++) {
-    const a = (i / rays) * Math.PI * 2;
-    ctx.save();
-    ctx.rotate(a);
-    const grad = ctx.createLinearGradient(0, 0, 120, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, -6, 120, 12);
-    ctx.restore();
-  }
-
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 60);
-  g.addColorStop(0, 'rgba(255,255,255,0.9)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(0, 0, 60, 0, Math.PI * 2);
-  ctx.fill();
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.needsUpdate = true;
-  return tex;
-}
-
 function Satellite({
   cfg,
   auraSoft,
@@ -198,7 +114,7 @@ function Satellite({
     lf.addElement(new LensflareElement(tex, 120, 0.35, new THREE.Color('#ffffff')));
     lf.addElement(new LensflareElement(tex, 70, 0.65, new THREE.Color(cfg.color)));
     return lf;
-  }, [cfg.id, cfg.color]);
+  }, [cfg.flare, cfg.color]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
