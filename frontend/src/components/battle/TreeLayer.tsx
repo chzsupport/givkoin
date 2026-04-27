@@ -16,6 +16,16 @@ type SatelliteCfg = {
   yAmp: number;
   size: number;
   light: number;
+  coreOpacity: number;
+  aura1Scale: number;
+  aura1Opacity: number;
+  aura2Scale: number;
+  aura2Opacity: number;
+  ray: boolean;
+  rayScale: number;
+  rayStrength: number;
+  raySoftness: number;
+  flare: boolean;
 };
 
 const SATELLITE_COLUMN_X = 160;
@@ -171,20 +181,16 @@ function Satellite({
   cfg,
   auraSoft,
   auraHard,
-  ring,
-  star,
 }: {
   cfg: SatelliteCfg;
   auraSoft: THREE.Texture;
   auraHard: THREE.Texture;
-  ring: THREE.Texture;
-  star: THREE.Texture;
 }) {
   const ref = useRef<THREE.Group>(null!);
   const lensflareRef = useRef<Lensflare | null>(null);
 
   const lensflare = useMemo(() => {
-    if (cfg.id !== 9) return null;
+    if (!cfg.flare) return null;
 
     const lf = new Lensflare();
     const tex = makeCircleTexture();
@@ -225,114 +231,31 @@ function Satellite({
     <group ref={ref}>
       <pointLight intensity={cfg.light} distance={0} decay={0} color={color} />
 
-      {cfg.id === 1 && (
-        <group>
-          <sprite scale={[cfg.size * 7.5, cfg.size * 7.5, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.28} />
-          </sprite>
-          <sprite scale={[cfg.size * 3.4, cfg.size * 3.4, 1]}>
-            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.35} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 2 && (
-        <group>
-          <sprite scale={[cfg.size * 9.0, cfg.size * 6.0, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.22} />
-          </sprite>
-          <sprite scale={[cfg.size * 4.2, cfg.size * 2.8, 1]}>
-            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.26} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 3 && (
-        <mesh>
-          <sphereGeometry args={[cfg.size, 32, 32]} />
-          <shaderMaterial
+      <group>
+        <sprite scale={[cfg.size * cfg.aura1Scale, cfg.size * cfg.aura1Scale, 1]}>
+          <spriteMaterial
+            map={auraSoft}
+            color={color}
             transparent
             depthWrite={false}
             blending={THREE.AdditiveBlending}
-            vertexShader={fresnelVertex}
-            fragmentShader={fresnelFragment}
-            uniforms={{
-              uColor: { value: new THREE.Color(color) },
-              uPower: { value: 2.8 },
-              uIntensity: { value: 1.6 },
-            }}
+            opacity={cfg.aura1Opacity}
           />
-        </mesh>
-      )}
+        </sprite>
+        <sprite scale={[cfg.size * cfg.aura2Scale, cfg.size * cfg.aura2Scale, 1]}>
+          <spriteMaterial
+            map={auraHard}
+            color={color}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            opacity={cfg.aura2Opacity}
+          />
+        </sprite>
 
-      {cfg.id === 4 && (
-        <group>
-          <sprite scale={[cfg.size * 11.0, cfg.size * 11.0, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 5 && (
-        <group>
-          <sprite scale={[cfg.size * 8.5, cfg.size * 8.5, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.24} />
-          </sprite>
-          <sprite scale={[cfg.size * 4.0, cfg.size * 4.0, 1]}>
-            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 6 && (
-        <group>
-          <sprite scale={[cfg.size * 12.0, cfg.size * 7.5, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.14} />
-          </sprite>
-          <sprite scale={[cfg.size * 6.5, cfg.size * 4.2, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 7 && (
-        <group>
-          <sprite scale={[cfg.size * 7.2, cfg.size * 7.2, 1]}>
-            <spriteMaterial map={star} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
-          </sprite>
-          <sprite scale={[cfg.size * 4.2, cfg.size * 4.2, 1]}>
-            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 8 && (
-        <group>
-          <sprite scale={[cfg.size * 10.0, cfg.size * 10.0, 1]}>
-            <spriteMaterial map={ring} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.12} />
-          </sprite>
-          <sprite scale={[cfg.size * 6.0, cfg.size * 6.0, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
-          </sprite>
-        </group>
-      )}
-
-      {cfg.id === 9 && (
-        <group>
-          <sprite scale={[cfg.size * 10.5, cfg.size * 10.5, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.2} />
-          </sprite>
-          <sprite scale={[cfg.size * 5.0, cfg.size * 5.0, 1]}>
-            <spriteMaterial map={auraHard} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
-          </sprite>
-          {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
-        </group>
-      )}
-
-      {cfg.id === 10 && (
-        <group>
+        {cfg.ray && (
           <mesh>
-            <planeGeometry args={[cfg.size * 12.0, cfg.size * 12.0]} />
+            <planeGeometry args={[cfg.size * cfg.rayScale, cfg.size * cfg.rayScale]} />
             <shaderMaterial
               transparent
               depthWrite={false}
@@ -341,20 +264,19 @@ function Satellite({
               fragmentShader={rayGlowFragment}
               uniforms={{
                 uColor: { value: new THREE.Color(color) },
-                uStrength: { value: 0.85 },
-                uSoftness: { value: 0.55 },
+                uStrength: { value: cfg.rayStrength },
+                uSoftness: { value: cfg.raySoftness },
               }}
             />
           </mesh>
-          <sprite scale={[cfg.size * 7.0, cfg.size * 7.0, 1]}>
-            <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.18} />
-          </sprite>
-        </group>
-      )}
+        )}
+
+        {lensflare && <primitive object={lensflare} ref={lensflareRef} />}
+      </group>
 
       <mesh>
         <sphereGeometry args={[cfg.size, 32, 32]} />
-        <meshBasicMaterial color={color} transparent opacity={0.18} />
+        <meshBasicMaterial color={color} transparent opacity={cfg.coreOpacity} />
       </mesh>
 
       <Text color="#ffffff" fontSize={cfg.size * 0.95} anchorX="center" anchorY="middle" position={[0, labelOffset, 0]}>
@@ -447,21 +369,188 @@ function TreeSatellites() {
     []
   );
 
-  const ring = useMemo(() => makeRingTexture(), []);
-  const star = useMemo(() => makeStarTexture(), []);
-
   const sats = useMemo<SatelliteCfg[]>(
     () => [
-      { id: 1, color: '#8fd3ff', yBase: 250, yAmp: 0, size: 16, light: 90 },
-      { id: 2, color: '#8fd3ff', yBase: 205, yAmp: 0, size: 16, light: 90 },
-      { id: 3, color: '#8fd3ff', yBase: 160, yAmp: 0, size: 16, light: 90 },
-      { id: 4, color: '#8fd3ff', yBase: 115, yAmp: 0, size: 16, light: 90 },
-      { id: 5, color: '#8fd3ff', yBase: 70, yAmp: 0, size: 16, light: 90 },
-      { id: 6, color: '#8fd3ff', yBase: 25, yAmp: 0, size: 16, light: 90 },
-      { id: 7, color: '#8fd3ff', yBase: -20, yAmp: 0, size: 16, light: 90 },
-      { id: 8, color: '#8fd3ff', yBase: -65, yAmp: 0, size: 16, light: 90 },
-      { id: 9, color: '#8fd3ff', yBase: -110, yAmp: 0, size: 16, light: 90 },
-      { id: 10, color: '#8fd3ff', yBase: -155, yAmp: 0, size: 16, light: 90 },
+      {
+        id: 1,
+        color: '#8fd3ff',
+        yBase: 250,
+        yAmp: 0,
+        size: 16,
+        light: 35,
+        coreOpacity: 0.12,
+        aura1Scale: 9.5,
+        aura1Opacity: 0.12,
+        aura2Scale: 4.8,
+        aura2Opacity: 0.1,
+        ray: false,
+        rayScale: 0,
+        rayStrength: 0,
+        raySoftness: 0,
+        flare: false,
+      },
+      {
+        id: 2,
+        color: '#8fd3ff',
+        yBase: 205,
+        yAmp: 0,
+        size: 16,
+        light: 45,
+        coreOpacity: 0.13,
+        aura1Scale: 10.2,
+        aura1Opacity: 0.14,
+        aura2Scale: 5.1,
+        aura2Opacity: 0.11,
+        ray: false,
+        rayScale: 0,
+        rayStrength: 0,
+        raySoftness: 0,
+        flare: false,
+      },
+      {
+        id: 3,
+        color: '#8fd3ff',
+        yBase: 160,
+        yAmp: 0,
+        size: 16,
+        light: 55,
+        coreOpacity: 0.14,
+        aura1Scale: 10.8,
+        aura1Opacity: 0.16,
+        aura2Scale: 5.3,
+        aura2Opacity: 0.12,
+        ray: true,
+        rayScale: 12.0,
+        rayStrength: 0.38,
+        raySoftness: 0.75,
+        flare: false,
+      },
+      {
+        id: 4,
+        color: '#8fd3ff',
+        yBase: 115,
+        yAmp: 0,
+        size: 16,
+        light: 65,
+        coreOpacity: 0.15,
+        aura1Scale: 11.5,
+        aura1Opacity: 0.18,
+        aura2Scale: 5.6,
+        aura2Opacity: 0.13,
+        ray: true,
+        rayScale: 12.5,
+        rayStrength: 0.48,
+        raySoftness: 0.7,
+        flare: false,
+      },
+      {
+        id: 5,
+        color: '#8fd3ff',
+        yBase: 70,
+        yAmp: 0,
+        size: 16,
+        light: 75,
+        coreOpacity: 0.16,
+        aura1Scale: 12.2,
+        aura1Opacity: 0.2,
+        aura2Scale: 5.9,
+        aura2Opacity: 0.14,
+        ray: true,
+        rayScale: 13.0,
+        rayStrength: 0.58,
+        raySoftness: 0.65,
+        flare: false,
+      },
+      {
+        id: 6,
+        color: '#8fd3ff',
+        yBase: 25,
+        yAmp: 0,
+        size: 16,
+        light: 85,
+        coreOpacity: 0.17,
+        aura1Scale: 13.0,
+        aura1Opacity: 0.22,
+        aura2Scale: 6.2,
+        aura2Opacity: 0.15,
+        ray: true,
+        rayScale: 13.5,
+        rayStrength: 0.68,
+        raySoftness: 0.62,
+        flare: false,
+      },
+      {
+        id: 7,
+        color: '#8fd3ff',
+        yBase: -20,
+        yAmp: 0,
+        size: 16,
+        light: 95,
+        coreOpacity: 0.18,
+        aura1Scale: 13.8,
+        aura1Opacity: 0.24,
+        aura2Scale: 6.6,
+        aura2Opacity: 0.16,
+        ray: true,
+        rayScale: 14.2,
+        rayStrength: 0.78,
+        raySoftness: 0.58,
+        flare: false,
+      },
+      {
+        id: 8,
+        color: '#8fd3ff',
+        yBase: -65,
+        yAmp: 0,
+        size: 16,
+        light: 110,
+        coreOpacity: 0.19,
+        aura1Scale: 14.6,
+        aura1Opacity: 0.26,
+        aura2Scale: 7.0,
+        aura2Opacity: 0.17,
+        ray: true,
+        rayScale: 15.0,
+        rayStrength: 0.88,
+        raySoftness: 0.55,
+        flare: false,
+      },
+      {
+        id: 9,
+        color: '#8fd3ff',
+        yBase: -110,
+        yAmp: 0,
+        size: 16,
+        light: 135,
+        coreOpacity: 0.2,
+        aura1Scale: 15.5,
+        aura1Opacity: 0.28,
+        aura2Scale: 7.6,
+        aura2Opacity: 0.18,
+        ray: true,
+        rayScale: 15.8,
+        rayStrength: 0.98,
+        raySoftness: 0.52,
+        flare: true,
+      },
+      {
+        id: 10,
+        color: '#8fd3ff',
+        yBase: -155,
+        yAmp: 0,
+        size: 16,
+        light: 165,
+        coreOpacity: 0.22,
+        aura1Scale: 16.8,
+        aura1Opacity: 0.3,
+        aura2Scale: 8.2,
+        aura2Opacity: 0.2,
+        ray: true,
+        rayScale: 16.8,
+        rayStrength: 1.15,
+        raySoftness: 0.48,
+        flare: true,
+      },
     ],
     []
   );
@@ -469,7 +558,7 @@ function TreeSatellites() {
   return (
     <group>
       {sats.map((cfg) => (
-        <Satellite key={cfg.id} cfg={cfg} auraSoft={auraSoft} auraHard={auraHard} ring={ring} star={star} />
+        <Satellite key={cfg.id} cfg={cfg} auraSoft={auraSoft} auraHard={auraHard} />
       ))}
     </group>
   );
