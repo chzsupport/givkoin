@@ -27,6 +27,8 @@ type SatelliteCfg = {
 };
 
 const SATELLITE_BOB_AMP = 6;
+const TREE_LIGHT_MULT_PCT = 100;
+const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 
 function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[number, number]> }) {
   const canvas = document.createElement('canvas');
@@ -108,7 +110,7 @@ function Satellite({
 
   return (
     <group ref={ref}>
-      <pointLight intensity={cfg.light * 0.25} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
+      <pointLight intensity={cfg.light * TREE_LIGHT_MULT} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
 
       <group>
         <sprite scale={[cfg.size * 13.5, cfg.size * 13.5, 1]}>
