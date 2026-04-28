@@ -174,15 +174,11 @@ function SceneBloom() {
   return null;
 }
 
-function TreeLeaves({ scene }: { scene: THREE.Group }) {
-  const leavesRef = useRef<THREE.InstancedMesh>(null!);
-  
-  const leafPositions = useMemo(() => {
-    const meshes: THREE.Object3D[] = [];
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) meshes.push(child);
-    });
+function TreeBranchDebugPoints({ scene }: { scene: THREE.Group }) {
+  const startRef = useRef<THREE.InstancedMesh>(null!);
+  const endRef = useRef<THREE.InstancedMesh>(null!);
 
+  const endpoints = useMemo(() => {
     const bbox = new THREE.Box3().setFromObject(scene);
     const size = new THREE.Vector3();
     bbox.getSize(size);
@@ -191,93 +187,93 @@ function TreeLeaves({ scene }: { scene: THREE.Group }) {
 
     const height = Math.max(1, size.y);
     const minY = Number.isFinite(bbox.min.y) ? bbox.min.y : 0;
-    const maxY = Number.isFinite(bbox.max.y) ? bbox.max.y : height;
     const yFloor = minY + height * 0.35;
 
-    const sphere = new THREE.Sphere();
-    bbox.getBoundingSphere(sphere);
-    const castRadius = Math.max(1, sphere.radius) * 1.35;
+    const BRANCH_SLOTS = 24;
+    const minBySlot: Array<{ pos: THREE.Vector3; d: number } | null> = Array.from({ length: BRANCH_SLOTS }, () => null);
+    const maxBySlot: Array<{ pos: THREE.Vector3; d: number } | null> = Array.from({ length: BRANCH_SLOTS }, () => null);
 
-    const raycaster = new THREE.Raycaster();
-    const hits: Array<{ pos: THREE.Vector3; dist: number; y: number }> = [];
-    const origin = new THREE.Vector3();
-    const dir = new THREE.Vector3();
+    scene.updateWorldMatrix(true, true);
+    scene.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const geo = child.geometry;
+      const posAttr = geo?.attributes?.position as THREE.BufferAttribute | undefined;
+      if (!posAttr) return;
 
-    const RAY_COUNT = 900;
-    for (let i = 0; i < RAY_COUNT; i++) {
-      // Случайная точка на сфере вокруг дерева (снаружи)
-      const u = Math.random();
-      const v = Math.random();
-      const theta = 2 * Math.PI * u;
-      const phi = Math.acos(2 * v - 1);
-      const sx = Math.sin(phi) * Math.cos(theta);
-      const sy = Math.cos(phi);
-      const sz = Math.sin(phi) * Math.sin(theta);
+      const count = posAttr.count;
+      const step = Math.max(1, Math.floor(count / 4000));
+      const v = new THREE.Vector3();
 
-      origin.set(center.x + sx * castRadius, center.y + sy * castRadius, center.z + sz * castRadius);
-      dir.subVectors(center, origin).normalize();
+      for (let i = 0; i < count; i += step) {
+        v.fromBufferAttribute(posAttr, i);
+        v.applyMatrix4(child.matrixWorld);
 
-      raycaster.set(origin, dir);
-      raycaster.far = castRadius * 3;
+        if (v.y < yFloor) continue;
 
-      const intersections = raycaster.intersectObjects(meshes, true);
-      if (!intersections.length) continue;
+        const dx = v.x - center.x;
+        const dz = v.z - center.z;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (!Number.isFinite(d) || d < 10) continue;
 
-      const p = intersections[0].point;
-      if (p.y < yFloor) continue;
-      if (p.y > maxY) continue;
+        const angle = Math.atan2(dz, dx);
+        const slot = Math.floor(((angle + Math.PI) / (2 * Math.PI)) * BRANCH_SLOTS);
+        const idx = Math.min(BRANCH_SLOTS - 1, Math.max(0, slot));
 
-      const dx = p.x - center.x;
-      const dz = p.z - center.z;
-      const distFromCenter = Math.sqrt(dx * dx + dz * dz);
-      if (distFromCenter < 15) continue;
+        const curMin = minBySlot[idx];
+        if (!curMin || d < curMin.d) minBySlot[idx] = { pos: v.clone(), d };
 
-      hits.push({ pos: p.clone(), dist: distFromCenter, y: p.y });
-    }
-
-    // Берём самые "крайние" точки (ближе к кончикам ветвей)
-    hits.sort((a, b) => b.dist - a.dist);
-
-    const result: THREE.Vector3[] = [];
-    const MIN_SPACING = 10;
-    for (const h of hits) {
-      let tooClose = false;
-      for (const r of result) {
-        if (r.distanceToSquared(h.pos) < MIN_SPACING * MIN_SPACING) {
-          tooClose = true;
-          break;
-        }
+        const curMax = maxBySlot[idx];
+        if (!curMax || d > curMax.d) maxBySlot[idx] = { pos: v.clone(), d };
       }
-      if (tooClose) continue;
-      result.push(h.pos);
-      if (result.length >= 100) break;
+    });
+
+    const starts: THREE.Vector3[] = [];
+    const ends: THREE.Vector3[] = [];
+    for (let i = 0; i < BRANCH_SLOTS; i++) {
+      const a = minBySlot[i];
+      const b = maxBySlot[i];
+      if (!a || !b) continue;
+      if (b.d < a.d + 25) continue;
+      starts.push(a.pos);
+      ends.push(b.pos);
     }
 
-    return result;
+    return { starts, ends };
   }, [scene]);
 
   useEffect(() => {
     const dummy = new THREE.Object3D();
-    leafPositions.forEach((pos, i) => {
+    endpoints.starts.forEach((pos, i) => {
       dummy.position.copy(pos);
-      // Размер в 10 раз меньше сфер (сферы ~16-18, значит листья ~1.6)
+      dummy.scale.setScalar(1.0);
+      dummy.updateMatrix();
+      startRef.current.setMatrixAt(i, dummy.matrix);
+    });
+    startRef.current.instanceMatrix.needsUpdate = true;
+  }, [endpoints.starts]);
+
+  useEffect(() => {
+    const dummy = new THREE.Object3D();
+    endpoints.ends.forEach((pos, i) => {
+      dummy.position.copy(pos);
       dummy.scale.setScalar(1.6);
       dummy.updateMatrix();
-      leavesRef.current.setMatrixAt(i, dummy.matrix);
+      endRef.current.setMatrixAt(i, dummy.matrix);
     });
-    leavesRef.current.instanceMatrix.needsUpdate = true;
-  }, [leafPositions]);
+    endRef.current.instanceMatrix.needsUpdate = true;
+  }, [endpoints.ends]);
 
   return (
-    <instancedMesh ref={leavesRef} args={[null!, null!, leafPositions.length]}>
-      <sphereGeometry args={[1, 8, 8]} />
-      <meshStandardMaterial 
-        color="#00ff44" 
-        emissive="#00ff44" 
-        emissiveIntensity={10} 
-        toneMapped={false}
-      />
-    </instancedMesh>
+    <group>
+      <instancedMesh ref={startRef} args={[null!, null!, endpoints.starts.length]}>
+        <sphereGeometry args={[1, 8, 8]} />
+        <meshStandardMaterial color="#ffff00" emissive="#ffff00" emissiveIntensity={12} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={endRef} args={[null!, null!, endpoints.ends.length]}>
+        <sphereGeometry args={[1, 8, 8]} />
+        <meshStandardMaterial color="#00ff44" emissive="#00ff44" emissiveIntensity={12} toneMapped={false} />
+      </instancedMesh>
+    </group>
   );
 }
 
@@ -318,7 +314,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <TreeLeaves scene={scene} />
+      <TreeBranchDebugPoints scene={scene} />
     </group>
   );
 }
