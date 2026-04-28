@@ -174,6 +174,61 @@ function SceneBloom() {
   return null;
 }
 
+function TreeLeaves({ scene }: { scene: THREE.Group }) {
+  const leavesRef = useRef<THREE.InstancedMesh>(null!);
+  
+  const leafPositions = useMemo(() => {
+    const points: THREE.Vector3[] = [];
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const positions = child.geometry.attributes.position;
+        if (positions) {
+          // Ищем точки, которые находятся далеко от центра (кончики ветвей)
+          // Для пробного варианта выберем ~100 случайных вершин из верхних частей геометрии
+          const count = positions.count;
+          const step = Math.max(1, Math.floor(count / 150)); // Берем выборку
+          
+          for (let i = 0; i < count; i += step) {
+            const v = new THREE.Vector3().fromBufferAttribute(positions, i);
+            v.applyMatrix4(child.matrixWorld);
+            // Листья обычно сверху и по бокам
+            if (v.y > 50) { 
+              points.push(v);
+            }
+          }
+        }
+      }
+    });
+
+    // Перемешиваем и берем ровно 100 для пробы
+    return points.sort(() => Math.random() - 0.5).slice(0, 100);
+  }, [scene]);
+
+  useEffect(() => {
+    const dummy = new THREE.Object3D();
+    leafPositions.forEach((pos, i) => {
+      dummy.position.copy(pos);
+      // Размер в 10 раз меньше сфер (сферы ~16-18, значит листья ~1.6)
+      dummy.scale.setScalar(1.6);
+      dummy.updateMatrix();
+      leavesRef.current.setMatrixAt(i, dummy.matrix);
+    });
+    leavesRef.current.instanceMatrix.needsUpdate = true;
+  }, [leafPositions]);
+
+  return (
+    <instancedMesh ref={leavesRef} args={[null!, null!, leafPositions.length]}>
+      <sphereGeometry args={[1, 8, 8]} />
+      <meshStandardMaterial 
+        color="#00ff44" 
+        emissive="#00ff44" 
+        emissiveIntensity={10} 
+        toneMapped={false}
+      />
+    </instancedMesh>
+  );
+}
+
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
@@ -211,6 +266,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
+      <TreeLeaves scene={scene} />
     </group>
   );
 }
