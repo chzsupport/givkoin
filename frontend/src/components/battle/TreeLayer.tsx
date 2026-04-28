@@ -5251,8 +5251,29 @@ const MANUAL_LEAF_POINTS_TEXT = `
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
 (useGLTF as unknown as { setDecoderPath: (path: string) => void }).setDecoderPath(DRACO_DECODER_PATH);
 
+function hslToRgb(h: number, s: number, l: number): THREE.Color {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return new THREE.Color(r + m, g + m, b + m);
+}
+
+const WAVE_CYCLE = 15;
+const WAVE_RISE = 3;
+const WAVE_SPREAD = 2;
+const WHITE_PULSE_COUNT = 3;
+const WHITE_PULSE_DUR = 0.25;
+
 function TreeLeavesManual() {
   const instRef = useRef<THREE.InstancedMesh>(null);
+  const colorArr = useRef<Float32Array | null>(null);
 
   const points = useMemo(() => {
     const out: THREE.Vector3[] = [];
@@ -5269,6 +5290,12 @@ function TreeLeavesManual() {
     return out;
   }, []);
 
+  const { minY, maxY } = useMemo(() => {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of points) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); }
+    return { minY: lo, maxY: hi };
+  }, [points]);
+
   useEffect(() => {
     const inst = instRef.current;
     if (!inst) return;
@@ -5281,14 +5308,71 @@ function TreeLeavesManual() {
       inst.setMatrixAt(i, dummy.matrix);
     }
     inst.instanceMatrix.needsUpdate = true;
+
+    const count = points.length;
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      arr[i * 3] = 0; arr[i * 3 + 1] = 1; arr[i * 3 + 2] = 0.27;
+    }
+    inst.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
+    colorArr.current = arr;
   }, [points]);
+
+  useFrame(() => {
+    const inst = instRef.current;
+    const arr = colorArr.current;
+    if (!inst || !arr) return;
+
+    const t = performance.now() / 1000;
+    const cycleT = t % WAVE_CYCLE;
+    const count = points.length;
+    const range = maxY - minY || 1;
+
+    for (let i = 0; i < count; i++) {
+      const py = points[i].y;
+      const normY = (py - minY) / range;
+      const hueOff = (i * 37.7 + t * 40) % 360;
+      let col = hslToRgb(hueOff, 0.9, 0.55);
+      let pulse = 0.7 + 0.3 * Math.sin(t * 2 + i * 0.5);
+
+      if (cycleT < WAVE_RISE) {
+        const waveY = cycleT / WAVE_RISE;
+        const dist = Math.abs(normY - waveY);
+        if (dist < 0.15) {
+          const f = 1 - dist / 0.15;
+          col = new THREE.Color(1, 0.85, 0.2).lerp(col, 1 - f);
+          pulse = Math.max(pulse, 0.7 + f * 0.6);
+        }
+      } else if (cycleT < WAVE_RISE + WAVE_SPREAD) {
+        const spreadP = (cycleT - WAVE_RISE) / WAVE_SPREAD;
+        const f = Math.max(0, 1 - spreadP);
+        col = col.lerp(new THREE.Color(1, 0.95, 0.7), f * 0.6);
+        pulse = Math.max(pulse, 0.7 + f * 0.4);
+      } else {
+        const afterT = cycleT - WAVE_RISE - WAVE_SPREAD;
+        const pulseDur = WHITE_PULSE_COUNT * WHITE_PULSE_DUR * 2;
+        if (afterT < pulseDur) {
+          const pIdx = Math.floor(afterT / (WHITE_PULSE_DUR * 2));
+          const pLocal = (afterT % (WHITE_PULSE_DUR * 2)) / (WHITE_PULSE_DUR * 2);
+          const whiteF = pLocal < 0.5 ? pLocal * 2 : (1 - pLocal) * 2;
+          col = col.lerp(new THREE.Color(1, 1, 1), whiteF * 0.9);
+          pulse = Math.max(pulse, 0.7 + whiteF * 0.5);
+        }
+      }
+
+      arr[i * 3] = col.r * pulse;
+      arr[i * 3 + 1] = col.g * pulse;
+      arr[i * 3 + 2] = col.b * pulse;
+    }
+    inst.instanceColor.needsUpdate = true;
+  });
 
   if (!points.length) return null;
 
   return (
     <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
       <sphereGeometry args={[1.2, 16, 16]} />
-      <meshStandardMaterial color="#00ff44" emissive="#00ff44" emissiveIntensity={10} roughness={0.25} metalness={0.0} />
+      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={3} roughness={0.25} metalness={0.0} toneMapped={false} />
     </instancedMesh>
   );
 }
