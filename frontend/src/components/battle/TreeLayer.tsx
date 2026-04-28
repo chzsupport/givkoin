@@ -178,30 +178,38 @@ function TreeLeaves({ scene }: { scene: THREE.Group }) {
   const leavesRef = useRef<THREE.InstancedMesh>(null!);
   
   const leafPositions = useMemo(() => {
-    const points: THREE.Vector3[] = [];
+    const points: { pos: THREE.Vector3; dist: number }[] = [];
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         const positions = child.geometry.attributes.position;
         if (positions) {
-          // Ищем точки, которые находятся далеко от центра (кончики ветвей)
-          // Для пробного варианта выберем ~100 случайных вершин из верхних частей геометрии
           const count = positions.count;
-          const step = Math.max(1, Math.floor(count / 150)); // Берем выборку
+          // Берем более частую выборку для точности
+          const step = Math.max(1, Math.floor(count / 300)); 
           
           for (let i = 0; i < count; i += step) {
             const v = new THREE.Vector3().fromBufferAttribute(positions, i);
             v.applyMatrix4(child.matrixWorld);
-            // Листья обычно сверху и по бокам
-            if (v.y > 50) { 
-              points.push(v);
+            
+            // Считаем расстояние от центра ствола (X=0, Z=0)
+            const distFromCenter = Math.sqrt(v.x * v.x + v.z * v.z);
+            
+            // Нам нужны точки, которые:
+            // 1. Достаточно высоко (выше нижней части ствола)
+            // 2. Далеко от центра (концы ветвей)
+            if (v.y > 60 && distFromCenter > 40) {
+              points.push({ pos: v, dist: distFromCenter });
             }
           }
         }
       }
     });
 
-    // Перемешиваем и берем ровно 100 для пробы
-    return points.sort(() => Math.random() - 0.5).slice(0, 100);
+    // Сортируем по удаленности от центра и берем самые "крайние" точки
+    return points
+      .sort((a, b) => b.dist - a.dist)
+      .slice(0, 100)
+      .map(p => p.pos);
   }, [scene]);
 
   useEffect(() => {
