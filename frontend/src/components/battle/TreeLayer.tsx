@@ -5364,7 +5364,7 @@ function TreeLeavesManual() {
       arr[i * 3 + 1] = col.g * pulse;
       arr[i * 3 + 2] = col.b * pulse;
     }
-    inst.instanceColor.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   });
 
   if (!points.length) return null;
