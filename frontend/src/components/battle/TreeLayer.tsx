@@ -27,7 +27,7 @@ type SatelliteCfg = {
 };
 
 const SATELLITE_BOB_AMP = 6;
-const TREE_LIGHT_MULT_PCT = 10;
+const TREE_LIGHT_MULT_PCT = 5;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 
 function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[number, number]> }) {
