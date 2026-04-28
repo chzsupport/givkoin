@@ -174,7 +174,7 @@ function SceneBloom() {
 
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const { scene: loadedScene } = useGLTF('/tree-model.glb', true);
+  const { scene: loadedScene } = useGLTF('/modelToUsed-v1.glb', true);
 
   const scene = useMemo(() => {
     const cloned = loadedScene.clone(true);
