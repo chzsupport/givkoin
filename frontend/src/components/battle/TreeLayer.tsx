@@ -108,7 +108,7 @@ function Satellite({
 
   return (
     <group ref={ref}>
-      <pointLight intensity={cfg.light * 0.25} distance={0} decay={0} color={color} />
+      <pointLight intensity={cfg.light * 0.25} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
 
       <group>
         <sprite scale={[cfg.size * 13.5, cfg.size * 13.5, 1]}>
@@ -249,8 +249,8 @@ function TreeSatellites() {
         y: 377,
         size: 18,
         light: 30,
-        lightDistance: 0,
-        lightDecay: 0,
+        lightDistance: 650,
+        lightDecay: 2,
         radius: 209,
         speed: 0.55,
         dir: 1,
@@ -262,8 +262,8 @@ function TreeSatellites() {
         y: 208,
         size: 16,
         light: 30,
-        lightDistance: 0,
-        lightDecay: 0,
+        lightDistance: 650,
+        lightDecay: 2,
         radius: 248,
         speed: 0.35,
         dir: -1,
@@ -275,8 +275,8 @@ function TreeSatellites() {
         y: 72,
         size: 16,
         light: 30,
-        lightDistance: 0,
-        lightDecay: 0,
+        lightDistance: 650,
+        lightDecay: 2,
         radius: 292,
         speed: 0.7,
         dir: 1,
