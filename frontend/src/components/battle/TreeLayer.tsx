@@ -27,7 +27,7 @@ type SatelliteCfg = {
 };
 
 const SATELLITE_BOB_AMP = 6;
-const TREE_LIGHT_MULT_PCT = 100;
+const TREE_LIGHT_MULT_PCT = 55;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 
 function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[number, number]> }) {
@@ -252,7 +252,7 @@ function TreeSatellites() {
         size: 18,
         light: 30,
         lightDistance: 0,
-        lightDecay: 2,
+        lightDecay: 0,
         radius: 209,
         speed: 0.55,
         dir: 1,
@@ -265,7 +265,7 @@ function TreeSatellites() {
         size: 16,
         light: 30,
         lightDistance: 0,
-        lightDecay: 2,
+        lightDecay: 0,
         radius: 248,
         speed: 0.35,
         dir: -1,
@@ -278,7 +278,7 @@ function TreeSatellites() {
         size: 16,
         light: 30,
         lightDistance: 0,
-        lightDecay: 2,
+        lightDecay: 0,
         radius: 292,
         speed: 0.7,
         dir: 1,
