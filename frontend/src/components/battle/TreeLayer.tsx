@@ -5352,7 +5352,6 @@ function TreeLeavesManual() {
         const afterT = cycleT - WAVE_RISE - WAVE_SPREAD;
         const pulseDur = WHITE_PULSE_COUNT * WHITE_PULSE_DUR * 2;
         if (afterT < pulseDur) {
-          const pIdx = Math.floor(afterT / (WHITE_PULSE_DUR * 2));
           const pLocal = (afterT % (WHITE_PULSE_DUR * 2)) / (WHITE_PULSE_DUR * 2);
           const whiteF = pLocal < 0.5 ? pLocal * 2 : (1 - pLocal) * 2;
           col = col.lerp(new THREE.Color(1, 1, 1), whiteF * 0.9);
