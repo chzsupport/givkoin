@@ -5270,7 +5270,7 @@ const WAVE_RISE = 3;
 const WAVE_SPREAD = 2;
 const WHITE_PULSE_COUNT = 3;
 const WHITE_PULSE_DUR = 0.25;
-const EFFECT_POWER_MULT = 10;
+const EFFECT_POWER_MULT = 100;
 
 function TreeLeavesManual() {
   const instRef = useRef<THREE.InstancedMesh>(null);
@@ -5372,7 +5372,7 @@ function TreeLeavesManual() {
   return (
     <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
       <sphereGeometry args={[1.2, 16, 16]} />
-      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={30} roughness={0.25} metalness={0.0} toneMapped={false} />
+      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={300} roughness={0.25} metalness={0.0} toneMapped={false} />
     </instancedMesh>
   );
 }
