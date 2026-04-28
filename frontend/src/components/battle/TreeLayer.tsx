@@ -178,38 +178,82 @@ function TreeLeaves({ scene }: { scene: THREE.Group }) {
   const leavesRef = useRef<THREE.InstancedMesh>(null!);
   
   const leafPositions = useMemo(() => {
-    const points: { pos: THREE.Vector3; dist: number }[] = [];
+    const meshes: THREE.Object3D[] = [];
     scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        const positions = child.geometry.attributes.position;
-        if (positions) {
-          const count = positions.count;
-          // Берем более частую выборку для точности
-          const step = Math.max(1, Math.floor(count / 300)); 
-          
-          for (let i = 0; i < count; i += step) {
-            const v = new THREE.Vector3().fromBufferAttribute(positions, i);
-            v.applyMatrix4(child.matrixWorld);
-            
-            // Считаем расстояние от центра ствола (X=0, Z=0)
-            const distFromCenter = Math.sqrt(v.x * v.x + v.z * v.z);
-            
-            // Нам нужны точки, которые:
-            // 1. Достаточно высоко (выше нижней части ствола)
-            // 2. Далеко от центра (концы ветвей)
-            if (v.y > 60 && distFromCenter > 40) {
-              points.push({ pos: v, dist: distFromCenter });
-            }
-          }
-        }
-      }
+      if (child instanceof THREE.Mesh) meshes.push(child);
     });
 
-    // Сортируем по удаленности от центра и берем самые "крайние" точки
-    return points
-      .sort((a, b) => b.dist - a.dist)
-      .slice(0, 100)
-      .map(p => p.pos);
+    const bbox = new THREE.Box3().setFromObject(scene);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+
+    const height = Math.max(1, size.y);
+    const minY = Number.isFinite(bbox.min.y) ? bbox.min.y : 0;
+    const maxY = Number.isFinite(bbox.max.y) ? bbox.max.y : height;
+    const yFloor = minY + height * 0.35;
+
+    const sphere = new THREE.Sphere();
+    bbox.getBoundingSphere(sphere);
+    const castRadius = Math.max(1, sphere.radius) * 1.35;
+
+    const raycaster = new THREE.Raycaster();
+    const hits: Array<{ pos: THREE.Vector3; dist: number; y: number }> = [];
+    const origin = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+
+    const RAY_COUNT = 900;
+    for (let i = 0; i < RAY_COUNT; i++) {
+      // Случайная точка на сфере вокруг дерева (снаружи)
+      const u = Math.random();
+      const v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      const sx = Math.sin(phi) * Math.cos(theta);
+      const sy = Math.cos(phi);
+      const sz = Math.sin(phi) * Math.sin(theta);
+
+      origin.set(center.x + sx * castRadius, center.y + sy * castRadius, center.z + sz * castRadius);
+      dir.subVectors(center, origin).normalize();
+
+      raycaster.set(origin, dir);
+      raycaster.far = castRadius * 3;
+
+      const intersections = raycaster.intersectObjects(meshes, true);
+      if (!intersections.length) continue;
+
+      const p = intersections[0].point;
+      if (p.y < yFloor) continue;
+      if (p.y > maxY) continue;
+
+      const dx = p.x - center.x;
+      const dz = p.z - center.z;
+      const distFromCenter = Math.sqrt(dx * dx + dz * dz);
+      if (distFromCenter < 15) continue;
+
+      hits.push({ pos: p.clone(), dist: distFromCenter, y: p.y });
+    }
+
+    // Берём самые "крайние" точки (ближе к кончикам ветвей)
+    hits.sort((a, b) => b.dist - a.dist);
+
+    const result: THREE.Vector3[] = [];
+    const MIN_SPACING = 10;
+    for (const h of hits) {
+      let tooClose = false;
+      for (const r of result) {
+        if (r.distanceToSquared(h.pos) < MIN_SPACING * MIN_SPACING) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose) continue;
+      result.push(h.pos);
+      if (result.length >= 100) break;
+    }
+
+    return result;
   }, [scene]);
 
   useEffect(() => {
