@@ -108,7 +108,7 @@ function Satellite({
 
   return (
     <group ref={ref}>
-      <pointLight intensity={cfg.light * 0.5} distance={0} decay={0} color={color} />
+      <pointLight intensity={cfg.light * 0.25} distance={0} decay={0} color={color} />
 
       <group>
         <sprite scale={[cfg.size * 13.5, cfg.size * 13.5, 1]}>
