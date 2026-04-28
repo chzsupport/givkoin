@@ -28,69 +28,6 @@ type SatelliteCfg = {
 
 const SATELLITE_BOB_AMP = 6;
 
-function buildLeafTipsPointsGeometry(root: THREE.Object3D, opts?: { count?: number }) {
-  const count = opts?.count ?? 1600;
-
-  const box = new THREE.Box3().setFromObject(root);
-  const minY = box.min.y;
-  const maxY = box.max.y;
-  const height = Math.max(1e-6, maxY - minY);
-  const yGate = minY + height * 0.72;
-
-  const candidates: THREE.Vector3[] = [];
-
-  root.traverse((obj) => {
-    const mesh = obj as THREE.Mesh;
-    const geo = mesh.geometry as THREE.BufferGeometry | undefined;
-    const posAttr = geo?.getAttribute?.('position') as THREE.BufferAttribute | undefined;
-    if (!posAttr || posAttr.itemSize !== 3) return;
-
-    const world = new THREE.Matrix4();
-    world.copy(mesh.matrixWorld);
-
-    const stride = Math.max(1, Math.floor(posAttr.count / 1400));
-    const v = new THREE.Vector3();
-    for (let i = 0; i < posAttr.count; i += stride) {
-      v.fromBufferAttribute(posAttr, i).applyMatrix4(world);
-      if (v.y < yGate) continue;
-      candidates.push(v.clone());
-    }
-  });
-
-  if (candidates.length === 0) {
-    return new THREE.BufferGeometry();
-  }
-
-  let maxR = 0;
-  for (const p of candidates) {
-    const r = Math.hypot(p.x, p.z);
-    if (r > maxR) maxR = r;
-  }
-
-  const rGate = maxR * 0.78;
-  const outer: THREE.Vector3[] = [];
-  for (const p of candidates) {
-    const r = Math.hypot(p.x, p.z);
-    if (r >= rGate) outer.push(p);
-  }
-
-  const src = outer.length > 0 ? outer : candidates;
-  const chosenCount = Math.min(count, src.length);
-
-  const positions = new Float32Array(chosenCount * 3);
-  for (let i = 0; i < chosenCount; i++) {
-    const p = src[(Math.random() * src.length) | 0];
-    const j = 0.9;
-    positions[i * 3 + 0] = p.x + (Math.random() - 0.5) * j;
-    positions[i * 3 + 1] = p.y + (Math.random() - 0.5) * j;
-    positions[i * 3 + 2] = p.z + (Math.random() - 0.5) * j;
-  }
-
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  return g;
-}
-
 function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[number, number]> }) {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -263,9 +200,6 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
     return cloned;
   }, [loadedScene]);
 
-  const leafTipsGeo = useMemo(() => buildLeafTipsPointsGeometry(scene, { count: 1700 }), [scene]);
-  const leafDotTex = useMemo(() => makeCircleTexture(), []);
-
   useFrame((state) => {
     if (rotate && groupRef.current) {
       groupRef.current.rotation.y = state.clock.elapsedTime * 0.05;
@@ -275,18 +209,6 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <points geometry={leafTipsGeo}>
-        <pointsMaterial
-          map={leafDotTex}
-          color={new THREE.Color('#2cff3a')}
-          size={2.2}
-          sizeAttenuation
-          transparent
-          opacity={0.95}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </points>
     </group>
   );
 }
