@@ -6,7 +6,7 @@ import { OrbitControls } from '@react-three/drei';
 import { Suspense, useEffect } from 'react';
 
 const YggdrasilTree = dynamic(
-  () => import('@/components/battle/TreeLayer').then((m) => m.YggdrasilTree),
+  () => import('@/components/tree/TreeLayer').then((m) => m.YggdrasilTree),
   { ssr: false }
 );
 

@@ -4,5 +4,5 @@ export {
   YggdrasilTree,
   TreeLayer,
   TreeSceneStandalone,
-} from '@/components/battle/TreeLayer';
-export type { TreeLayerProps } from '@/components/battle/TreeLayer';
+} from '@/components/tree/TreeLayer';
+export type { TreeLayerProps } from '@/components/tree/TreeLayer';

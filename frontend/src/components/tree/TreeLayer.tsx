@@ -5270,6 +5270,7 @@ const WAVE_RISE = 3;
 const WAVE_SPREAD = 2;
 const WHITE_PULSE_COUNT = 3;
 const WHITE_PULSE_DUR = 0.25;
+const EFFECT_POWER_MULT = 10;
 
 function TreeLeavesManual() {
   const instRef = useRef<THREE.InstancedMesh>(null);
@@ -5333,7 +5334,7 @@ function TreeLeavesManual() {
       const normY = (py - minY) / range;
       const hueOff = (i * 37.7 + t * 40) % 360;
       let col = hslToRgb(hueOff, 0.9, 0.55);
-      let pulse = 0.7 + 0.3 * Math.sin(t * 2 + i * 0.5);
+      let pulse = (0.7 + 0.3 * Math.sin(t * 2 + i * 0.5)) * EFFECT_POWER_MULT;
 
       if (cycleT < WAVE_RISE) {
         const waveY = cycleT / WAVE_RISE;
@@ -5341,13 +5342,13 @@ function TreeLeavesManual() {
         if (dist < 0.15) {
           const f = 1 - dist / 0.15;
           col = new THREE.Color(1, 0.85, 0.2).lerp(col, 1 - f);
-          pulse = Math.max(pulse, 0.7 + f * 0.6);
+          pulse = Math.max(pulse, (0.7 + f * 0.6) * EFFECT_POWER_MULT);
         }
       } else if (cycleT < WAVE_RISE + WAVE_SPREAD) {
         const spreadP = (cycleT - WAVE_RISE) / WAVE_SPREAD;
         const f = Math.max(0, 1 - spreadP);
         col = col.lerp(new THREE.Color(1, 0.95, 0.7), f * 0.6);
-        pulse = Math.max(pulse, 0.7 + f * 0.4);
+        pulse = Math.max(pulse, (0.7 + f * 0.4) * EFFECT_POWER_MULT);
       } else {
         const afterT = cycleT - WAVE_RISE - WAVE_SPREAD;
         const pulseDur = WHITE_PULSE_COUNT * WHITE_PULSE_DUR * 2;
@@ -5355,7 +5356,7 @@ function TreeLeavesManual() {
           const pLocal = (afterT % (WHITE_PULSE_DUR * 2)) / (WHITE_PULSE_DUR * 2);
           const whiteF = pLocal < 0.5 ? pLocal * 2 : (1 - pLocal) * 2;
           col = col.lerp(new THREE.Color(1, 1, 1), whiteF * 0.9);
-          pulse = Math.max(pulse, 0.7 + whiteF * 0.5);
+          pulse = Math.max(pulse, (0.7 + whiteF * 0.5) * EFFECT_POWER_MULT);
         }
       }
 
@@ -5371,7 +5372,7 @@ function TreeLeavesManual() {
   return (
     <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
       <sphereGeometry args={[1.2, 16, 16]} />
-      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={3} roughness={0.25} metalness={0.0} toneMapped={false} />
+      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={30} roughness={0.25} metalness={0.0} toneMapped={false} />
     </instancedMesh>
   );
 }
