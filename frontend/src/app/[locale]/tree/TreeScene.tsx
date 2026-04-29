@@ -4,14 +4,9 @@ import dynamic from 'next/dynamic';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Suspense, useEffect } from 'react';
-import * as THREE from 'three';
 
 const YggdrasilTree = dynamic(
   () => import('@/components/tree/TreeLayer').then((m) => m.YggdrasilTree),
-  { ssr: false }
-);
-const SceneBloom = dynamic(
-  () => import('@/components/tree/TreeLayer').then((m) => m.SceneBloom),
   { ssr: false }
 );
 
@@ -48,15 +43,9 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
         dpr={isTabVisible ? [1, 1.25] : 1}
         frameloop={isTabVisible ? 'always' : 'never'}
         gl={{ antialias: false, powerPreference: 'low-power' }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.ReinhardToneMapping;
-          gl.toneMappingExposure = 1.32;
-          gl.outputColorSpace = THREE.SRGBColorSpace;
-        }}
         camera={{ position: [0, 240, 900], fov: 45, near: 1, far: 2000 }}
       >
         <ResponsiveCamera />
-        <SceneBloom />
 
         <Suspense fallback={null}>
           <group position={[0, -240, 0]}>

@@ -5266,12 +5266,13 @@ function hslToRgb(h: number, s: number, l: number): THREE.Color {
 }
 
 const ENERGY_CYCLE = 15;
-const ENERGY_CHARGE_DURATION = 2.8;
-const ENERGY_FLOW_DURATION = 2.45;
+const ENERGY_CHARGE_DURATION = 2.6;
+const ENERGY_FLOW_DURATION = 2.35;
 const ENERGY_PULSE_COUNT = 3;
 const ENERGY_PULSE_PERIOD = 0.42;
 const ENERGY_PULSE_WIDTH = 0.16;
-const ENERGY_PULSE_START = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.24;
+const ENERGY_PULSE_START = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.18;
+const EFFECT_POWER_MULT = 100;
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -5286,10 +5287,10 @@ function getEnergyPhase(timeSeconds: number) {
   const cycleT = ((timeSeconds % ENERGY_CYCLE) + ENERGY_CYCLE) % ENERGY_CYCLE;
   const charge = cycleT < ENERGY_CHARGE_DURATION
     ? smooth01(cycleT / ENERGY_CHARGE_DURATION)
-    : Math.max(0, 1 - smooth01((cycleT - ENERGY_CHARGE_DURATION) / 0.75)) * 0.55;
+    : Math.max(0, 1 - smooth01((cycleT - ENERGY_CHARGE_DURATION) / 0.7)) * 0.45;
   const flow = clamp01((cycleT - ENERGY_CHARGE_DURATION) / ENERGY_FLOW_DURATION);
-  const flowActive = cycleT >= ENERGY_CHARGE_DURATION - 0.18
-    && cycleT <= ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.42;
+  const flowActive = cycleT >= ENERGY_CHARGE_DURATION - 0.15
+    && cycleT <= ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.28;
 
   let leafPulse = 0;
   for (let i = 0; i < ENERGY_PULSE_COUNT; i += 1) {
@@ -5301,29 +5302,24 @@ function getEnergyPhase(timeSeconds: number) {
   return { cycleT, charge, flow, flowActive, leafPulse };
 }
 
-let cachedManualLeafPoints: THREE.Vector3[] | null = null;
-
-function getManualLeafPoints() {
-  if (cachedManualLeafPoints) return cachedManualLeafPoints;
-
-  const out: THREE.Vector3[] = [];
-  const re = /\[leaf-point\]\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/;
-  for (const line of MANUAL_LEAF_POINTS_TEXT.split(/\r?\n/)) {
-    const m = line.match(re);
-    if (!m) continue;
-    const x = Number(m[1]);
-    const y = Number(m[2]);
-    const z = Number(m[3]);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
-    out.push(new THREE.Vector3(x, y, z));
-  }
-
-  cachedManualLeafPoints = out;
-  return out;
-}
-
 function TreeLeavesManual() {
-  const points = useMemo(() => getManualLeafPoints(), []);
+  const instRef = useRef<THREE.InstancedMesh>(null);
+  const colorArr = useRef<Float32Array | null>(null);
+
+  const points = useMemo(() => {
+    const out: THREE.Vector3[] = [];
+    const re = /\[leaf-point\]\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/;
+    for (const line of MANUAL_LEAF_POINTS_TEXT.split(/\r?\n/)) {
+      const m = line.match(re);
+      if (!m) continue;
+      const x = Number(m[1]);
+      const y = Number(m[2]);
+      const z = Number(m[3]);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+      out.push(new THREE.Vector3(x, y, z));
+    }
+    return out;
+  }, []);
 
   const { minY, maxY } = useMemo(() => {
     let lo = Infinity, hi = -Infinity;
@@ -5331,27 +5327,33 @@ function TreeLeavesManual() {
     return { minY: lo, maxY: hi };
   }, [points]);
 
-  const { geometry, colors } = useMemo(() => {
-    const positions = new Float32Array(points.length * 3);
-    const colorValues = new Float32Array(points.length * 3);
+  useEffect(() => {
+    const inst = instRef.current;
+    if (!inst) return;
+    const dummy = new THREE.Object3D();
     for (let i = 0; i < points.length; i += 1) {
-      positions[i * 3] = points[i].x;
-      positions[i * 3 + 1] = points[i].y;
-      positions[i * 3 + 2] = points[i].z;
-      colorValues[i * 3] = 0.4;
-      colorValues[i * 3 + 1] = 1;
-      colorValues[i * 3 + 2] = 0.8;
+      dummy.position.copy(points[i]);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix);
     }
+    inst.instanceMatrix.needsUpdate = true;
 
-    const nextGeometry = new THREE.BufferGeometry();
-    nextGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    nextGeometry.setAttribute('color', new THREE.BufferAttribute(colorValues, 3));
-    return { geometry: nextGeometry, colors: colorValues };
+    const count = points.length;
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      arr[i * 3] = 0; arr[i * 3 + 1] = 1; arr[i * 3 + 2] = 0.27;
+    }
+    inst.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
+    colorArr.current = arr;
   }, [points]);
 
-  useEffect(() => () => geometry.dispose(), [geometry]);
-
   useFrame((state) => {
+    const inst = instRef.current;
+    const arr = colorArr.current;
+    if (!inst || !arr) return;
+
     const t = state.clock.elapsedTime;
     const phase = getEnergyPhase(t);
     const count = points.length;
@@ -5360,413 +5362,127 @@ function TreeLeavesManual() {
     for (let i = 0; i < count; i++) {
       const py = points[i].y;
       const normY = (py - minY) / range;
-      const hueOff = (i * 41.3 + t * 24 + Math.sin(t * 0.55 + i) * 24) % 360;
-      let col = hslToRgb(hueOff, 0.95, 0.6);
-      const twinkle = 0.95 + 0.22 * Math.sin(t * 2.1 + i * 0.73);
-      const crystalGlint = Math.pow(clamp01(Math.sin(t * 4.8 + i * 1.91) * 0.5 + 0.5), 10) * 1.85;
+      const hueOff = (i * 37.7 + t * 24 + Math.sin(t * 0.6 + i) * 18) % 360;
+      let col = hslToRgb(hueOff, 0.92, 0.58);
+      const twinkle = 0.92 + 0.22 * Math.sin(t * 2.15 + i * 0.73);
+      const crystal = Math.pow(clamp01(Math.sin(t * 4.8 + i * 1.91) * 0.5 + 0.5), 10) * 0.58;
       const flowTouch = phase.flowActive
-        ? smooth01(1 - Math.abs(phase.flow - (0.62 + normY * 0.28)) / 0.11)
+        ? smooth01(1 - Math.abs(phase.flow - (0.62 + normY * 0.28)) / 0.12)
         : 0;
-      const leafPulse = phase.leafPulse;
+      const pulseTouch = phase.leafPulse;
 
-      col = col.lerp(new THREE.Color(1, 0.86, 0.36), flowTouch * 0.35);
-      col = col.lerp(new THREE.Color(1, 1, 1), leafPulse * 0.45);
+      col = col.lerp(new THREE.Color(1, 0.86, 0.35), flowTouch * 0.42);
+      col = col.lerp(new THREE.Color(1, 1, 1), pulseTouch * 0.7);
 
-      const brightness = 0.75 + twinkle * 0.34 + crystalGlint * 0.48 + flowTouch * 0.85 + leafPulse * 2.35;
-      colors[i * 3] = col.r * brightness;
-      colors[i * 3 + 1] = col.g * brightness;
-      colors[i * 3 + 2] = col.b * brightness;
+      const power = (
+        0.72
+        + twinkle * 0.24
+        + crystal * 0.34
+        + flowTouch * 0.95
+        + pulseTouch * 1.95
+      ) * EFFECT_POWER_MULT;
+
+      arr[i * 3] = col.r * power;
+      arr[i * 3 + 1] = col.g * power;
+      arr[i * 3 + 2] = col.b * power;
     }
-
-    const colorAttr = geometry.getAttribute('color');
-    if (colorAttr) colorAttr.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   });
 
   if (!points.length) return null;
 
   return (
-    <points geometry={geometry} frustumCulled={false} renderOrder={8}>
-      <pointsMaterial
-        vertexColors
-        size={1.55}
-        sizeAttenuation
-        transparent
-        opacity={0.68}
-        depthWrite={false}
-        depthTest
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
-      />
-    </points>
+    <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
+      <sphereGeometry args={[1.2, 16, 16]} />
+      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={300} roughness={0.25} metalness={0.0} toneMapped={false} />
+    </instancedMesh>
   );
 }
 
-type TreeContourWaveProps = {
-  target: THREE.Object3D;
-  localRootRef: React.RefObject<THREE.Group | null>;
-};
+function createSilhouetteMaterial(uniforms: {
+  uTime: { value: number };
+  uMinY: { value: number };
+  uMaxY: { value: number };
+  uCharge: { value: number };
+  uWave: { value: number };
+  uWaveActive: { value: number };
+  uPulse: { value: number };
+}) {
+  const material = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      varying vec3 vViewNormal;
 
-type ContourScan = {
-  count: number;
-  levels: Float32Array;
-  positions: Float32Array;
-};
-
-const CONTOUR_ROWS = 56;
-const CONTOUR_COLS = 28;
-const CONTOUR_RADIALS = 40;
-const CONTOUR_SCAN_STEPS = 40;
-const CONTOUR_MARGIN = 0.08;
-const CONTOUR_MAX_POINTS = CONTOUR_ROWS * 2 + CONTOUR_COLS * 2 + CONTOUR_RADIALS;
-const CONTOUR_RESCAN_SECONDS = 0.14;
-const CONTOUR_SCAN_STEP_DIVISOR = CONTOUR_SCAN_STEPS - 1;
-const CONTOUR_ROW_DIVISOR = CONTOUR_ROWS - 1;
-const CONTOUR_COL_DIVISOR = CONTOUR_COLS - 1;
-
-function projectObjectBoundsToNdc(target: THREE.Object3D, camera: THREE.Camera) {
-  const box = new THREE.Box3().setFromObject(target);
-  if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
-    return null;
-  }
-
-  const corners = [
-    new THREE.Vector3(box.min.x, box.min.y, box.min.z),
-    new THREE.Vector3(box.min.x, box.min.y, box.max.z),
-    new THREE.Vector3(box.min.x, box.max.y, box.min.z),
-    new THREE.Vector3(box.min.x, box.max.y, box.max.z),
-    new THREE.Vector3(box.max.x, box.min.y, box.min.z),
-    new THREE.Vector3(box.max.x, box.min.y, box.max.z),
-    new THREE.Vector3(box.max.x, box.max.y, box.min.z),
-    new THREE.Vector3(box.max.x, box.max.y, box.max.z),
-  ];
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  for (const corner of corners) {
-    corner.project(camera);
-    if (!Number.isFinite(corner.x) || !Number.isFinite(corner.y)) {
-      return null;
-    }
-    minX = Math.min(minX, corner.x);
-    maxX = Math.max(maxX, corner.x);
-    minY = Math.min(minY, corner.y);
-    maxY = Math.max(maxY, corner.y);
-  }
-
-  return {
-    minX: Math.max(-1.2, minX - CONTOUR_MARGIN),
-    maxX: Math.min(1.2, maxX + CONTOUR_MARGIN),
-    minY: Math.max(-1.2, minY - CONTOUR_MARGIN),
-    maxY: Math.min(1.2, maxY + CONTOUR_MARGIN),
-  };
-}
-
-function castContourRay(
-  target: THREE.Object3D,
-  camera: THREE.Camera,
-  raycaster: THREE.Raycaster,
-  ndc: THREE.Vector2,
-) {
-  raycaster.setFromCamera(ndc, camera);
-  const hits = raycaster.intersectObject(target, true);
-  return hits[0] ?? null;
-}
-
-function traceEdgeHit(
-  target: THREE.Object3D,
-  camera: THREE.Camera,
-  raycaster: THREE.Raycaster,
-  start: THREE.Vector2,
-  end: THREE.Vector2,
-  ndc: THREE.Vector2,
-) {
-  let lastMiss: THREE.Vector2 | null = null;
-  let firstHit: THREE.Intersection | null = null;
-  let firstHitNdc: THREE.Vector2 | null = null;
-
-  for (let step = 0; step < CONTOUR_SCAN_STEPS; step += 1) {
-    const t = step / CONTOUR_SCAN_STEP_DIVISOR;
-    ndc.set(
-      THREE.MathUtils.lerp(start.x, end.x, t),
-      THREE.MathUtils.lerp(start.y, end.y, t),
-    );
-
-    const hit = castContourRay(target, camera, raycaster, ndc);
-    if (hit) {
-      firstHit = hit;
-      firstHitNdc = ndc.clone();
-      break;
-    }
-
-    lastMiss = ndc.clone();
-  }
-
-  if (!firstHit || !firstHitNdc) return null;
-  if (!lastMiss) return firstHit.point.clone();
-
-  const outside = lastMiss.clone();
-  const inside = firstHitNdc.clone();
-  let bestPoint = firstHit.point.clone();
-
-  for (let i = 0; i < 5; i += 1) {
-    ndc.set(
-      (outside.x + inside.x) * 0.5,
-      (outside.y + inside.y) * 0.5,
-    );
-
-    const hit = castContourRay(target, camera, raycaster, ndc);
-    if (hit) {
-      inside.copy(ndc);
-      bestPoint = hit.point.clone();
-    } else {
-      outside.copy(ndc);
-    }
-  }
-
-  return bestPoint;
-}
-
-function scanModelContour(
-  target: THREE.Object3D,
-  camera: THREE.Camera,
-  localRoot: THREE.Group,
-  raycaster: THREE.Raycaster,
-  ndc: THREE.Vector2,
-): ContourScan {
-  target.updateWorldMatrix(true, true);
-  localRoot.updateWorldMatrix(true, true);
-
-  const ndcBounds = projectObjectBoundsToNdc(target, camera);
-  if (!ndcBounds) {
-    return {
-      count: 0,
-      levels: new Float32Array(0),
-      positions: new Float32Array(0),
-    };
-  }
-
-  const points = new Map<string, THREE.Vector3>();
-  const addPoint = (point: THREE.Vector3 | null) => {
-    if (!point) return;
-    const localPoint = localRoot.worldToLocal(point.clone());
-    const key = [
-      Math.round(localPoint.x * 2),
-      Math.round(localPoint.y * 2),
-      Math.round(localPoint.z * 2),
-    ].join(':');
-    if (!points.has(key)) {
-      points.set(key, localPoint);
-    }
-  };
-
-  for (let row = 0; row < CONTOUR_ROWS; row += 1) {
-    const t = row / CONTOUR_ROW_DIVISOR;
-    const y = THREE.MathUtils.lerp(ndcBounds.minY, ndcBounds.maxY, t);
-    addPoint(traceEdgeHit(
-      target,
-      camera,
-      raycaster,
-      new THREE.Vector2(ndcBounds.minX, y),
-      new THREE.Vector2(ndcBounds.maxX, y),
-      ndc,
-    ));
-    addPoint(traceEdgeHit(
-      target,
-      camera,
-      raycaster,
-      new THREE.Vector2(ndcBounds.maxX, y),
-      new THREE.Vector2(ndcBounds.minX, y),
-      ndc,
-    ));
-  }
-
-  for (let col = 0; col < CONTOUR_COLS; col += 1) {
-    const t = col / CONTOUR_COL_DIVISOR;
-    const x = THREE.MathUtils.lerp(ndcBounds.minX, ndcBounds.maxX, t);
-    addPoint(traceEdgeHit(
-      target,
-      camera,
-      raycaster,
-      new THREE.Vector2(x, ndcBounds.minY),
-      new THREE.Vector2(x, ndcBounds.maxY),
-      ndc,
-    ));
-    addPoint(traceEdgeHit(
-      target,
-      camera,
-      raycaster,
-      new THREE.Vector2(x, ndcBounds.maxY),
-      new THREE.Vector2(x, ndcBounds.minY),
-      ndc,
-    ));
-  }
-
-  const centerX = (ndcBounds.minX + ndcBounds.maxX) * 0.5;
-  const centerY = (ndcBounds.minY + ndcBounds.maxY) * 0.5;
-  const radiusX = Math.max(0.06, (ndcBounds.maxX - ndcBounds.minX) * 0.62);
-  const radiusY = Math.max(0.06, (ndcBounds.maxY - ndcBounds.minY) * 0.62);
-
-  for (let i = 0; i < CONTOUR_RADIALS; i += 1) {
-    const angle = (i / CONTOUR_RADIALS) * Math.PI * 2;
-    addPoint(traceEdgeHit(
-      target,
-      camera,
-      raycaster,
-      new THREE.Vector2(
-        centerX + Math.cos(angle) * radiusX,
-        centerY + Math.sin(angle) * radiusY,
-      ),
-      new THREE.Vector2(centerX, centerY),
-      ndc,
-    ));
-  }
-
-  const ordered = Array.from(points.values()).slice(0, CONTOUR_MAX_POINTS);
-  if (!ordered.length) {
-    return {
-      count: 0,
-      levels: new Float32Array(0),
-      positions: new Float32Array(0),
-    };
-  }
-
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const point of ordered) {
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-  const rangeY = maxY - minY || 1;
-
-  const positions = new Float32Array(ordered.length * 3);
-  const levels = new Float32Array(ordered.length);
-
-  for (let i = 0; i < ordered.length; i += 1) {
-    const point = ordered[i];
-    positions[i * 3] = point.x;
-    positions[i * 3 + 1] = point.y;
-    positions[i * 3 + 2] = point.z;
-    levels[i] = clamp01((point.y - minY) / rangeY);
-  }
-
-  return {
-    count: ordered.length,
-    levels,
-    positions,
-  };
-}
-
-function TreeContourWave({ target, localRootRef }: TreeContourWaveProps) {
-  const { camera } = useThree();
-  const geometry = useMemo(() => {
-    const next = new THREE.BufferGeometry();
-    next.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CONTOUR_MAX_POINTS * 3), 3));
-    next.setAttribute('color', new THREE.BufferAttribute(new Float32Array(CONTOUR_MAX_POINTS * 3), 3));
-    next.setDrawRange(0, 0);
-    return next;
-  }, []);
-  const raycaster = useMemo(() => new THREE.Raycaster(), []);
-  const ndcRef = useRef(new THREE.Vector2());
-  const levelsRef = useRef(new Float32Array(CONTOUR_MAX_POINTS));
-  const countRef = useRef(0);
-  const lastScanRef = useRef(-Infinity);
-
-  useEffect(() => () => geometry.dispose(), [geometry]);
-
-  useFrame((state) => {
-    const localRoot = localRootRef.current;
-    if (!localRoot) return;
-
-    if (state.clock.elapsedTime - lastScanRef.current >= CONTOUR_RESCAN_SECONDS || countRef.current === 0) {
-      const scan = scanModelContour(target, camera, localRoot, raycaster, ndcRef.current);
-      if (scan.count > 0) {
-        const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
-        const positionArray = positionAttr.array as Float32Array;
-        positionArray.fill(0);
-        positionArray.set(scan.positions, 0);
-        positionAttr.needsUpdate = true;
-        geometry.setDrawRange(0, scan.count);
-        countRef.current = scan.count;
-        levelsRef.current.fill(0);
-        levelsRef.current.set(scan.levels, 0);
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vViewNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
       }
-      lastScanRef.current = state.clock.elapsedTime;
-    }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uMinY;
+      uniform float uMaxY;
+      uniform float uCharge;
+      uniform float uWave;
+      uniform float uWaveActive;
+      uniform float uPulse;
 
-    const count = countRef.current;
-    if (!count) return;
+      varying vec3 vWorldPosition;
+      varying vec3 vViewNormal;
 
-    const phase = getEnergyPhase(state.clock.elapsedTime);
-    const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute;
-    const cool = new THREE.Color('#56fff1');
-    const warm = new THREE.Color('#ffd56c');
-    const white = new THREE.Color('#ffffff');
-    const contourBand = 0.115;
-    const contourTrail = 0.3;
+      void main() {
+        float rangeY = max(0.0001, uMaxY - uMinY);
+        float level = clamp((vWorldPosition.y - uMinY) / rangeY, 0.0, 1.0);
+        float edge = pow(clamp(1.0 - abs(normalize(vViewNormal).z), 0.0, 1.0), 1.9);
+        edge = smoothstep(0.08, 0.95, edge);
 
-    for (let i = 0; i < count; i += 1) {
-      const level = levelsRef.current[i];
-      const baseCharge = phase.charge * Math.max(0, 1 - level / 0.4) * 1.22;
-      const riseWave = phase.flowActive
-        ? smooth01(1 - Math.abs(level - phase.flow) / contourBand)
-        : 0;
-      const riseTrail = phase.flowActive && phase.flow > level
-        ? Math.max(0, 1 - (phase.flow - level) / contourTrail) * 0.34
-        : 0;
-      const topPulse = level > 0.74 ? phase.leafPulse * smooth01((level - 0.74) / 0.26) : 0;
-      const shimmer = 0.03 + 0.03 * Math.sin(state.clock.elapsedTime * 1.6 + i * 0.17);
-      const brightness = shimmer + baseCharge + riseWave * 2.35 + riseTrail + topPulse * 1.45;
-      const color = cool.clone()
-        .lerp(warm, clamp01(baseCharge * 0.82 + riseWave * 0.95))
-        .lerp(white, topPulse * 0.58 + riseWave * 0.2);
+        float chargeGlow = uCharge * (1.0 - smoothstep(0.0, 0.34, level)) * 1.25;
+        float waveGlow = 0.0;
+        float trailGlow = 0.0;
 
-      colorAttr.setXYZ(i, color.r * brightness, color.g * brightness, color.b * brightness);
-    }
+        if (uWaveActive > 0.5) {
+          waveGlow = 1.0 - smoothstep(0.0, 0.13, abs(level - uWave));
+          if (uWave > level) {
+            trailGlow = max(0.0, 1.0 - (uWave - level) / 0.26) * 0.32;
+          }
+        }
 
-    colorAttr.needsUpdate = true;
+        float topPulse = 0.0;
+        if (level > 0.72) {
+          topPulse = uPulse * smoothstep(0.72, 1.0, level);
+        }
+
+        float shimmer = 0.028 + 0.022 * sin(uTime * 1.7 + level * 12.0);
+        float glow = (shimmer + chargeGlow + waveGlow * 2.35 + trailGlow + topPulse * 1.35) * edge;
+
+        vec3 cool = vec3(0.33, 1.0, 0.95);
+        vec3 warm = vec3(1.0, 0.84, 0.42);
+        vec3 color = mix(cool, warm, clamp(chargeGlow * 0.75 + waveGlow * 0.92, 0.0, 1.0));
+        color = mix(color, vec3(1.0), clamp(topPulse * 0.52 + waveGlow * 0.14, 0.0, 1.0));
+
+        gl_FragColor = vec4(color * glow, clamp(glow * 0.72, 0.0, 1.0));
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.BackSide,
   });
 
-  return (
-    <group renderOrder={6}>
-      <points geometry={geometry} frustumCulled={false}>
-        <pointsMaterial
-          vertexColors
-          size={11.5}
-          sizeAttenuation
-          transparent
-          opacity={0.26}
-          depthWrite={false}
-          depthTest={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </points>
-      <points geometry={geometry} frustumCulled={false}>
-        <pointsMaterial
-          vertexColors
-          size={4.6}
-          sizeAttenuation
-          transparent
-          opacity={0.9}
-          depthWrite={false}
-          depthTest={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </points>
-    </group>
-  );
+  material.toneMapped = false;
+  return material;
 }
 
-function GroundEnergyGlow() {
+function GroundChargeGlow() {
   const coreRef = useRef<THREE.Sprite>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   const coreMatRef = useRef<THREE.SpriteMaterial>(null);
   const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
   const auraTexture = useMemo(
     () =>
       makeRadialTexture({
@@ -5784,50 +5500,50 @@ function GroundEnergyGlow() {
 
   useFrame((state) => {
     const phase = getEnergyPhase(state.clock.elapsedTime);
-    const baseGlow = phase.cycleT < ENERGY_CHARGE_DURATION
-      ? 0.22 + phase.charge * 1.28
-      : 0.16 + Math.max(0, 1 - phase.flow) * 0.34;
+    const glow = phase.cycleT < ENERGY_CHARGE_DURATION
+      ? 0.18 + phase.charge * 1.25
+      : 0.12 + Math.max(0, 1 - phase.flow) * 0.32;
 
     if (coreRef.current) {
-      const size = 78 + baseGlow * 62;
+      const size = 72 + glow * 60;
       coreRef.current.scale.set(size, size, 1);
     }
 
     if (ringRef.current) {
-      const scale = 1 + baseGlow * 0.18;
-      ringRef.current.scale.set(scale, scale * 0.8, 1);
+      const scale = 1 + glow * 0.2;
+      ringRef.current.scale.set(scale, scale * 0.82, 1);
       ringRef.current.rotation.z = state.clock.elapsedTime * 0.08;
     }
 
     if (coreMatRef.current) {
-      coreMatRef.current.opacity = Math.min(0.48, 0.12 + baseGlow * 0.24);
-      coreMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.52);
+      coreMatRef.current.opacity = Math.min(0.4, 0.09 + glow * 0.22);
+      coreMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.55);
     }
 
     if (ringMatRef.current) {
-      ringMatRef.current.opacity = Math.min(0.24, 0.06 + baseGlow * 0.11);
-      ringMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
+      ringMatRef.current.opacity = Math.min(0.22, 0.05 + glow * 0.1);
+      ringMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
     }
 
     if (lightRef.current) {
-      lightRef.current.intensity = 1.8 + baseGlow * 14 + phase.leafPulse * 4.5;
-      lightRef.current.distance = 320 + baseGlow * 210;
-      lightRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffe08a'), phase.charge * 0.45);
+      lightRef.current.intensity = 2.4 + glow * 10 + phase.leafPulse * 3.2;
+      lightRef.current.distance = 300 + glow * 180;
+      lightRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffe08c'), phase.charge * 0.46);
     }
   });
 
   return (
-    <group position={[0, 48, 0]} renderOrder={5}>
+    <group position={[0, 52, 0]} renderOrder={4}>
       <pointLight
         ref={lightRef}
-        position={[0, 12, 0]}
-        color="#79fff2"
+        position={[0, 10, 0]}
+        color="#74fff1"
         intensity={4}
-        distance={380}
+        distance={360}
         decay={1.5}
       />
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]}>
-        <circleGeometry args={[86, 96]} />
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.4, 0]}>
+        <circleGeometry args={[88, 96]} />
         <meshBasicMaterial
           ref={ringMatRef}
           map={auraTexture}
@@ -5851,20 +5567,64 @@ function GroundEnergyGlow() {
   );
 }
 
-function TreeEnergyEffect({
-  target,
-  localRootRef,
-}: {
-  target: THREE.Object3D;
-  localRootRef: React.RefObject<THREE.Group | null>;
-}) {
-  return (
-    <group>
-      <ambientLight intensity={0.22} color="#c7dcff" />
-      <GroundEnergyGlow />
-      <TreeContourWave target={target} localRootRef={localRootRef} />
-    </group>
+function TreeSilhouetteWave({ source }: { source: THREE.Object3D }) {
+  const uniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uMinY: { value: 0 },
+      uMaxY: { value: 1 },
+      uCharge: { value: 0 },
+      uWave: { value: 0 },
+      uWaveActive: { value: 0 },
+      uPulse: { value: 0 },
+    }),
+    []
   );
+
+  const overlay = useMemo(() => {
+    const cloned = source.clone(true);
+    cloned.scale.multiplyScalar(1.018);
+
+    cloned.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      node.material = createSilhouetteMaterial(uniforms);
+      node.frustumCulled = false;
+      node.renderOrder = 4;
+    });
+
+    return cloned;
+  }, [source, uniforms]);
+
+  const overlayBox = useMemo(() => new THREE.Box3(), []);
+
+  useEffect(() => {
+    return () => {
+      overlay.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        if (Array.isArray(node.material)) {
+          node.material.forEach((material) => material.dispose());
+          return;
+        }
+        node.material.dispose();
+      });
+    };
+  }, [overlay]);
+
+  useFrame((state) => {
+    const phase = getEnergyPhase(state.clock.elapsedTime);
+    overlayBox.setFromObject(overlay);
+    if (Number.isFinite(overlayBox.min.y) && Number.isFinite(overlayBox.max.y)) {
+      uniforms.uMinY.value = overlayBox.min.y;
+      uniforms.uMaxY.value = overlayBox.max.y;
+    }
+    uniforms.uTime.value = state.clock.elapsedTime;
+    uniforms.uCharge.value = phase.charge;
+    uniforms.uWave.value = phase.flow;
+    uniforms.uWaveActive.value = phase.flowActive ? 1 : 0;
+    uniforms.uPulse.value = phase.leafPulse;
+  });
+
+  return <primitive object={overlay} />;
 }
 
 type SatelliteCfg = {
@@ -5990,7 +5750,7 @@ function Satellite({
   );
 }
 
-export function SceneBloom() {
+function SceneBloom() {
   const { gl, scene, camera, size } = useThree();
   const composerRef = useRef<EffectComposer | null>(null);
 
@@ -6066,7 +5826,8 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <TreeEnergyEffect target={scene} localRootRef={groupRef} />
+      <GroundChargeGlow />
+      <TreeSilhouetteWave source={scene} />
       <TreeLeavesManual />
     </group>
   );
