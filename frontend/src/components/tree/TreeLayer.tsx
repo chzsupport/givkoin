@@ -5418,6 +5418,9 @@ const CONTOUR_SCAN_STEPS = 40;
 const CONTOUR_MARGIN = 0.08;
 const CONTOUR_MAX_POINTS = CONTOUR_ROWS * 2 + CONTOUR_COLS * 2;
 const CONTOUR_RESCAN_SECONDS = 0.14;
+const CONTOUR_SCAN_STEP_DIVISOR = CONTOUR_SCAN_STEPS - 1;
+const CONTOUR_ROW_DIVISOR = CONTOUR_ROWS - 1;
+const CONTOUR_COL_DIVISOR = CONTOUR_COLS - 1;
 
 function projectObjectBoundsToNdc(target: THREE.Object3D, camera: THREE.Camera) {
   const box = new THREE.Box3().setFromObject(target);
@@ -5481,7 +5484,7 @@ function traceEdgeHit(
   let firstHitNdc: THREE.Vector2 | null = null;
 
   for (let step = 0; step < CONTOUR_SCAN_STEPS; step += 1) {
-    const t = CONTOUR_SCAN_STEPS === 1 ? 0 : step / (CONTOUR_SCAN_STEPS - 1);
+    const t = step / CONTOUR_SCAN_STEP_DIVISOR;
     ndc.set(
       THREE.MathUtils.lerp(start.x, end.x, t),
       THREE.MathUtils.lerp(start.y, end.y, t),
@@ -5556,7 +5559,7 @@ function scanModelContour(
   };
 
   for (let row = 0; row < CONTOUR_ROWS; row += 1) {
-    const t = CONTOUR_ROWS === 1 ? 0.5 : row / (CONTOUR_ROWS - 1);
+    const t = row / CONTOUR_ROW_DIVISOR;
     const y = THREE.MathUtils.lerp(ndcBounds.minY, ndcBounds.maxY, t);
     addPoint(traceEdgeHit(
       target,
@@ -5577,7 +5580,7 @@ function scanModelContour(
   }
 
   for (let col = 0; col < CONTOUR_COLS; col += 1) {
-    const t = CONTOUR_COLS === 1 ? 0.5 : col / (CONTOUR_COLS - 1);
+    const t = col / CONTOUR_COL_DIVISOR;
     const x = THREE.MathUtils.lerp(ndcBounds.minX, ndcBounds.maxX, t);
     addPoint(traceEdgeHit(
       target,
