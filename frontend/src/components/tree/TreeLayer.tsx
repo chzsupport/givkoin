@@ -5265,6 +5265,17 @@ function hslToRgb(h: number, s: number, l: number): THREE.Color {
   return new THREE.Color(r + m, g + m, b + m);
 }
 
+const GEM_LEAF_PALETTE = [
+  new THREE.Color('#34e39a'),
+  new THREE.Color('#d84b62'),
+  new THREE.Color('#4f7fff'),
+  new THREE.Color('#ffbf4a'),
+  new THREE.Color('#b97dff'),
+];
+const LEAF_WAVE_GOLD = new THREE.Color('#ffd76b');
+const LEAF_PULSE_GOLD = new THREE.Color('#ffe6a8');
+const LEAF_SPARK_WHITE = new THREE.Color('#ffffff');
+
 const ENERGY_CYCLE = 15;
 const ENERGY_CHARGE_DURATION = 2.6;
 const ENERGY_FLOW_DURATION = 2.35;
@@ -5281,6 +5292,15 @@ function clamp01(value: number) {
 function smooth01(value: number) {
   const x = clamp01(value);
   return x * x * (3 - 2 * x);
+}
+
+function sampleGemPalette(value: number) {
+  const wrapped = ((value % 1) + 1) % 1;
+  const scaled = wrapped * GEM_LEAF_PALETTE.length;
+  const index = Math.floor(scaled) % GEM_LEAF_PALETTE.length;
+  const nextIndex = (index + 1) % GEM_LEAF_PALETTE.length;
+  const localT = smooth01(scaled - Math.floor(scaled));
+  return GEM_LEAF_PALETTE[index].clone().lerp(GEM_LEAF_PALETTE[nextIndex], localT);
 }
 
 function getEnergyPhase(timeSeconds: number) {
@@ -5362,24 +5382,29 @@ function TreeLeavesManual() {
     for (let i = 0; i < count; i++) {
       const py = points[i].y;
       const normY = (py - minY) / range;
-      const hueOff = (i * 37.7 + t * 24 + Math.sin(t * 0.6 + i) * 18) % 360;
-      let col = hslToRgb(hueOff, 0.92, 0.58);
-      const twinkle = 0.92 + 0.22 * Math.sin(t * 2.15 + i * 0.73);
-      const crystal = Math.pow(clamp01(Math.sin(t * 4.8 + i * 1.91) * 0.5 + 0.5), 10) * 0.58;
+      const topWeight = smooth01((normY - 0.72) / 0.28);
+      const palettePhase = t * 0.048 + i * 0.016 + Math.sin(t * 0.42 + i * 0.19) * 0.028 + normY * 0.11;
+      const rainbowTint = hslToRgb((t * 16 + i * 5.4 + normY * 92) % 360, 0.68, 0.62);
+      let col = sampleGemPalette(palettePhase).lerp(rainbowTint, 0.16);
+      const twinkle = 0.9 + 0.18 * Math.sin(t * 2.0 + i * 0.73);
+      const crystal = Math.pow(clamp01(Math.sin(t * 4.4 + i * 1.73) * 0.5 + 0.5), 12) * 0.42;
+      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.1 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.26;
       const flowTouch = phase.flowActive
-        ? smooth01(1 - Math.abs(phase.flow - (0.62 + normY * 0.28)) / 0.12)
+        ? smooth01(1 - Math.abs(phase.flow - (0.64 + normY * 0.25)) / 0.12)
         : 0;
-      const pulseTouch = phase.leafPulse;
+      const pulseTouch = phase.leafPulse * topWeight;
 
-      col = col.lerp(new THREE.Color(1, 0.86, 0.35), flowTouch * 0.42);
-      col = col.lerp(new THREE.Color(1, 1, 1), pulseTouch * 0.7);
+      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.42);
+      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.46);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.62 + whiteSpark * 0.32);
 
       const power = (
-        0.72
-        + twinkle * 0.24
-        + crystal * 0.34
-        + flowTouch * 0.95
-        + pulseTouch * 1.95
+        0.76
+        + twinkle * 0.22
+        + crystal * 0.32
+        + whiteSpark * 0.22
+        + flowTouch * 0.94
+        + pulseTouch * 2.28
       ) * EFFECT_POWER_MULT;
 
       arr[i * 3] = col.r * power;
@@ -5644,6 +5669,7 @@ type SatelliteCfg = {
 const SATELLITE_BOB_AMP = 6;
 const TREE_LIGHT_MULT_PCT = 5;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
+const SATELLITE_LIGHT_BOOST = 1.1;
 
 function makeRadialTexture(opts: { inner: number; outer: number; stops: Array<[number, number]> }) {
   const canvas = document.createElement('canvas');
@@ -5725,21 +5751,21 @@ function Satellite({
 
   return (
     <group ref={ref}>
-      <pointLight intensity={cfg.light * TREE_LIGHT_MULT} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
+      <pointLight intensity={cfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
 
       <group>
         <sprite scale={[cfg.size * 13.5, cfg.size * 13.5, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.34} />
+          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.374} />
         </sprite>
         <sprite scale={[cfg.size * 6.0, cfg.size * 6.0, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.22} />
+          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.242} />
         </sprite>
         <mesh>
           <sphereGeometry args={[cfg.size, 128, 128]} />
           <meshStandardMaterial
             color={color}
             emissive={cfg.emissive}
-            emissiveIntensity={cfg.emissiveIntensity}
+            emissiveIntensity={cfg.emissiveIntensity * SATELLITE_LIGHT_BOOST}
             roughness={0.25}
             metalness={0.1}
           />
