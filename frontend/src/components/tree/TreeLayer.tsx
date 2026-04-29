@@ -5266,30 +5266,29 @@ function hslToRgb(h: number, s: number, l: number): THREE.Color {
 }
 
 const GEM_LEAF_PALETTE = [
-  new THREE.Color('#34e39a'),
-  new THREE.Color('#d84b62'),
-  new THREE.Color('#4f7fff'),
-  new THREE.Color('#ffbf4a'),
-  new THREE.Color('#b97dff'),
+  new THREE.Color('#f4fbff'),
+  new THREE.Color('#59efb2'),
+  new THREE.Color('#ff637e'),
+  new THREE.Color('#6aa8ff'),
+  new THREE.Color('#ffd862'),
+  new THREE.Color('#d39cff'),
 ];
 const LEAF_WAVE_GOLD = new THREE.Color('#ffd76b');
 const LEAF_PULSE_GOLD = new THREE.Color('#ffe6a8');
 const LEAF_SPARK_WHITE = new THREE.Color('#ffffff');
 
 const ENERGY_CYCLE = 15;
-const ENERGY_CHARGE_DURATION = 2.6;
-const ENERGY_FLOW_DURATION = 2.35;
+const ENERGY_CHARGE_DURATION = 2.8;
+const ENERGY_FLOW_DURATION = 4.8;
 const ENERGY_PULSE_COUNT = 3;
-const ENERGY_PULSE_PERIOD = 0.42;
-const ENERGY_PULSE_WIDTH = 0.16;
+const ENERGY_PULSE_PERIOD = 0.34;
+const ENERGY_PULSE_WIDTH = 0.22;
 const ENERGY_FLOW_END = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION;
-const LEAF_EMISSIVE_BOOST = 1.65;
-const LEAF_BASE_BRIGHTNESS = 1.45;
-const LEAF_FLOW_BRIGHTNESS = 0.72;
-const LEAF_PULSE_BRIGHTNESS = 2.35;
-const LEAF_WHITE_SPARK_BRIGHTNESS = 0.08;
-const LEAF_WAVE_TOP_ZONE = 0.14;
-const LEAF_PULSE_CACHE_KEY = 'tree-leaf-color-glow-v3';
+const LEAF_BASE_BRIGHTNESS = 1.72;
+const LEAF_FLOW_BRIGHTNESS = 0.9;
+const LEAF_PULSE_BRIGHTNESS = 5.4;
+const LEAF_WHITE_SPARK_BRIGHTNESS = 0.06;
+const LEAF_WAVE_TOP_ZONE = 0.16;
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -5374,7 +5373,6 @@ function TreeLeavesManual({
 }) {
   const instRef = useRef<THREE.InstancedMesh>(null);
   const colorArr = useRef<Float32Array | null>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
 
   const points = MANUAL_LEAF_POINTS;
   const { minY, maxY } = MANUAL_LEAF_BOUNDS;
@@ -5401,23 +5399,6 @@ function TreeLeavesManual({
     colorArr.current = arr;
   }, [points]);
 
-  useEffect(() => {
-    const material = materialRef.current;
-    if (!material) return;
-
-    material.customProgramCacheKey = () => LEAF_PULSE_CACHE_KEY;
-    material.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>
-        #ifdef USE_COLOR
-          totalEmissiveRadiance += vColor.rgb * ${LEAF_EMISSIVE_BOOST.toFixed(2)};
-        #endif`
-      );
-    };
-    material.needsUpdate = true;
-  }, []);
-
   useFrame((state) => {
     const inst = instRef.current;
     const arr = colorArr.current;
@@ -5440,24 +5421,24 @@ function TreeLeavesManual({
       const py = points[i].y;
       const normY = (py - minY) / range;
       const tipWeight = smooth01((normY - (1 - LEAF_WAVE_TOP_ZONE)) / LEAF_WAVE_TOP_ZONE);
-      const palettePhase = t * 0.052 + i * 0.016 + Math.sin(t * 0.44 + i * 0.19) * 0.03 + normY * 0.16;
-      const rainbowTint = hslToRgb((t * 22 + i * 5.8 + normY * 104) % 360, 0.8, 0.62);
-      const rainbowBlend = 0.42 + 0.12 * Math.sin(t * 0.6 + i * 0.11);
+      const palettePhase = t * 0.058 + i * 0.018 + Math.sin(t * 0.46 + i * 0.19) * 0.032 + normY * 0.18;
+      const rainbowTint = hslToRgb((t * 28 + i * 6.1 + normY * 108) % 360, 0.88, 0.68);
+      const rainbowBlend = clamp01(0.48 + 0.14 * Math.sin(t * 0.64 + i * 0.11));
       let col = sampleGemPalette(palettePhase).lerp(rainbowTint, rainbowBlend);
-      const twinkle = 0.92 + 0.18 * Math.sin(t * 2.2 + i * 0.73);
-      const crystal = Math.pow(clamp01(Math.sin(t * 4.9 + i * 1.73) * 0.5 + 0.5), 12) * 0.34;
-      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.2 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.12;
+      const twinkle = 0.96 + 0.2 * Math.sin(t * 2.35 + i * 0.73);
+      const crystal = Math.pow(clamp01(Math.sin(t * 5.2 + i * 1.73) * 0.5 + 0.5), 12) * 0.28;
+      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.6 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.08;
       const flowTouch = phase.flowActive
-        ? smooth01(1 - Math.abs(py - waveFrontY) / waveBand)
+        ? smooth01(1 - Math.abs(py - waveFrontY) / Math.max(14, waveBand * 1.22))
         : 0;
 
-      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * (0.18 + tipWeight * 0.08));
-      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.2);
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.96 + whiteSpark * 0.08);
+      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * (0.16 + tipWeight * 0.1));
+      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.16);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.985 + whiteSpark * 0.06);
 
       const power = LEAF_BASE_BRIGHTNESS
-        + twinkle * 0.16
-        + crystal * 0.24
+        + twinkle * 0.22
+        + crystal * 0.22
         + whiteSpark * LEAF_WHITE_SPARK_BRIGHTNESS
         + flowTouch * LEAF_FLOW_BRIGHTNESS
         + pulseTouch * LEAF_PULSE_BRIGHTNESS;
@@ -5472,16 +5453,19 @@ function TreeLeavesManual({
   if (!points.length) return null;
 
   return (
-    <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
+    <instancedMesh
+      ref={instRef}
+      args={[undefined as never, undefined as never, points.length]}
+      frustumCulled={false}
+      renderOrder={7}
+    >
       <sphereGeometry args={[1.2, 16, 16]} />
-      <meshStandardMaterial
-        ref={materialRef}
+      <meshBasicMaterial
         vertexColors
-        emissive="#000000"
-        emissiveIntensity={1}
-        roughness={0.22}
-        metalness={0.0}
+        transparent
+        opacity={1}
         depthWrite={false}
+        depthTest
         toneMapped={false}
       />
     </instancedMesh>
@@ -5524,15 +5508,15 @@ function createSilhouetteMaterial(uniforms: {
 
       void main() {
         float rangeY = max(0.0001, uTopY - uBottomY);
-        float waveWidth = rangeY * 0.13;
-        float waveTrail = rangeY * 0.26;
+        float waveWidth = rangeY * 0.18;
+        float waveTrail = rangeY * 0.38;
         float cappedY = clamp(vWorldPosition.y, uBottomY, uTopY);
         float level = clamp((cappedY - uBottomY) / rangeY, 0.0, 1.0);
         float edge = pow(clamp(1.0 - abs(normalize(vViewNormal).z), 0.0, 1.0), 1.9);
         edge = smoothstep(0.08, 0.95, edge);
         float topFade = 1.0 - smoothstep(uTopY, uTopY + rangeY * 0.025, vWorldPosition.y);
 
-        float chargeGlow = uCharge * (1.0 - smoothstep(uBottomY, uBottomY + rangeY * 0.34, cappedY)) * 1.25;
+        float chargeGlow = uCharge * (1.0 - smoothstep(uBottomY, uBottomY + rangeY * 0.36, cappedY)) * 1.42;
         float waveGlow = 0.0;
         float trailGlow = 0.0;
 
@@ -5550,7 +5534,7 @@ function createSilhouetteMaterial(uniforms: {
           * (1.0 - smoothstep(uTopY, uTopY + rangeY * 0.02, vWorldPosition.y));
 
         float shimmer = 0.028 + 0.022 * sin(uTime * 1.7 + level * 12.0);
-        float glow = (shimmer + chargeGlow + waveGlow * 2.35 + trailGlow + topPulse * 1.35) * edge;
+        float glow = (shimmer + chargeGlow + waveGlow * 2.7 + trailGlow * 1.18 + topPulse * 1.45) * edge;
 
         vec3 cool = vec3(0.33, 1.0, 0.95);
         vec3 warm = vec3(1.0, 0.84, 0.42);
@@ -5595,8 +5579,8 @@ function GroundChargeGlow() {
   useFrame((state) => {
     const phase = getEnergyPhase(state.clock.elapsedTime);
     const glow = phase.cycleT < ENERGY_CHARGE_DURATION
-      ? 0.18 + phase.charge * 1.25
-      : 0.12 + Math.max(0, 1 - phase.flow) * 0.32;
+      ? 0.24 + phase.charge * 1.55
+      : 0.16 + Math.max(0, 1 - phase.flow) * 0.4;
 
     if (coreRef.current) {
       const size = 72 + glow * 60;
@@ -5610,18 +5594,18 @@ function GroundChargeGlow() {
     }
 
     if (coreMatRef.current) {
-      coreMatRef.current.opacity = Math.min(0.4, 0.09 + glow * 0.22);
+      coreMatRef.current.opacity = Math.min(0.48, 0.11 + glow * 0.24);
       coreMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.55);
     }
 
     if (ringMatRef.current) {
-      ringMatRef.current.opacity = Math.min(0.22, 0.05 + glow * 0.1);
+      ringMatRef.current.opacity = Math.min(0.28, 0.06 + glow * 0.12);
       ringMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
     }
 
     if (lightRef.current) {
-      lightRef.current.intensity = 2.4 + glow * 10 + phase.leafPulse * 3.2;
-      lightRef.current.distance = 300 + glow * 180;
+      lightRef.current.intensity = 3.6 + glow * 12.4 + phase.leafPulse * 3.6;
+      lightRef.current.distance = 320 + glow * 210;
       lightRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffe08c'), phase.charge * 0.46);
     }
   });
