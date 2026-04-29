@@ -5897,10 +5897,10 @@ function SceneBloom() {
     const composer = new EffectComposer(gl);
     composer.addPass(new RenderPass(scene, camera));
 
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 1.2, 0.72, 0.05);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 1.2, 0.8, 0.1);
     bloomPass.threshold = 0.0;
-    bloomPass.strength = 1.35;
-    bloomPass.radius = 0.72;
+    bloomPass.strength = 3.0;
+    bloomPass.radius = 0.9;
 
     composer.addPass(bloomPass);
     composer.setSize(size.width, size.height);
@@ -5932,7 +5932,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
 
-  const { scene, sceneBounds } = useMemo(() => {
+  const scene = useMemo(() => {
     const cloned = loadedScene.clone(true);
 
     const box = new THREE.Box3().setFromObject(cloned);
@@ -5954,20 +5954,9 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
     }
 
     const finalBox = new THREE.Box3().setFromObject(cloned);
-    return {
-      scene: cloned,
-      sceneBounds: {
-        minY: Number.isFinite(finalBox.min.y) ? finalBox.min.y : 0,
-        maxY: Number.isFinite(finalBox.max.y) ? finalBox.max.y : 1,
-      },
-    };
+    void finalBox;
+    return cloned;
   }, [loadedScene]);
-
-  const waveBottomY = sceneBounds.minY;
-  const waveTopY = Math.max(
-    waveBottomY + 1,
-    Math.min(sceneBounds.maxY, MANUAL_LEAF_BOUNDS.maxY)
-  );
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
@@ -5978,12 +5967,11 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <GroundChargeGlow />
-      <TreeSilhouetteWave source={scene} waveBottomY={waveBottomY} waveTopY={waveTopY} />
-      <TreeLeavesManual waveBottomY={waveBottomY} waveTopY={waveTopY} />
     </group>
   );
 }
+
+void [TreeLeavesManual, GroundChargeGlow, TreeSilhouetteWave];
 
 export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
   return (
@@ -6089,10 +6077,10 @@ export function TreeLayer({
         gl={{ antialias: false, alpha: transparent }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ReinhardToneMapping;
-          gl.toneMappingExposure = 1.26;
+          gl.toneMappingExposure = 1.3;
           gl.outputColorSpace = THREE.SRGBColorSpace;
         }}
-        camera={{ position: [0, 240, 620], fov: 55, near: 0.1, far: 5000 }}
+        camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
         <SceneBloom />
