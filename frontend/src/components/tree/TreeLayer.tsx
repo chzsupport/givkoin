@@ -5269,7 +5269,7 @@ const LEAF_WAVE_GOLD = new THREE.Color('#ffd76b');
 const LEAF_SPARK_WHITE = new THREE.Color('#ffffff');
 
 const ENERGY_CYCLE = 15;
-const ENERGY_CHARGE_DURATION = 2.0;
+const ENERGY_CHARGE_DURATION = 2.8;
 const ENERGY_FLOW_DURATION = 4.8;
 const ENERGY_PULSE_COUNT = 3;
 const ENERGY_PULSE_PERIOD = 0.816;
