@@ -5766,6 +5766,7 @@ function GroundEnergyGlow() {
   const ringRef = useRef<THREE.Mesh>(null);
   const coreMatRef = useRef<THREE.SpriteMaterial>(null);
   const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
   const auraTexture = useMemo(
     () =>
       makeRadialTexture({
@@ -5807,10 +5808,24 @@ function GroundEnergyGlow() {
       ringMatRef.current.opacity = Math.min(0.24, 0.06 + baseGlow * 0.11);
       ringMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
     }
+
+    if (lightRef.current) {
+      lightRef.current.intensity = 1.8 + baseGlow * 14 + phase.leafPulse * 4.5;
+      lightRef.current.distance = 320 + baseGlow * 210;
+      lightRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffe08a'), phase.charge * 0.45);
+    }
   });
 
   return (
     <group position={[0, 48, 0]} renderOrder={5}>
+      <pointLight
+        ref={lightRef}
+        position={[0, 12, 0]}
+        color="#79fff2"
+        intensity={4}
+        distance={380}
+        decay={1.5}
+      />
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]}>
         <circleGeometry args={[86, 96]} />
         <meshBasicMaterial
@@ -5845,6 +5860,7 @@ function TreeEnergyEffect({
 }) {
   return (
     <group>
+      <ambientLight intensity={0.22} color="#c7dcff" />
       <GroundEnergyGlow />
       <TreeContourWave target={target} localRootRef={localRootRef} />
     </group>
