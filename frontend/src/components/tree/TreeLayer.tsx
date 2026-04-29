@@ -5386,26 +5386,27 @@ function TreeLeavesManual() {
       const tipWeight = smooth01((normY - 0.74) / 0.26);
       const palettePhase = t * 0.048 + i * 0.016 + Math.sin(t * 0.42 + i * 0.19) * 0.028 + normY * 0.11;
       const rainbowTint = hslToRgb((t * 16 + i * 5.4 + normY * 92) % 360, 0.68, 0.62);
-      let col = sampleGemPalette(palettePhase).lerp(rainbowTint, 0.22);
+      const rainbowBlend = 0.34 + 0.08 * Math.sin(t * 0.55 + i * 0.11);
+      let col = sampleGemPalette(palettePhase).lerp(rainbowTint, rainbowBlend);
       const twinkle = 0.9 + 0.2 * Math.sin(t * 2.0 + i * 0.73);
       const crystal = Math.pow(clamp01(Math.sin(t * 4.4 + i * 1.73) * 0.5 + 0.5), 12) * 0.46;
       const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.1 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.16;
       const flowTouch = phase.flowActive
         ? smooth01(1 - Math.abs(phase.flow - (0.63 + normY * 0.26)) / 0.12)
         : 0;
-      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.28 + tipWeight * 0.92);
+      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.22 + tipWeight * 1.18);
 
-      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.38);
-      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.58);
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.34 + whiteSpark * 0.2);
+      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.24);
+      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.42);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.12 + whiteSpark * 0.08);
 
       const power = (
-        0.82
+        0.9
         + twinkle * 0.24
-        + crystal * 0.4
-        + whiteSpark * 0.12
-        + flowTouch * 1.18
-        + pulseTouch * 3.1
+        + crystal * 0.46
+        + whiteSpark * 0.1
+        + flowTouch * 1.08
+        + pulseTouch * 4.4
       ) * EFFECT_POWER_MULT;
 
       arr[i * 3] = col.r * power;
@@ -5420,7 +5421,14 @@ function TreeLeavesManual() {
   return (
     <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
       <sphereGeometry args={[1.2, 16, 16]} />
-      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={300} roughness={0.25} metalness={0.0} toneMapped={false} />
+      <meshStandardMaterial
+        vertexColors
+        emissive="#0f1014"
+        emissiveIntensity={1.8}
+        roughness={0.22}
+        metalness={0.0}
+        toneMapped={false}
+      />
     </instancedMesh>
   );
 }
