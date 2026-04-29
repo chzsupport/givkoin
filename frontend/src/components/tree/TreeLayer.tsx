@@ -5265,29 +5265,24 @@ function hslToRgb(h: number, s: number, l: number): THREE.Color {
   return new THREE.Color(r + m, g + m, b + m);
 }
 
-const GEM_LEAF_PALETTE = [
-  new THREE.Color('#f4fbff'),
-  new THREE.Color('#59efb2'),
-  new THREE.Color('#ff637e'),
-  new THREE.Color('#6aa8ff'),
-  new THREE.Color('#ffd862'),
-  new THREE.Color('#d39cff'),
-];
 const LEAF_WAVE_GOLD = new THREE.Color('#ffd76b');
-const LEAF_PULSE_GOLD = new THREE.Color('#ffe6a8');
 const LEAF_SPARK_WHITE = new THREE.Color('#ffffff');
 
 const ENERGY_CYCLE = 15;
 const ENERGY_CHARGE_DURATION = 2.8;
 const ENERGY_FLOW_DURATION = 4.8;
 const ENERGY_PULSE_COUNT = 3;
-const ENERGY_PULSE_PERIOD = 0.34;
-const ENERGY_PULSE_WIDTH = 0.22;
+const ENERGY_PULSE_PERIOD = 0.816;
+const ENERGY_PULSE_WIDTH = 0.528;
 const ENERGY_FLOW_END = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION;
-const LEAF_BASE_BRIGHTNESS = 1.72;
-const LEAF_FLOW_BRIGHTNESS = 0.9;
-const LEAF_PULSE_BRIGHTNESS = 5.4;
-const LEAF_WHITE_SPARK_BRIGHTNESS = 0.06;
+const LEAF_BRIGHTNESS_SCALE = 0.14112;
+const LEAF_PULSE_WHITE_SCALE = 0.5;
+const LEAF_PULSE_POWER_SCALE = 0.5;
+const LEAF_CORE_BRIGHTNESS_BOOST = 1.872;
+const LEAF_CORE_CONTRAST = 1.788;
+const LEAF_AURA_BRIGHTNESS_SCALE = 0.34;
+const LEAF_RAINBOW_HALF_CYCLE = 2;
+const LEAF_BREATH_AMPLITUDE = 1;
 const LEAF_WAVE_TOP_ZONE = 0.16;
 
 function clamp01(value: number) {
@@ -5299,13 +5294,16 @@ function smooth01(value: number) {
   return x * x * (3 - 2 * x);
 }
 
-function sampleGemPalette(value: number) {
-  const wrapped = ((value % 1) + 1) % 1;
-  const scaled = wrapped * GEM_LEAF_PALETTE.length;
-  const index = Math.floor(scaled) % GEM_LEAF_PALETTE.length;
-  const nextIndex = (index + 1) % GEM_LEAF_PALETTE.length;
-  const localT = smooth01(scaled - Math.floor(scaled));
-  return GEM_LEAF_PALETTE[index].clone().lerp(GEM_LEAF_PALETTE[nextIndex], localT);
+function hash01(value: number) {
+  const s = Math.sin(value * 127.1 + 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
+
+function applyColorContrast(color: THREE.Color, contrast: number) {
+  color.r = clamp01((color.r - 0.5) * contrast + 0.5);
+  color.g = clamp01((color.g - 0.5) * contrast + 0.5);
+  color.b = clamp01((color.b - 0.5) * contrast + 0.5);
+  return color;
 }
 
 function parseManualLeafPoints(text: string) {
@@ -5357,7 +5355,7 @@ function getEnergyPhase(timeSeconds: number) {
       const localT = pulseT - i * ENERGY_PULSE_PERIOD;
       if (localT < 0 || localT > ENERGY_PULSE_WIDTH) continue;
       const pulse = Math.sin((localT / ENERGY_PULSE_WIDTH) * Math.PI);
-      leafPulse = Math.max(leafPulse, pulse * pulse);
+      leafPulse = Math.max(leafPulse, pulse);
     }
   }
 
@@ -5371,14 +5369,40 @@ function TreeLeavesManual({
   waveBottomY: number;
   waveTopY: number;
 }) {
-  const instRef = useRef<THREE.InstancedMesh>(null);
-  const colorArr = useRef<Float32Array | null>(null);
-
   const points = MANUAL_LEAF_POINTS;
   const { minY, maxY } = MANUAL_LEAF_BOUNDS;
+  const coreRef = useRef<THREE.InstancedMesh>(null);
+  const coreColorArr = useMemo(() => new Float32Array(points.length * 3), [points.length]);
+  const auraColorArr = useMemo(() => new Float32Array(points.length * 3), [points.length]);
+  const auraTexture = useMemo(
+    () =>
+      makeRadialTexture({
+        inner: 0,
+        outer: 128,
+        stops: [
+          [0, 1],
+          [0.34, 0.82],
+          [0.7, 0.22],
+          [1, 0],
+        ],
+      }),
+    []
+  );
+  const auraGeometry = useMemo(() => {
+    const positions = new Float32Array(points.length * 3);
+    for (let i = 0; i < points.length; i += 1) {
+      positions[i * 3] = points[i].x;
+      positions[i * 3 + 1] = points[i].y;
+      positions[i * 3 + 2] = points[i].z;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(auraColorArr, 3));
+    return geometry;
+  }, [points, auraColorArr]);
 
   useEffect(() => {
-    const inst = instRef.current;
+    const inst = coreRef.current;
     if (!inst) return;
     const dummy = new THREE.Object3D();
     for (let i = 0; i < points.length; i += 1) {
@@ -5389,24 +5413,19 @@ function TreeLeavesManual({
       inst.setMatrixAt(i, dummy.matrix);
     }
     inst.instanceMatrix.needsUpdate = true;
+    inst.instanceColor = new THREE.InstancedBufferAttribute(coreColorArr, 3);
+  }, [points, coreColorArr]);
 
-    const count = points.length;
-    const arr = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      arr[i * 3] = 0; arr[i * 3 + 1] = 1; arr[i * 3 + 2] = 0.27;
-    }
-    inst.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
-    colorArr.current = arr;
-  }, [points]);
+  useEffect(() => {
+    return () => {
+      auraGeometry.dispose();
+      auraTexture.dispose();
+    };
+  }, [auraGeometry, auraTexture]);
 
   useFrame((state) => {
-    const inst = instRef.current;
-    const arr = colorArr.current;
-    if (!inst || !arr) return;
-
     const t = state.clock.elapsedTime;
     const phase = getEnergyPhase(t);
-    const count = points.length;
     const range = maxY - minY || 1;
     const travelBottomY = Number.isFinite(waveBottomY) ? waveBottomY : 0;
     const travelTopY = Number.isFinite(waveTopY) && waveTopY > travelBottomY
@@ -5415,60 +5434,96 @@ function TreeLeavesManual({
     const waveRange = Math.max(1, travelTopY - travelBottomY);
     const waveFrontY = THREE.MathUtils.lerp(travelBottomY, travelTopY, phase.flow);
     const waveBand = Math.max(10, waveRange * 0.085);
-    const pulseTouch = phase.leafPulse;
 
-    for (let i = 0; i < count; i++) {
-      const py = points[i].y;
+    for (let i = 0; i < points.length; i += 1) {
+      const point = points[i];
+      const py = point.y;
       const normY = (py - minY) / range;
       const tipWeight = smooth01((normY - (1 - LEAF_WAVE_TOP_ZONE)) / LEAF_WAVE_TOP_ZONE);
-      const palettePhase = t * 0.058 + i * 0.018 + Math.sin(t * 0.46 + i * 0.19) * 0.032 + normY * 0.18;
-      const rainbowTint = hslToRgb((t * 28 + i * 6.1 + normY * 108) % 360, 0.88, 0.68);
-      const rainbowBlend = clamp01(0.48 + 0.14 * Math.sin(t * 0.64 + i * 0.11));
-      let col = sampleGemPalette(palettePhase).lerp(rainbowTint, rainbowBlend);
-      const twinkle = 0.96 + 0.2 * Math.sin(t * 2.35 + i * 0.73);
-      const crystal = Math.pow(clamp01(Math.sin(t * 5.2 + i * 1.73) * 0.5 + 0.5), 12) * 0.28;
-      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.6 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.08;
+      const gemSeed = hash01(i * 17.13 + point.x * 0.051 + point.y * 0.023 + point.z * 0.041);
+      const gemShift = hash01(i * 9.31 + point.x * 0.017 - point.z * 0.013 + normY * 5.7);
+      const rainbowCycle = ((t + gemShift * LEAF_RAINBOW_HALF_CYCLE * 2) / LEAF_RAINBOW_HALF_CYCLE) % 2;
+      const rainbowPing = 1 - Math.abs(rainbowCycle - 1);
+      const hue = THREE.MathUtils.lerp(0, 280, rainbowPing);
+      const sat = 0.9 + gemSeed * 0.08;
+      const light = 0.55 + gemShift * 0.14;
+      let col = hslToRgb(hue, sat, light);
+
+      const twinkle = 0.78 + 0.22 * Math.sin(t * (1.7 + gemSeed * 0.8) + i * 0.61 + gemShift * 7.4);
+      const breath = 1 + Math.sin(t * Math.PI + gemShift * Math.PI * 2 + gemSeed * 4) * LEAF_BREATH_AMPLITUDE;
+      const whiteSpark = Math.pow(clamp01(Math.sin(t * (5.8 + gemSeed * 2.2) + i * 1.67 + gemShift * 10.2) * 0.5 + 0.5), 22) * (0.04 + gemSeed * 0.1);
+      const diamondFlash = Math.pow(clamp01(Math.sin(t * (3.1 + gemSeed * 1.3) + i * 0.27 + gemShift * 17) * 0.5 + 0.5), 28) * (0.06 + gemShift * 0.12);
       const flowTouch = phase.flowActive
         ? smooth01(1 - Math.abs(py - waveFrontY) / Math.max(14, waveBand * 1.22))
         : 0;
+      const pulseTouch = phase.leafPulse;
 
+      col = col.lerp(LEAF_SPARK_WHITE, whiteSpark * 0.18 + diamondFlash * 0.28);
       col = col.lerp(LEAF_WAVE_GOLD, flowTouch * (0.16 + tipWeight * 0.1));
-      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.16);
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.985 + whiteSpark * 0.06);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.985 * LEAF_PULSE_WHITE_SCALE + whiteSpark * 0.1 + diamondFlash * 0.14);
+      applyColorContrast(col, LEAF_CORE_CONTRAST);
 
-      const power = LEAF_BASE_BRIGHTNESS
-        + twinkle * 0.22
-        + crystal * 0.22
-        + whiteSpark * LEAF_WHITE_SPARK_BRIGHTNESS
-        + flowTouch * LEAF_FLOW_BRIGHTNESS
-        + pulseTouch * LEAF_PULSE_BRIGHTNESS;
+      const corePower = (1.15
+        + twinkle * 0.38
+        + whiteSpark * 0.42
+        + diamondFlash * 0.78
+        + flowTouch * 0.9
+        + pulseTouch * 5.4 * LEAF_PULSE_POWER_SCALE)
+        * LEAF_BRIGHTNESS_SCALE
+        * LEAF_CORE_BRIGHTNESS_BOOST
+        * breath;
+      const auraPower = (0.34
+        + twinkle * 0.14
+        + whiteSpark * 0.14
+        + diamondFlash * 0.22
+        + flowTouch * 0.52
+        + pulseTouch * 1.9 * LEAF_PULSE_POWER_SCALE)
+        * LEAF_BRIGHTNESS_SCALE
+        * LEAF_AURA_BRIGHTNESS_SCALE
+        * (0.8 + (breath - 1) * 0.35);
 
-      arr[i * 3] = col.r * power;
-      arr[i * 3 + 1] = col.g * power;
-      arr[i * 3 + 2] = col.b * power;
+      coreColorArr[i * 3] = col.r * corePower;
+      coreColorArr[i * 3 + 1] = col.g * corePower;
+      coreColorArr[i * 3 + 2] = col.b * corePower;
+
+      auraColorArr[i * 3] = col.r * auraPower;
+      auraColorArr[i * 3 + 1] = col.g * auraPower;
+      auraColorArr[i * 3 + 2] = col.b * auraPower;
     }
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    if (coreRef.current?.instanceColor) coreRef.current.instanceColor.needsUpdate = true;
+    const auraAttr = auraGeometry.getAttribute('color');
+    if (auraAttr) auraAttr.needsUpdate = true;
   });
 
   if (!points.length) return null;
 
   return (
-    <instancedMesh
-      ref={instRef}
-      args={[undefined as never, undefined as never, points.length]}
-      frustumCulled={false}
-      renderOrder={7}
-    >
-      <sphereGeometry args={[1.2, 16, 16]} />
-      <meshBasicMaterial
-        vertexColors
-        transparent
-        opacity={1}
-        depthWrite={false}
-        depthTest
-        toneMapped={false}
-      />
-    </instancedMesh>
+    <>
+      <points geometry={auraGeometry} frustumCulled={false} renderOrder={7}>
+        <pointsMaterial
+          size={10.5}
+          map={auraTexture}
+          alphaMap={auraTexture}
+          transparent
+          opacity={0.24}
+          depthWrite={false}
+          depthTest
+          vertexColors
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+          sizeAttenuation
+        />
+      </points>
+      <instancedMesh
+        ref={coreRef}
+        args={[undefined as never, undefined as never, points.length]}
+        frustumCulled={false}
+        renderOrder={8}
+      >
+        <sphereGeometry args={[1.25, 8, 8]} />
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
+    </>
   );
 }
 
@@ -5508,15 +5563,15 @@ function createSilhouetteMaterial(uniforms: {
 
       void main() {
         float rangeY = max(0.0001, uTopY - uBottomY);
-        float waveWidth = rangeY * 0.18;
-        float waveTrail = rangeY * 0.38;
+        float waveWidth = rangeY * 0.13;
+        float waveTrail = rangeY * 0.26;
         float cappedY = clamp(vWorldPosition.y, uBottomY, uTopY);
         float level = clamp((cappedY - uBottomY) / rangeY, 0.0, 1.0);
         float edge = pow(clamp(1.0 - abs(normalize(vViewNormal).z), 0.0, 1.0), 1.9);
         edge = smoothstep(0.08, 0.95, edge);
         float topFade = 1.0 - smoothstep(uTopY, uTopY + rangeY * 0.025, vWorldPosition.y);
 
-        float chargeGlow = uCharge * (1.0 - smoothstep(uBottomY, uBottomY + rangeY * 0.36, cappedY)) * 1.42;
+        float chargeGlow = uCharge * (1.0 - smoothstep(uBottomY, uBottomY + rangeY * 0.34, cappedY)) * 1.25;
         float waveGlow = 0.0;
         float trailGlow = 0.0;
 
@@ -5534,7 +5589,7 @@ function createSilhouetteMaterial(uniforms: {
           * (1.0 - smoothstep(uTopY, uTopY + rangeY * 0.02, vWorldPosition.y));
 
         float shimmer = 0.028 + 0.022 * sin(uTime * 1.7 + level * 12.0);
-        float glow = (shimmer + chargeGlow + waveGlow * 2.7 + trailGlow * 1.18 + topPulse * 1.45) * edge;
+        float glow = (shimmer + chargeGlow + waveGlow * 2.35 + trailGlow + topPulse * 1.35) * edge;
 
         vec3 cool = vec3(0.33, 1.0, 0.95);
         vec3 warm = vec3(1.0, 0.84, 0.42);
@@ -5579,8 +5634,8 @@ function GroundChargeGlow() {
   useFrame((state) => {
     const phase = getEnergyPhase(state.clock.elapsedTime);
     const glow = phase.cycleT < ENERGY_CHARGE_DURATION
-      ? 0.24 + phase.charge * 1.55
-      : 0.16 + Math.max(0, 1 - phase.flow) * 0.4;
+      ? 0.18 + phase.charge * 1.25
+      : 0.12 + Math.max(0, 1 - phase.flow) * 0.32;
 
     if (coreRef.current) {
       const size = 72 + glow * 60;
@@ -5594,18 +5649,18 @@ function GroundChargeGlow() {
     }
 
     if (coreMatRef.current) {
-      coreMatRef.current.opacity = Math.min(0.48, 0.11 + glow * 0.24);
+      coreMatRef.current.opacity = Math.min(0.4, 0.09 + glow * 0.22);
       coreMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.55);
     }
 
     if (ringMatRef.current) {
-      ringMatRef.current.opacity = Math.min(0.28, 0.06 + glow * 0.12);
+      ringMatRef.current.opacity = Math.min(0.22, 0.05 + glow * 0.1);
       ringMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
     }
 
     if (lightRef.current) {
-      lightRef.current.intensity = 3.6 + glow * 12.4 + phase.leafPulse * 3.6;
-      lightRef.current.distance = 320 + glow * 210;
+      lightRef.current.intensity = 2.4 + glow * 10 + phase.leafPulse * 3.2;
+      lightRef.current.distance = 300 + glow * 180;
       lightRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffe08c'), phase.charge * 0.46);
     }
   });

@@ -3,33 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Leaf Train</title>
+    <title>Tree Local Test</title>
     <style>
       html, body { margin: 0; height: 100%; background: #020202; overflow: hidden; }
       #app { width: 100%; height: 100%; position: relative; }
-      .bg { position: absolute; inset: 0; overflow: hidden; background: #030712; }
-      .bg .nebula { position: absolute; inset: 0; background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.18), transparent 35%), radial-gradient(circle at 80% 15%, rgba(16,185,129,0.18), transparent 30%), radial-gradient(circle at 30% 75%, rgba(56,189,248,0.16), transparent 32%), radial-gradient(circle at 80% 70%, rgba(236,72,153,0.14), transparent 32%); }
-      .bg .stars { position: absolute; inset: 0; opacity: 0.5; mix-blend-mode: screen; }
-      .bg .stars .s1 { position: absolute; inset: 0; background: radial-gradient(circle at center, rgba(255,255,255,0.08), transparent 55%); }
-      .bg .stars .s2 { position: absolute; inset: 0; background: linear-gradient(120deg, rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(210deg, rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 140px 140px; }
-      .bg .vignette { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(5,9,21,0.30), rgba(0,0,0,0.70)); }
+      .bg { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(circle at 50% 12%, rgba(70, 112, 255, 0.12), transparent 26%), radial-gradient(circle at 28% 78%, rgba(50, 230, 188, 0.08), transparent 26%), radial-gradient(circle at 76% 76%, rgba(208, 96, 255, 0.07), transparent 28%), linear-gradient(to bottom, #050814 0%, #02050d 48%, #020202 100%); }
+      .bg .vignette { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.28), rgba(0,0,0,0.62)); }
       canvas { position: absolute; inset: 0; display: block; }
-      .hud { position: fixed; left: 12px; top: 12px; color: #fff; font-family: Arial, sans-serif; font-size: 14px; user-select: none; }
-      .hud b { color: #00ff44; }
     </style>
   </head>
   <body>
     <div id="app">
       <div class="bg">
-        <div class="nebula"></div>
-        <div class="stars">
-          <div class="s1"></div>
-          <div class="s2"></div>
-        </div>
         <div class="vignette"></div>
       </div>
     </div>
-    <div class="hud">Нажми <b>1</b> чтобы включить/выключить точку. ЛКМ — зафиксировать точку.</div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
