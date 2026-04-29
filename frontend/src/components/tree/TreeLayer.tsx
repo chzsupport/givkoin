@@ -5283,9 +5283,7 @@ const ENERGY_PULSE_COUNT = 3;
 const ENERGY_PULSE_PERIOD = 0.42;
 const ENERGY_PULSE_WIDTH = 0.16;
 const ENERGY_PULSE_START = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.18;
-const LEAF_IDLE_LIGHT = 56;
-const LEAF_FLOW_LIGHT = 34;
-const LEAF_PULSE_LIGHT = 110;
+const EFFECT_POWER_MULT = 100;
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -5384,32 +5382,31 @@ function TreeLeavesManual() {
     for (let i = 0; i < count; i++) {
       const py = points[i].y;
       const normY = (py - minY) / range;
-      const crownWeight = smooth01((normY - 0.56) / 0.44);
-      const tipWeight = smooth01((normY - 0.78) / 0.22);
+      const crownWeight = smooth01((normY - 0.64) / 0.36);
+      const tipWeight = smooth01((normY - 0.74) / 0.26);
       const palettePhase = t * 0.048 + i * 0.016 + Math.sin(t * 0.42 + i * 0.19) * 0.028 + normY * 0.11;
       const rainbowTint = hslToRgb((t * 16 + i * 5.4 + normY * 92) % 360, 0.68, 0.62);
       let col = sampleGemPalette(palettePhase).lerp(rainbowTint, 0.22);
-      const twinkle = 0.9 + 0.18 * Math.sin(t * 2.0 + i * 0.73);
-      const crystal = Math.pow(clamp01(Math.sin(t * 4.4 + i * 1.73) * 0.5 + 0.5), 12) * 0.5;
-      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.1 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.18;
+      const twinkle = 0.9 + 0.2 * Math.sin(t * 2.0 + i * 0.73);
+      const crystal = Math.pow(clamp01(Math.sin(t * 4.4 + i * 1.73) * 0.5 + 0.5), 12) * 0.46;
+      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.1 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.16;
       const flowTouch = phase.flowActive
-        ? smooth01(1 - Math.abs(phase.flow - (0.62 + normY * 0.27)) / 0.13)
+        ? smooth01(1 - Math.abs(phase.flow - (0.63 + normY * 0.26)) / 0.12)
         : 0;
-      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.28 + tipWeight * 1.05);
+      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.28 + tipWeight * 0.92);
 
-      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.34);
-      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.64);
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.26 + whiteSpark * 0.18);
+      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.38);
+      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.58);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.34 + whiteSpark * 0.2);
 
-      const idlePower = LEAF_IDLE_LIGHT * (
+      const power = (
         0.82
         + twinkle * 0.24
-        + crystal * 0.44
-        + whiteSpark * 0.08
-      );
-      const flowPower = LEAF_FLOW_LIGHT * flowTouch * (0.86 + crownWeight * 0.22);
-      const pulsePower = LEAF_PULSE_LIGHT * pulseTouch;
-      const power = idlePower + flowPower + pulsePower;
+        + crystal * 0.4
+        + whiteSpark * 0.12
+        + flowTouch * 1.18
+        + pulseTouch * 3.1
+      ) * EFFECT_POWER_MULT;
 
       arr[i * 3] = col.r * power;
       arr[i * 3 + 1] = col.g * power;
@@ -5421,22 +5418,9 @@ function TreeLeavesManual() {
   if (!points.length) return null;
 
   return (
-    <instancedMesh
-      ref={instRef}
-      args={[undefined as never, undefined as never, points.length]}
-      frustumCulled={false}
-      renderOrder={6}
-    >
+    <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
       <sphereGeometry args={[1.2, 16, 16]} />
-      <meshBasicMaterial
-        vertexColors
-        transparent
-        opacity={1}
-        depthTest={false}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
-      />
+      <meshStandardMaterial vertexColors emissive="#ffffff" emissiveIntensity={300} roughness={0.25} metalness={0.0} toneMapped={false} />
     </instancedMesh>
   );
 }
