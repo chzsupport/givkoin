@@ -5265,33 +5265,16 @@ function hslToRgb(h: number, s: number, l: number): THREE.Color {
   return new THREE.Color(r + m, g + m, b + m);
 }
 
-const LEAF_WAVE_GOLD = new THREE.Color('#ffd76b');
 const LEAF_SPARK_WHITE = new THREE.Color('#ffffff');
-
-const ENERGY_CYCLE = 15;
-const ENERGY_CHARGE_DURATION = 2.8;
-const ENERGY_FLOW_DURATION = 4.8;
-const ENERGY_PULSE_COUNT = 3;
-const ENERGY_PULSE_PERIOD = 0.816;
-const ENERGY_PULSE_WIDTH = 0.528;
-const ENERGY_FLOW_END = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION;
 const LEAF_BRIGHTNESS_SCALE = 0.14112;
-const LEAF_PULSE_WHITE_SCALE = 0.5;
-const LEAF_PULSE_POWER_SCALE = 0.5;
 const LEAF_CORE_BRIGHTNESS_BOOST = 1.872;
 const LEAF_CORE_CONTRAST = 1.788;
 const LEAF_AURA_BRIGHTNESS_SCALE = 0.34;
 const LEAF_RAINBOW_HALF_CYCLE = 2;
 const LEAF_BREATH_AMPLITUDE = 1;
-const LEAF_WAVE_TOP_ZONE = 0.16;
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
-}
-
-function smooth01(value: number) {
-  const x = clamp01(value);
-  return x * x * (3 - 2 * x);
 }
 
 function hash01(value: number) {
@@ -5339,36 +5322,7 @@ function getPointYBounds(points: THREE.Vector3[]) {
 const MANUAL_LEAF_POINTS = parseManualLeafPoints(MANUAL_LEAF_POINTS_TEXT);
 const MANUAL_LEAF_BOUNDS = getPointYBounds(MANUAL_LEAF_POINTS);
 
-function getEnergyPhase(timeSeconds: number) {
-  const cycleT = ((timeSeconds % ENERGY_CYCLE) + ENERGY_CYCLE) % ENERGY_CYCLE;
-  const charge = cycleT < ENERGY_CHARGE_DURATION
-    ? smooth01(cycleT / ENERGY_CHARGE_DURATION)
-    : Math.max(0, 1 - smooth01((cycleT - ENERGY_CHARGE_DURATION) / 0.7)) * 0.45;
-  const flow = clamp01((cycleT - ENERGY_CHARGE_DURATION) / ENERGY_FLOW_DURATION);
-  const flowActive = cycleT >= ENERGY_CHARGE_DURATION - 0.15
-    && cycleT <= ENERGY_FLOW_END;
-
-  let leafPulse = 0;
-  const pulseT = cycleT - ENERGY_FLOW_END;
-  if (pulseT >= 0) {
-    for (let i = 0; i < ENERGY_PULSE_COUNT; i += 1) {
-      const localT = pulseT - i * ENERGY_PULSE_PERIOD;
-      if (localT < 0 || localT > ENERGY_PULSE_WIDTH) continue;
-      const pulse = Math.sin((localT / ENERGY_PULSE_WIDTH) * Math.PI);
-      leafPulse = Math.max(leafPulse, pulse);
-    }
-  }
-
-  return { cycleT, charge, flow, flowActive, leafPulse };
-}
-
-function TreeLeavesManual({
-  waveBottomY,
-  waveTopY,
-}: {
-  waveBottomY: number;
-  waveTopY: number;
-}) {
+function TreeLeavesManual() {
   const points = MANUAL_LEAF_POINTS;
   const { minY, maxY } = MANUAL_LEAF_BOUNDS;
   const coreRef = useRef<THREE.InstancedMesh>(null);
@@ -5425,23 +5379,12 @@ function TreeLeavesManual({
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const phase = getEnergyPhase(t);
     const range = maxY - minY || 1;
-    const travelBottomY = Number.isFinite(waveBottomY) ? waveBottomY : 0;
-    const travelTopY = Number.isFinite(waveTopY) && waveTopY > travelBottomY
-      ? waveTopY
-      : travelBottomY + 1;
-    const waveRange = Math.max(1, travelTopY - travelBottomY);
-    const waveFrontY = THREE.MathUtils.lerp(travelBottomY, travelTopY, phase.flow);
-    const waveBand = Math.max(10, waveRange * 0.085);
 
     for (let i = 0; i < points.length; i += 1) {
       const point = points[i];
-      const py = point.y;
-      const normY = (py - minY) / range;
-      const tipWeight = smooth01((normY - (1 - LEAF_WAVE_TOP_ZONE)) / LEAF_WAVE_TOP_ZONE);
       const gemSeed = hash01(i * 17.13 + point.x * 0.051 + point.y * 0.023 + point.z * 0.041);
-      const gemShift = hash01(i * 9.31 + point.x * 0.017 - point.z * 0.013 + normY * 5.7);
+      const gemShift = hash01(i * 9.31 + point.x * 0.017 - point.z * 0.013 + (point.y - minY) / range * 5.7);
       const rainbowCycle = ((t + gemShift * LEAF_RAINBOW_HALF_CYCLE * 2) / LEAF_RAINBOW_HALF_CYCLE) % 2;
       const rainbowPing = 1 - Math.abs(rainbowCycle - 1);
       const hue = THREE.MathUtils.lerp(0, 280, rainbowPing);
@@ -5453,31 +5396,22 @@ function TreeLeavesManual({
       const breath = 1 + Math.sin(t * Math.PI + gemShift * Math.PI * 2 + gemSeed * 4) * LEAF_BREATH_AMPLITUDE;
       const whiteSpark = Math.pow(clamp01(Math.sin(t * (5.8 + gemSeed * 2.2) + i * 1.67 + gemShift * 10.2) * 0.5 + 0.5), 22) * (0.04 + gemSeed * 0.1);
       const diamondFlash = Math.pow(clamp01(Math.sin(t * (3.1 + gemSeed * 1.3) + i * 0.27 + gemShift * 17) * 0.5 + 0.5), 28) * (0.06 + gemShift * 0.12);
-      const flowTouch = phase.flowActive
-        ? smooth01(1 - Math.abs(py - waveFrontY) / Math.max(14, waveBand * 1.22))
-        : 0;
-      const pulseTouch = phase.leafPulse;
 
       col = col.lerp(LEAF_SPARK_WHITE, whiteSpark * 0.18 + diamondFlash * 0.28);
-      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * (0.16 + tipWeight * 0.1));
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.985 * LEAF_PULSE_WHITE_SCALE + whiteSpark * 0.1 + diamondFlash * 0.14);
+      col = col.lerp(LEAF_SPARK_WHITE, whiteSpark * 0.1 + diamondFlash * 0.14);
       applyColorContrast(col, LEAF_CORE_CONTRAST);
 
       const corePower = (1.15
         + twinkle * 0.38
         + whiteSpark * 0.42
-        + diamondFlash * 0.78
-        + flowTouch * 0.9
-        + pulseTouch * 5.4 * LEAF_PULSE_POWER_SCALE)
+        + diamondFlash * 0.78)
         * LEAF_BRIGHTNESS_SCALE
         * LEAF_CORE_BRIGHTNESS_BOOST
         * breath;
       const auraPower = (0.34
         + twinkle * 0.14
         + whiteSpark * 0.14
-        + diamondFlash * 0.22
-        + flowTouch * 0.52
-        + pulseTouch * 1.9 * LEAF_PULSE_POWER_SCALE)
+        + diamondFlash * 0.22)
         * LEAF_BRIGHTNESS_SCALE
         * LEAF_AURA_BRIGHTNESS_SCALE
         * (0.8 + (breath - 1) * 0.35);
@@ -5524,96 +5458,6 @@ function TreeLeavesManual({
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
     </>
-  );
-}
-
-function GroundChargeGlow() {
-  const coreRef = useRef<THREE.Sprite>(null);
-  const ringRef = useRef<THREE.Mesh>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
-  const coreMatRef = useRef<THREE.SpriteMaterial>(null);
-  const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const auraTexture = useMemo(
-    () =>
-      makeRadialTexture({
-        inner: 6,
-        outer: 128,
-        stops: [
-          [0, 0.95],
-          [0.26, 0.6],
-          [0.62, 0.18],
-          [1, 0],
-        ],
-      }),
-    []
-  );
-
-  useFrame((state) => {
-    const phase = getEnergyPhase(state.clock.elapsedTime);
-    const glow = phase.cycleT < ENERGY_CHARGE_DURATION
-      ? 0.18 + phase.charge * 1.25
-      : 0.12 + Math.max(0, 1 - phase.flow) * 0.32;
-
-    if (coreRef.current) {
-      const size = 72 + glow * 60;
-      coreRef.current.scale.set(size, size, 1);
-    }
-
-    if (ringRef.current) {
-      const scale = 1 + glow * 0.2;
-      ringRef.current.scale.set(scale, scale * 0.82, 1);
-      ringRef.current.rotation.z = state.clock.elapsedTime * 0.08;
-    }
-
-    if (coreMatRef.current) {
-      coreMatRef.current.opacity = Math.min(0.4, 0.09 + glow * 0.22);
-      coreMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.55);
-    }
-
-    if (ringMatRef.current) {
-      ringMatRef.current.opacity = Math.min(0.22, 0.05 + glow * 0.1);
-      ringMatRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
-    }
-
-    if (lightRef.current) {
-      lightRef.current.intensity = 2.4 + glow * 10 + phase.leafPulse * 3.2;
-      lightRef.current.distance = 300 + glow * 180;
-      lightRef.current.color.set('#74fff1').lerp(new THREE.Color('#ffe08c'), phase.charge * 0.46);
-    }
-  });
-
-  return (
-    <group position={[0, 52, 0]} renderOrder={4}>
-      <pointLight
-        ref={lightRef}
-        position={[0, 10, 0]}
-        color="#74fff1"
-        intensity={4}
-        distance={360}
-        decay={1.5}
-      />
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.4, 0]}>
-        <circleGeometry args={[88, 96]} />
-        <meshBasicMaterial
-          ref={ringMatRef}
-          map={auraTexture}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-      <sprite ref={coreRef} rotation={[Math.PI / 2, 0, 0]}>
-        <spriteMaterial
-          ref={coreMatRef}
-          map={auraTexture}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </sprite>
-    </group>
   );
 }
 
@@ -5784,7 +5628,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
 
-  const { scene, sceneBounds } = useMemo(() => {
+  const { scene } = useMemo(() => {
     const cloned = loadedScene.clone(true);
 
     const box = new THREE.Box3().setFromObject(cloned);
@@ -5805,21 +5649,8 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
       cloned.position.y -= boxAfter.min.y;
     }
 
-    const finalBox = new THREE.Box3().setFromObject(cloned);
-    return {
-      scene: cloned,
-      sceneBounds: {
-        minY: Number.isFinite(finalBox.min.y) ? finalBox.min.y : 0,
-        maxY: Number.isFinite(finalBox.max.y) ? finalBox.max.y : 1,
-      },
-    };
+    return { scene: cloned };
   }, [loadedScene]);
-
-  const waveBottomY = sceneBounds.minY;
-  const waveTopY = Math.max(
-    waveBottomY + 1,
-    Math.min(sceneBounds.maxY, MANUAL_LEAF_BOUNDS.maxY)
-  );
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
@@ -5830,8 +5661,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <GroundChargeGlow />
-      <TreeLeavesManual waveBottomY={waveBottomY} waveTopY={waveTopY} />
+      <TreeLeavesManual />
     </group>
   );
 }
