@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, Suspense } from 'react';
+import React, { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,6 +8,7 @@ import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflar
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { loadFrozenTreePointCloud } from '@/lib/tree/loadFrozenTreePointCloud';
 
 const MANUAL_LEAF_POINTS_TEXT = `
 [0] [leaf-point] 130.34262880540223 290.93816096227806 49.39998685545104
@@ -5401,455 +5402,414 @@ function TreeLeavesManual() {
   );
 }
 
-function EnergyBaseEffect() {
-  const groupRef = useRef<THREE.Group>(null);
-  const coreRef = useRef<THREE.Sprite>(null);
-  const coreMatRef = useRef<THREE.SpriteMaterial>(null);
-  const diskRef = useRef<THREE.Mesh>(null);
-  const diskMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const lightRef = useRef<THREE.PointLight>(null);
-  const ringRefs = useRef<Array<THREE.Mesh | null>>([]);
-  const ringMatRefs = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
-  const sparkRef = useRef<THREE.InstancedMesh>(null);
-  const sparkColors = useRef<Float32Array | null>(null);
+type TreeWaveGeometry = {
+  contourPositions: Float32Array;
+  contourLevels: Float32Array;
+  basePositions: Float32Array;
+  baseLevels: Float32Array;
+};
 
-  const auraTex = useMemo(
+function collectBounds(layers: Float32Array[]) {
+  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+
+  for (const layer of layers) {
+    for (let i = 0; i < layer.length; i += 3) {
+      min.x = Math.min(min.x, layer[i]);
+      min.y = Math.min(min.y, layer[i + 1]);
+      min.z = Math.min(min.z, layer[i + 2]);
+      max.x = Math.max(max.x, layer[i]);
+      max.y = Math.max(max.y, layer[i + 1]);
+      max.z = Math.max(max.z, layer[i + 2]);
+    }
+  }
+
+  return { min, max };
+}
+
+function transformLayerPositions(source: Float32Array, bounds: { min: THREE.Vector3; max: THREE.Vector3 }) {
+  const center = new THREE.Vector3(
+    (bounds.min.x + bounds.max.x) * 0.5,
+    (bounds.min.y + bounds.max.y) * 0.5,
+    (bounds.min.z + bounds.max.z) * 0.5,
+  );
+  const size = new THREE.Vector3().subVectors(bounds.max, bounds.min);
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const scale = 420 / maxDim;
+
+  let minYAfter = Infinity;
+  for (let i = 0; i < source.length; i += 3) {
+    const y = (source[i + 1] - center.y) * scale;
+    minYAfter = Math.min(minYAfter, y);
+  }
+
+  const transformed = new Float32Array(source.length);
+  for (let i = 0; i < source.length; i += 3) {
+    transformed[i] = (source[i] - center.x) * scale;
+    transformed[i + 1] = (source[i + 1] - center.y) * scale - minYAfter;
+    transformed[i + 2] = (source[i + 2] - center.z) * scale;
+  }
+
+  return transformed;
+}
+
+function collectContourShell(
+  positions: Float32Array,
+  yMin: number,
+  yMax: number,
+  angleBins: number,
+  yBins: number,
+) {
+  const buckets = new Map<string, { x: number; y: number; z: number; score: number }>();
+  const rangeY = yMax - yMin || 1;
+
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+    const normY = clamp01((y - yMin) / rangeY);
+    const angle = (Math.atan2(z, x) + Math.PI * 2) % (Math.PI * 2);
+    const angleBin = Math.min(angleBins - 1, Math.floor((angle / (Math.PI * 2)) * angleBins));
+    const yBin = Math.min(yBins - 1, Math.floor(normY * yBins));
+    const key = `${yBin}:${angleBin}`;
+    const radial = Math.sqrt(x * x + z * z);
+    const score = radial + Math.abs(x) * 0.04 + Math.abs(z) * 0.04;
+    const prev = buckets.get(key);
+
+    if (!prev || score > prev.score) {
+      buckets.set(key, { x, y, z, score });
+    }
+  }
+
+  const contourPositions = new Float32Array(buckets.size * 3);
+  const contourLevels = new Float32Array(buckets.size);
+  let writeIndex = 0;
+  for (const point of buckets.values()) {
+    contourPositions[writeIndex * 3] = point.x;
+    contourPositions[writeIndex * 3 + 1] = point.y;
+    contourPositions[writeIndex * 3 + 2] = point.z;
+    contourLevels[writeIndex] = clamp01((point.y - yMin) / rangeY);
+    writeIndex += 1;
+  }
+
+  return { contourPositions, contourLevels };
+}
+
+function collectBaseShell(
+  positions: Float32Array,
+  yMin: number,
+  yMax: number,
+  gridBins: number,
+) {
+  const buckets = new Map<string, { x: number; y: number; z: number; score: number }>();
+  const rangeY = yMax - yMin || 1;
+  const thresholdY = yMin + rangeY * 0.3;
+  const gridMin = -190;
+  const gridMax = 190;
+  const gridRange = gridMax - gridMin;
+
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+    if (y > thresholdY) continue;
+
+    const gridX = Math.max(0, Math.min(gridBins - 1, Math.floor(((x - gridMin) / gridRange) * gridBins)));
+    const gridZ = Math.max(0, Math.min(gridBins - 1, Math.floor(((z - gridMin) / gridRange) * gridBins)));
+    const key = `${gridX}:${gridZ}`;
+    const score = y;
+    const prev = buckets.get(key);
+
+    if (!prev || score > prev.score) {
+      buckets.set(key, { x, y, z, score });
+    }
+  }
+
+  const basePositions = new Float32Array(buckets.size * 3);
+  const baseLevels = new Float32Array(buckets.size);
+  let writeIndex = 0;
+  for (const point of buckets.values()) {
+    basePositions[writeIndex * 3] = point.x;
+    basePositions[writeIndex * 3 + 1] = point.y;
+    basePositions[writeIndex * 3 + 2] = point.z;
+    baseLevels[writeIndex] = clamp01((point.y - yMin) / rangeY);
+    writeIndex += 1;
+  }
+
+  return { basePositions, baseLevels };
+}
+
+function buildTreeWaveGeometry(treeData: Awaited<ReturnType<typeof loadFrozenTreePointCloud>>): TreeWaveGeometry {
+  const rawLayers = [
+    treeData.groundPositions,
+    treeData.trunkPositions,
+    treeData.woodPositions,
+    treeData.foliagePositions,
+  ];
+  const bounds = collectBounds(rawLayers);
+
+  const groundPositions = transformLayerPositions(treeData.groundPositions, bounds);
+  const trunkPositions = transformLayerPositions(treeData.trunkPositions, bounds);
+  const woodPositions = transformLayerPositions(treeData.woodPositions, bounds);
+  const foliagePositions = transformLayerPositions(treeData.foliagePositions, bounds);
+  const shellSource = new Float32Array(trunkPositions.length + woodPositions.length + foliagePositions.length);
+  shellSource.set(trunkPositions, 0);
+  shellSource.set(woodPositions, trunkPositions.length);
+  shellSource.set(foliagePositions, trunkPositions.length + woodPositions.length);
+
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (let i = 0; i < shellSource.length; i += 3) {
+    yMin = Math.min(yMin, shellSource[i + 1]);
+    yMax = Math.max(yMax, shellSource[i + 1]);
+  }
+
+  const contour = collectContourShell(shellSource, yMin, yMax, 56, 72);
+  const baseSource = new Float32Array(groundPositions.length + woodPositions.length);
+  baseSource.set(groundPositions, 0);
+  baseSource.set(woodPositions, groundPositions.length);
+  const base = collectBaseShell(baseSource, yMin, yMax, 34);
+
+  return {
+    contourPositions: contour.contourPositions,
+    contourLevels: contour.contourLevels,
+    basePositions: base.basePositions,
+    baseLevels: base.baseLevels,
+  };
+}
+
+function TreeContourWave() {
+  const [waveData, setWaveData] = useState<TreeWaveGeometry | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadFrozenTreePointCloud()
+      .then((data) => {
+        if (cancelled) return;
+        setWaveData(buildTreeWaveGeometry(data));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWaveData(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const contourGeometry = useMemo(() => {
+    if (!waveData) return null;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(waveData.contourPositions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(waveData.contourPositions.length), 3));
+    return geometry;
+  }, [waveData]);
+
+  const baseGeometry = useMemo(() => {
+    if (!waveData) return null;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(waveData.basePositions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(waveData.basePositions.length), 3));
+    return geometry;
+  }, [waveData]);
+
+  useEffect(() => () => {
+    contourGeometry?.dispose();
+    baseGeometry?.dispose();
+  }, [baseGeometry, contourGeometry]);
+
+  useFrame((state) => {
+    if (!waveData || !contourGeometry || !baseGeometry) return;
+
+    const phase = getEnergyPhase(state.clock.elapsedTime);
+    const contourColors = contourGeometry.getAttribute('color') as THREE.BufferAttribute;
+    const baseColors = baseGeometry.getAttribute('color') as THREE.BufferAttribute;
+    const cool = new THREE.Color('#56fff1');
+    const warm = new THREE.Color('#ffd56c');
+    const white = new THREE.Color('#ffffff');
+    const contourBand = 0.11;
+    const contourTrail = 0.28;
+
+    for (let i = 0; i < waveData.contourLevels.length; i += 1) {
+      const level = waveData.contourLevels[i];
+      const baseCharge = phase.charge * Math.max(0, 1 - level / 0.42) * 0.92;
+      const riseWave = phase.flowActive
+        ? smooth01(1 - Math.abs(level - phase.flow) / contourBand)
+        : 0;
+      const riseTrail = phase.flowActive && phase.flow > level
+        ? Math.max(0, 1 - (phase.flow - level) / contourTrail) * 0.28
+        : 0;
+      const topPulse = level > 0.74 ? phase.leafPulse * smooth01((level - 0.74) / 0.26) : 0;
+      const shimmer = 0.04 + 0.04 * Math.sin(state.clock.elapsedTime * 1.6 + i * 0.11);
+      const brightness = shimmer + baseCharge + riseWave * 2.05 + riseTrail + topPulse * 1.35;
+      const color = cool.clone()
+        .lerp(warm, clamp01(baseCharge * 0.75 + riseWave * 0.9))
+        .lerp(white, topPulse * 0.5 + riseWave * 0.18);
+
+      contourColors.setXYZ(i, color.r * brightness, color.g * brightness, color.b * brightness);
+    }
+
+    for (let i = 0; i < waveData.baseLevels.length; i += 1) {
+      const level = waveData.baseLevels[i];
+      const chargeCover = phase.charge * Math.max(0, 1 - level / 0.36) * 1.8;
+      const launchWave = phase.flowActive
+        ? smooth01(1 - Math.abs(level - phase.flow * 0.48) / 0.22)
+        : 0;
+      const breath = 0.08 + 0.06 * Math.sin(state.clock.elapsedTime * 2.1 + i * 0.13);
+      const brightness = breath + chargeCover + launchWave * 0.95;
+      const color = cool.clone()
+        .lerp(warm, clamp01(chargeCover * 0.6 + launchWave * 0.5))
+        .lerp(white, launchWave * 0.14);
+
+      baseColors.setXYZ(i, color.r * brightness, color.g * brightness, color.b * brightness);
+    }
+
+    contourColors.needsUpdate = true;
+    baseColors.needsUpdate = true;
+  });
+
+  if (!contourGeometry || !baseGeometry) return null;
+
+  return (
+    <group renderOrder={6}>
+      <points geometry={baseGeometry} frustumCulled={false}>
+        <pointsMaterial
+          vertexColors
+          size={7.2}
+          sizeAttenuation
+          transparent
+          opacity={0.16}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+      <points geometry={contourGeometry} frustumCulled={false}>
+        <pointsMaterial
+          vertexColors
+          size={5.4}
+          sizeAttenuation
+          transparent
+          opacity={0.14}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+      <points geometry={baseGeometry} frustumCulled={false}>
+        <pointsMaterial
+          vertexColors
+          size={3.2}
+          sizeAttenuation
+          transparent
+          opacity={0.62}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+      <points geometry={contourGeometry} frustumCulled={false}>
+        <pointsMaterial
+          vertexColors
+          size={2.35}
+          sizeAttenuation
+          transparent
+          opacity={0.58}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+    </group>
+  );
+}
+
+function GroundEnergyGlow() {
+  const coreRef = useRef<THREE.Sprite>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const coreMatRef = useRef<THREE.SpriteMaterial>(null);
+  const ringMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const auraTexture = useMemo(
     () =>
       makeRadialTexture({
-        inner: 2,
+        inner: 6,
         outer: 128,
         stops: [
-          [0, 1],
-          [0.18, 0.78],
-          [0.54, 0.22],
+          [0, 0.95],
+          [0.26, 0.6],
+          [0.62, 0.18],
           [1, 0],
         ],
       }),
     []
   );
 
-  const sparks = useMemo(
-    () =>
-      Array.from({ length: 96 }, (_, i) => ({
-        angle: (i / 96) * Math.PI * 2,
-        radius: 18 + ((i * 29) % 68),
-        height: 3 + ((i * 17) % 18) * 0.16,
-        speed: 0.28 + ((i * 13) % 19) * 0.018,
-        size: 0.8 + ((i * 7) % 10) * 0.13,
-        lift: i % 4 === 0,
-      })),
-    []
-  );
-
-  const rings = useMemo(
-    () => [
-      { radius: 26, tube: 0.62, delay: 0.0, color: '#4fffe3' },
-      { radius: 43, tube: 0.72, delay: 0.32, color: '#ffd36b' },
-      { radius: 62, tube: 0.82, delay: 0.64, color: '#8efcff' },
-      { radius: 84, tube: 0.96, delay: 0.92, color: '#ffffff' },
-    ],
-    []
-  );
-
-  useEffect(() => {
-    const inst = sparkRef.current;
-    if (!inst) return;
-
-    const arr = new Float32Array(sparks.length * 3);
-    inst.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
-    sparkColors.current = arr;
-  }, [sparks.length]);
-
   useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    const phase = getEnergyPhase(t);
-    const chargeGlow = phase.cycleT < ENERGY_CHARGE_DURATION
-      ? 0.12 + phase.charge * 1.25
-      : 0.1 + phase.charge * 0.45 + (phase.flowActive ? (1 - phase.flow) * 0.38 : 0);
-    const idleShimmer = 0.05 + 0.04 * Math.sin(t * 1.8);
-    const basePower = Math.max(idleShimmer, chargeGlow);
-
-    if (groupRef.current) {
-      groupRef.current.scale.setScalar(1 + basePower * 0.045);
-    }
+    const phase = getEnergyPhase(state.clock.elapsedTime);
+    const baseGlow = phase.cycleT < ENERGY_CHARGE_DURATION
+      ? 0.16 + phase.charge * 1.15
+      : 0.1 + Math.max(0, 1 - phase.flow) * 0.28;
 
     if (coreRef.current) {
-      const s = 58 + basePower * 72 + phase.leafPulse * 18;
-      coreRef.current.scale.set(s, s, 1);
+      const size = 78 + baseGlow * 62;
+      coreRef.current.scale.set(size, size, 1);
+    }
+
+    if (ringRef.current) {
+      const scale = 1 + baseGlow * 0.18;
+      ringRef.current.scale.set(scale, scale * 0.8, 1);
+      ringRef.current.rotation.z = state.clock.elapsedTime * 0.08;
     }
 
     if (coreMatRef.current) {
-      coreMatRef.current.opacity = Math.min(0.86, 0.12 + basePower * 0.46 + phase.leafPulse * 0.12);
-      const warm = new THREE.Color('#ffd36b');
-      const cool = new THREE.Color('#55fff0');
-      coreMatRef.current.color.copy(cool).lerp(warm, clamp01(basePower * 0.65 + phase.leafPulse * 0.35));
+      coreMatRef.current.opacity = Math.min(0.34, 0.07 + baseGlow * 0.19);
+      coreMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.52);
     }
 
-    if (diskRef.current) {
-      const s = 0.72 + basePower * 0.24 + phase.leafPulse * 0.06;
-      diskRef.current.scale.set(s, s * 0.72, 1);
-      diskRef.current.rotation.z = t * 0.09;
+    if (ringMatRef.current) {
+      ringMatRef.current.opacity = Math.min(0.16, 0.04 + baseGlow * 0.08);
+      ringMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
     }
-
-    if (diskMatRef.current) {
-      diskMatRef.current.opacity = Math.min(0.34, 0.05 + basePower * 0.18 + phase.leafPulse * 0.05);
-      diskMatRef.current.color.copy(new THREE.Color('#5fffea')).lerp(new THREE.Color('#ffd36b'), phase.charge * 0.58);
-    }
-
-    if (lightRef.current) {
-      lightRef.current.intensity = 0.8 + basePower * 13 + phase.leafPulse * 5;
-      lightRef.current.distance = 260 + basePower * 180;
-    }
-
-    for (let i = 0; i < rings.length; i += 1) {
-      const ring = ringRefs.current[i];
-      const mat = ringMatRefs.current[i];
-      const cfg = rings[i];
-      const localCharge = phase.cycleT < ENERGY_CHARGE_DURATION
-        ? smooth01((phase.cycleT - cfg.delay) / Math.max(0.1, ENERGY_CHARGE_DURATION - cfg.delay))
-        : Math.max(0, 1 - phase.flow) * 0.55;
-      const breath = 0.5 + 0.5 * Math.sin(t * (1.4 + i * 0.12) + i * 1.1);
-      const ringPower = clamp01(localCharge + breath * 0.08 + phase.leafPulse * 0.18);
-
-      if (ring) {
-        const scale = 0.82 + ringPower * 0.42 + breath * 0.035;
-        ring.scale.set(scale, scale, 1);
-        ring.rotation.z = t * (0.12 + i * 0.035) * (i % 2 === 0 ? 1 : -1);
-      }
-
-      if (mat) {
-        mat.opacity = 0.04 + ringPower * (0.26 + i * 0.035);
-      }
-    }
-
-    const inst = sparkRef.current;
-    const arr = sparkColors.current;
-    if (!inst || !arr) return;
-
-    const dummy = new THREE.Object3D();
-    const baseColor = new THREE.Color('#55fff0');
-    const warmColor = new THREE.Color('#ffd36b');
-    const white = new THREE.Color('#ffffff');
-    for (let i = 0; i < sparks.length; i += 1) {
-      const spark = sparks[i];
-      const spin = spark.angle + t * spark.speed + phase.charge * 0.62;
-      const ringPulse = 0.82 + 0.18 * Math.sin(t * 2.4 + i * 0.59);
-      let radius = spark.radius * (1 - phase.charge * 0.18) + Math.sin(t * 1.6 + i) * 2.4;
-      let y = spark.height + phase.charge * (8 + (i % 7));
-      let scale = spark.size * (0.46 + basePower * 0.96) * ringPulse;
-
-      if (phase.flowActive && spark.lift) {
-        const lift = smooth01((phase.flow - (i % 8) * 0.018) / 0.24);
-        radius *= 1 - lift * 0.78;
-        y += lift * (46 + (i % 5) * 9);
-        scale *= 1 + lift * 0.55;
-      }
-
-      dummy.position.set(Math.cos(spin) * radius, y, Math.sin(spin) * radius * 0.78);
-      dummy.scale.setScalar(Math.max(0.001, scale));
-      dummy.updateMatrix();
-      inst.setMatrixAt(i, dummy.matrix);
-
-      const col = baseColor.clone()
-        .lerp(warmColor, clamp01(phase.charge * 0.65 + (i % 3) * 0.1))
-        .lerp(white, phase.leafPulse * 0.45);
-      arr[i * 3] = col.r * (1.1 + basePower * 1.4);
-      arr[i * 3 + 1] = col.g * (1.1 + basePower * 1.4);
-      arr[i * 3 + 2] = col.b * (1.1 + basePower * 1.4);
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   });
 
   return (
-    <group ref={groupRef} position={[0, 56, 0]}>
-      <pointLight ref={lightRef} color="#8ffff5" intensity={1.2} distance={260} decay={1.5} />
-      <mesh ref={diskRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.7, 0]}>
-        <circleGeometry args={[72, 128]} />
+    <group position={[0, 48, 0]} renderOrder={5}>
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.3, 0]}>
+        <circleGeometry args={[86, 96]} />
         <meshBasicMaterial
-          ref={diskMatRef}
-          map={auraTex}
-          color="#5fffea"
+          ref={ringMatRef}
+          map={auraTexture}
           transparent
           depthWrite={false}
-          depthTest={false}
           blending={THREE.AdditiveBlending}
-          opacity={0.12}
           toneMapped={false}
         />
       </mesh>
       <sprite ref={coreRef} rotation={[Math.PI / 2, 0, 0]}>
         <spriteMaterial
           ref={coreMatRef}
-          map={auraTex}
-          color="#55fff0"
+          map={auraTexture}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
-          opacity={0.18}
           toneMapped={false}
         />
       </sprite>
-
-      {rings.map((ring, index) => (
-        <mesh
-          key={ring.radius}
-          ref={(node) => {
-            ringRefs.current[index] = node;
-          }}
-          rotation={[Math.PI / 2, 0, 0]}
-          position={[0, 0.6 + index * 0.34, 0]}
-        >
-          <torusGeometry args={[ring.radius, ring.tube, 10, 132]} />
-          <meshBasicMaterial
-            ref={(mat) => {
-              ringMatRefs.current[index] = mat;
-            }}
-            color={ring.color}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            opacity={0.08}
-            toneMapped={false}
-          />
-        </mesh>
-      ))}
-
-      <instancedMesh ref={sparkRef} args={[undefined as never, undefined as never, sparks.length]} frustumCulled={false}>
-        <sphereGeometry args={[1, 10, 10]} />
-        <meshBasicMaterial vertexColors transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
-      </instancedMesh>
     </group>
   );
 }
 
-type EnergyPath = {
-  curve: THREE.CatmullRomCurve3;
-  start: number;
-  end: number;
-  arrival: number;
-  radius: number;
-  color: THREE.Color;
-};
-
-function buildEnergyPaths(points: THREE.Vector3[]) {
-  const paths: EnergyPath[] = [];
-  const base = new THREE.Vector3(0, 56, 0);
-  const top = new THREE.Vector3(0, 226, 0);
-
-  paths.push({
-    curve: new THREE.CatmullRomCurve3([
-      base.clone(),
-      new THREE.Vector3(-4, 50, 2),
-      new THREE.Vector3(5, 118, -3),
-      top.clone(),
-    ]),
-    start: 0,
-    end: 0.58,
-    arrival: 0.5,
-    radius: 2.7,
-    color: new THREE.Color('#fff0a8'),
-  });
-
-  for (let i = 0; i < 8; i += 1) {
-    const angle = (i / 8) * Math.PI * 2;
-    const rootStart = new THREE.Vector3(Math.cos(angle) * 82, 38, Math.sin(angle) * 62);
-    paths.push({
-      curve: new THREE.CatmullRomCurve3([
-        rootStart,
-        new THREE.Vector3(Math.cos(angle) * 38, 44, Math.sin(angle) * 28),
-        new THREE.Vector3(Math.cos(angle) * 12, 56, Math.sin(angle) * 8),
-        new THREE.Vector3(0, 70, 0),
-      ]),
-      start: 0.02,
-      end: 0.28,
-      arrival: 0.19 + i * 0.006,
-      radius: 0.68,
-      color: new THREE.Color(i % 2 === 0 ? '#58fff0' : '#ffd36b'),
-    });
-  }
-
-  if (!points.length) return paths;
-
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const point of points) {
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-  const rangeY = maxY - minY || 1;
-  const sectors = 22;
-
-  for (let sector = 0; sector < sectors; sector += 1) {
-    const sectorStart = (sector / sectors) * Math.PI * 2;
-    const sectorEnd = ((sector + 1) / sectors) * Math.PI * 2;
-    let best: THREE.Vector3 | null = null;
-    let bestScore = -Infinity;
-
-    for (const point of points) {
-      const angle = (Math.atan2(point.z, point.x) + Math.PI * 2) % (Math.PI * 2);
-      if (angle < sectorStart || angle >= sectorEnd) continue;
-
-      const normY = (point.y - minY) / rangeY;
-      if (normY < 0.08) continue;
-
-      const radial = Math.sqrt(point.x * point.x + point.z * point.z);
-      const score = radial * 0.78 + normY * 82 + Math.sin(point.y * 0.03 + sector) * 8;
-      if (score > bestScore) {
-        bestScore = score;
-        best = point;
-      }
-    }
-
-    if (!best) continue;
-
-    const end = best.clone();
-    const normY = (end.y - minY) / rangeY;
-    const trunkY = 66 + normY * 132;
-    const anchor = new THREE.Vector3(end.x * 0.12, trunkY, end.z * 0.12);
-    const bend = new THREE.Vector3(end.x * 0.48, trunkY + 34 + normY * 36, end.z * 0.48);
-    const arrival = 0.48 + normY * 0.42 + (sector % 4) * 0.012;
-
-    paths.push({
-      curve: new THREE.CatmullRomCurve3([
-        base.clone(),
-        new THREE.Vector3(0, Math.min(190, trunkY - 24), 0),
-        anchor,
-        bend,
-        end,
-      ]),
-      start: 0.24,
-      end: 1,
-      arrival: clamp01(arrival),
-      radius: 0.52,
-      color: new THREE.Color(sector % 3 === 0 ? '#fff4b8' : sector % 3 === 1 ? '#5afff1' : '#b68cff'),
-    });
-  }
-
-  return paths;
-}
-
-function EnergyTube({ path }: { path: EnergyPath }) {
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
-  const geometry = useMemo(() => new THREE.TubeGeometry(path.curve, 72, path.radius, 8, false), [path]);
-
-  useEffect(() => {
-    return () => geometry.dispose();
-  }, [geometry]);
-
-  useFrame((state) => {
-    const mat = matRef.current;
-    if (!mat) return;
-
-    const phase = getEnergyPhase(state.clock.elapsedTime);
-    const wave = phase.flowActive
-      ? smooth01(1 - Math.abs(phase.flow - path.arrival) / 0.15)
-      : 0;
-    const afterglow = phase.flowActive && phase.flow > path.arrival
-      ? Math.max(0, 1 - phase.flow) * 0.08
-      : 0;
-    mat.opacity = wave * 0.16 + afterglow * 0.55;
-    mat.color.copy(path.color).lerp(new THREE.Color('#ffffff'), phase.leafPulse * 0.28);
-  });
-
-  return (
-    <mesh geometry={geometry} frustumCulled={false}>
-      <meshBasicMaterial
-        ref={matRef}
-        color={path.color}
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        opacity={0}
-        toneMapped={false}
-      />
-    </mesh>
-  );
-}
-
-function EnergyFlowEffect({ points }: { points: THREE.Vector3[] }) {
-  const instRef = useRef<THREE.InstancedMesh>(null);
-  const colorArr = useRef<Float32Array | null>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const paths = useMemo(() => buildEnergyPaths(points), [points]);
-  const particles = useMemo(
-    () =>
-      paths.flatMap((path, pathIndex) =>
-        Array.from({ length: pathIndex === 0 ? 10 : 4 }, (_, i) => ({
-          pathIndex,
-          lag: i * 0.038,
-          size: pathIndex === 0 ? 2.6 - i * 0.1 : 1.55 - i * 0.1,
-        }))
-      ),
-    [paths]
-  );
-
-  useEffect(() => {
-    const inst = instRef.current;
-    if (!inst) return;
-
-    const arr = new Float32Array(particles.length * 3);
-    inst.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
-    colorArr.current = arr;
-  }, [particles.length]);
-
-  useFrame((state) => {
-    const inst = instRef.current;
-    const arr = colorArr.current;
-    if (!inst || !arr) return;
-
-    const phase = getEnergyPhase(state.clock.elapsedTime);
-    const white = new THREE.Color('#ffffff');
-
-    for (let i = 0; i < particles.length; i += 1) {
-      const particle = particles[i];
-      const path = paths[particle.pathIndex];
-      const span = Math.max(0.001, path.end - path.start);
-      const local = (phase.flow - path.start) / span - particle.lag;
-      const active = phase.flowActive && local >= 0 && local <= 1;
-
-      if (active) {
-        const pos = path.curve.getPoint(clamp01(local));
-        const breathe = 0.82 + 0.18 * Math.sin(state.clock.elapsedTime * 7 + i);
-        dummy.position.copy(pos);
-        dummy.scale.setScalar(Math.max(0.001, particle.size * breathe * (1 + phase.leafPulse * 0.45)));
-      } else {
-        dummy.position.set(0, -999, 0);
-        dummy.scale.setScalar(0.001);
-      }
-
-      dummy.updateMatrix();
-      inst.setMatrixAt(i, dummy.matrix);
-
-      const col = path.color.clone().lerp(white, active ? 0.35 + phase.leafPulse * 0.45 : 0);
-      const power = active ? 1.45 + phase.leafPulse * 2.0 : 0.01;
-      arr[i * 3] = col.r * power;
-      arr[i * 3 + 1] = col.g * power;
-      arr[i * 3 + 2] = col.b * power;
-    }
-
-    inst.instanceMatrix.needsUpdate = true;
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-  });
-
+function TreeEnergyEffect() {
   return (
     <group>
-      {paths.map((path, index) => (
-        <EnergyTube key={index} path={path} />
-      ))}
-      <instancedMesh ref={instRef} args={[undefined as never, undefined as never, particles.length]} frustumCulled={false}>
-        <sphereGeometry args={[1, 12, 12]} />
-        <meshBasicMaterial vertexColors transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
-      </instancedMesh>
-    </group>
-  );
-}
-
-function TreeEnergyEffect({ points }: { points: THREE.Vector3[] }) {
-  return (
-    <group>
-      <EnergyBaseEffect />
-      <EnergyFlowEffect points={points} />
+      <GroundEnergyGlow />
+      <TreeContourWave />
     </group>
   );
 }
@@ -5928,9 +5888,9 @@ function Satellite({
 
     const lf = new Lensflare();
     const tex = makeCircleTexture();
-    lf.addElement(new LensflareElement(tex, 150, 0.0, new THREE.Color(cfg.color)));
-    lf.addElement(new LensflareElement(tex, 82, 0.35, new THREE.Color('#ffffff')));
-    lf.addElement(new LensflareElement(tex, 48, 0.65, new THREE.Color(cfg.color)));
+    lf.addElement(new LensflareElement(tex, 220, 0.0, new THREE.Color(cfg.color)));
+    lf.addElement(new LensflareElement(tex, 120, 0.35, new THREE.Color('#ffffff')));
+    lf.addElement(new LensflareElement(tex, 70, 0.65, new THREE.Color(cfg.color)));
     return lf;
   }, [cfg.color]);
 
@@ -5955,11 +5915,11 @@ function Satellite({
       <pointLight intensity={cfg.light * TREE_LIGHT_MULT} distance={cfg.lightDistance} decay={cfg.lightDecay} color={color} />
 
       <group>
-        <sprite scale={[cfg.size * 8.8, cfg.size * 8.8, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.24} />
+        <sprite scale={[cfg.size * 13.5, cfg.size * 13.5, 1]}>
+          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.34} />
         </sprite>
-        <sprite scale={[cfg.size * 4.2, cfg.size * 4.2, 1]}>
-          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
+        <sprite scale={[cfg.size * 6.0, cfg.size * 6.0, 1]}>
+          <spriteMaterial map={auraSoft} color={color} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.22} />
         </sprite>
         <mesh>
           <sphereGeometry args={[cfg.size, 128, 128]} />
@@ -6019,7 +5979,6 @@ export function SceneBloom() {
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
-  const leafPoints = useMemo(() => getManualLeafPoints(), []);
 
   const scene = useMemo(() => {
     const cloned = loadedScene.clone(true);
@@ -6054,7 +6013,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <TreeEnergyEffect points={leafPoints} />
+      <TreeEnergyEffect />
       <TreeLeavesManual />
     </group>
   );
