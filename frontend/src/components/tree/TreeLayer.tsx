@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import React, { useEffect, useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,7 +8,6 @@ import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflar
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { loadFrozenTreePointCloud } from '@/lib/tree/loadFrozenTreePointCloud';
 
 const MANUAL_LEAF_POINTS_TEXT = `
 [0] [leaf-point] 130.34262880540223 290.93816096227806 49.39998685545104
@@ -5402,282 +5401,311 @@ function TreeLeavesManual() {
   );
 }
 
-type TreeWaveGeometry = {
-  contourPositions: Float32Array;
-  contourLevels: Float32Array;
-  basePositions: Float32Array;
-  baseLevels: Float32Array;
+type TreeContourWaveProps = {
+  target: THREE.Object3D;
+  localRootRef: React.RefObject<THREE.Group | null>;
 };
 
-function collectBounds(layers: Float32Array[]) {
-  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
-  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+type ContourScan = {
+  count: number;
+  levels: Float32Array;
+  positions: Float32Array;
+};
 
-  for (const layer of layers) {
-    for (let i = 0; i < layer.length; i += 3) {
-      min.x = Math.min(min.x, layer[i]);
-      min.y = Math.min(min.y, layer[i + 1]);
-      min.z = Math.min(min.z, layer[i + 2]);
-      max.x = Math.max(max.x, layer[i]);
-      max.y = Math.max(max.y, layer[i + 1]);
-      max.z = Math.max(max.z, layer[i + 2]);
-    }
+const CONTOUR_ROWS = 56;
+const CONTOUR_COLS = 28;
+const CONTOUR_SCAN_STEPS = 40;
+const CONTOUR_MARGIN = 0.08;
+const CONTOUR_MAX_POINTS = CONTOUR_ROWS * 2 + CONTOUR_COLS * 2;
+const CONTOUR_RESCAN_SECONDS = 0.14;
+
+function projectObjectBoundsToNdc(target: THREE.Object3D, camera: THREE.Camera) {
+  const box = new THREE.Box3().setFromObject(target);
+  if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
+    return null;
   }
 
-  return { min, max };
-}
-
-function transformLayerPositions(source: Float32Array, bounds: { min: THREE.Vector3; max: THREE.Vector3 }) {
-  const center = new THREE.Vector3(
-    (bounds.min.x + bounds.max.x) * 0.5,
-    (bounds.min.y + bounds.max.y) * 0.5,
-    (bounds.min.z + bounds.max.z) * 0.5,
-  );
-  const size = new THREE.Vector3().subVectors(bounds.max, bounds.min);
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  const scale = 420 / maxDim;
-
-  let minYAfter = Infinity;
-  for (let i = 0; i < source.length; i += 3) {
-    const y = (source[i + 1] - center.y) * scale;
-    minYAfter = Math.min(minYAfter, y);
-  }
-
-  const transformed = new Float32Array(source.length);
-  for (let i = 0; i < source.length; i += 3) {
-    transformed[i] = (source[i] - center.x) * scale;
-    transformed[i + 1] = (source[i + 1] - center.y) * scale - minYAfter;
-    transformed[i + 2] = (source[i + 2] - center.z) * scale;
-  }
-
-  return transformed;
-}
-
-function collectContourShell(
-  positions: Float32Array,
-  yMin: number,
-  yMax: number,
-  angleBins: number,
-  yBins: number,
-) {
-  const buckets = new Map<string, { x: number; y: number; z: number; score: number }>();
-  const rangeY = yMax - yMin || 1;
-
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i];
-    const y = positions[i + 1];
-    const z = positions[i + 2];
-    const normY = clamp01((y - yMin) / rangeY);
-    const angle = (Math.atan2(z, x) + Math.PI * 2) % (Math.PI * 2);
-    const angleBin = Math.min(angleBins - 1, Math.floor((angle / (Math.PI * 2)) * angleBins));
-    const yBin = Math.min(yBins - 1, Math.floor(normY * yBins));
-    const key = `${yBin}:${angleBin}`;
-    const radial = Math.sqrt(x * x + z * z);
-    const score = radial + Math.abs(x) * 0.04 + Math.abs(z) * 0.04;
-    const prev = buckets.get(key);
-
-    if (!prev || score > prev.score) {
-      buckets.set(key, { x, y, z, score });
-    }
-  }
-
-  const contourPositions = new Float32Array(buckets.size * 3);
-  const contourLevels = new Float32Array(buckets.size);
-  let writeIndex = 0;
-  for (const point of buckets.values()) {
-    contourPositions[writeIndex * 3] = point.x;
-    contourPositions[writeIndex * 3 + 1] = point.y;
-    contourPositions[writeIndex * 3 + 2] = point.z;
-    contourLevels[writeIndex] = clamp01((point.y - yMin) / rangeY);
-    writeIndex += 1;
-  }
-
-  return { contourPositions, contourLevels };
-}
-
-function collectBaseShell(
-  positions: Float32Array,
-  yMin: number,
-  yMax: number,
-  gridBins: number,
-) {
-  const buckets = new Map<string, { x: number; y: number; z: number; score: number }>();
-  const rangeY = yMax - yMin || 1;
-  const thresholdY = yMin + rangeY * 0.3;
-  const gridMin = -190;
-  const gridMax = 190;
-  const gridRange = gridMax - gridMin;
-
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i];
-    const y = positions[i + 1];
-    const z = positions[i + 2];
-    if (y > thresholdY) continue;
-
-    const gridX = Math.max(0, Math.min(gridBins - 1, Math.floor(((x - gridMin) / gridRange) * gridBins)));
-    const gridZ = Math.max(0, Math.min(gridBins - 1, Math.floor(((z - gridMin) / gridRange) * gridBins)));
-    const key = `${gridX}:${gridZ}`;
-    const score = y;
-    const prev = buckets.get(key);
-
-    if (!prev || score > prev.score) {
-      buckets.set(key, { x, y, z, score });
-    }
-  }
-
-  const basePositions = new Float32Array(buckets.size * 3);
-  const baseLevels = new Float32Array(buckets.size);
-  let writeIndex = 0;
-  for (const point of buckets.values()) {
-    basePositions[writeIndex * 3] = point.x;
-    basePositions[writeIndex * 3 + 1] = point.y;
-    basePositions[writeIndex * 3 + 2] = point.z;
-    baseLevels[writeIndex] = clamp01((point.y - yMin) / rangeY);
-    writeIndex += 1;
-  }
-
-  return { basePositions, baseLevels };
-}
-
-function buildTreeWaveGeometry(treeData: Awaited<ReturnType<typeof loadFrozenTreePointCloud>>): TreeWaveGeometry {
-  const rawLayers = [
-    treeData.groundPositions,
-    treeData.trunkPositions,
-    treeData.woodPositions,
-    treeData.foliagePositions,
+  const corners = [
+    new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+    new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+    new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+    new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+    new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+    new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+    new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+    new THREE.Vector3(box.max.x, box.max.y, box.max.z),
   ];
-  const bounds = collectBounds(rawLayers);
 
-  const groundPositions = transformLayerPositions(treeData.groundPositions, bounds);
-  const trunkPositions = transformLayerPositions(treeData.trunkPositions, bounds);
-  const woodPositions = transformLayerPositions(treeData.woodPositions, bounds);
-  const foliagePositions = transformLayerPositions(treeData.foliagePositions, bounds);
-  const shellSource = new Float32Array(trunkPositions.length + woodPositions.length + foliagePositions.length);
-  shellSource.set(trunkPositions, 0);
-  shellSource.set(woodPositions, trunkPositions.length);
-  shellSource.set(foliagePositions, trunkPositions.length + woodPositions.length);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
 
-  let yMin = Infinity;
-  let yMax = -Infinity;
-  for (let i = 0; i < shellSource.length; i += 3) {
-    yMin = Math.min(yMin, shellSource[i + 1]);
-    yMax = Math.max(yMax, shellSource[i + 1]);
+  for (const corner of corners) {
+    corner.project(camera);
+    minX = Math.min(minX, corner.x);
+    maxX = Math.max(maxX, corner.x);
+    minY = Math.min(minY, corner.y);
+    maxY = Math.max(maxY, corner.y);
   }
-
-  const contour = collectContourShell(shellSource, yMin, yMax, 56, 72);
-  const baseSource = new Float32Array(groundPositions.length + woodPositions.length);
-  baseSource.set(groundPositions, 0);
-  baseSource.set(woodPositions, groundPositions.length);
-  const base = collectBaseShell(baseSource, yMin, yMax, 34);
 
   return {
-    contourPositions: contour.contourPositions,
-    contourLevels: contour.contourLevels,
-    basePositions: base.basePositions,
-    baseLevels: base.baseLevels,
+    minX: Math.max(-1.2, minX - CONTOUR_MARGIN),
+    maxX: Math.min(1.2, maxX + CONTOUR_MARGIN),
+    minY: Math.max(-1.2, minY - CONTOUR_MARGIN),
+    maxY: Math.min(1.2, maxY + CONTOUR_MARGIN),
   };
 }
 
-function TreeContourWave() {
-  const [waveData, setWaveData] = useState<TreeWaveGeometry | null>(null);
+function castContourRay(
+  target: THREE.Object3D,
+  camera: THREE.Camera,
+  raycaster: THREE.Raycaster,
+  ndc: THREE.Vector2,
+) {
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObject(target, true);
+  return hits[0] ?? null;
+}
 
-  useEffect(() => {
-    let cancelled = false;
+function traceEdgeHit(
+  target: THREE.Object3D,
+  camera: THREE.Camera,
+  raycaster: THREE.Raycaster,
+  start: THREE.Vector2,
+  end: THREE.Vector2,
+  ndc: THREE.Vector2,
+) {
+  let lastMiss: THREE.Vector2 | null = null;
+  let firstHit: THREE.Intersection | null = null;
+  let firstHitNdc: THREE.Vector2 | null = null;
 
-    void loadFrozenTreePointCloud()
-      .then((data) => {
-        if (cancelled) return;
-        setWaveData(buildTreeWaveGeometry(data));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setWaveData(null);
-      });
+  for (let step = 0; step < CONTOUR_SCAN_STEPS; step += 1) {
+    const t = CONTOUR_SCAN_STEPS === 1 ? 0 : step / (CONTOUR_SCAN_STEPS - 1);
+    ndc.set(
+      THREE.MathUtils.lerp(start.x, end.x, t),
+      THREE.MathUtils.lerp(start.y, end.y, t),
+    );
 
-    return () => {
-      cancelled = true;
+    const hit = castContourRay(target, camera, raycaster, ndc);
+    if (hit) {
+      firstHit = hit;
+      firstHitNdc = ndc.clone();
+      break;
+    }
+
+    lastMiss = ndc.clone();
+  }
+
+  if (!firstHit || !firstHitNdc) return null;
+  if (!lastMiss) return firstHit.point.clone();
+
+  const outside = lastMiss.clone();
+  const inside = firstHitNdc.clone();
+  let bestPoint = firstHit.point.clone();
+
+  for (let i = 0; i < 5; i += 1) {
+    ndc.set(
+      (outside.x + inside.x) * 0.5,
+      (outside.y + inside.y) * 0.5,
+    );
+
+    const hit = castContourRay(target, camera, raycaster, ndc);
+    if (hit) {
+      inside.copy(ndc);
+      bestPoint = hit.point.clone();
+    } else {
+      outside.copy(ndc);
+    }
+  }
+
+  return bestPoint;
+}
+
+function scanModelContour(
+  target: THREE.Object3D,
+  camera: THREE.Camera,
+  localRoot: THREE.Group,
+  raycaster: THREE.Raycaster,
+  ndc: THREE.Vector2,
+): ContourScan {
+  target.updateWorldMatrix(true, true);
+  localRoot.updateWorldMatrix(true, true);
+
+  const ndcBounds = projectObjectBoundsToNdc(target, camera);
+  if (!ndcBounds) {
+    return {
+      count: 0,
+      levels: new Float32Array(0),
+      positions: new Float32Array(0),
     };
+  }
+
+  const points = new Map<string, THREE.Vector3>();
+  const addPoint = (point: THREE.Vector3 | null) => {
+    if (!point) return;
+    const localPoint = localRoot.worldToLocal(point.clone());
+    const key = [
+      Math.round(localPoint.x * 2),
+      Math.round(localPoint.y * 2),
+      Math.round(localPoint.z * 2),
+    ].join(':');
+    if (!points.has(key)) {
+      points.set(key, localPoint);
+    }
+  };
+
+  for (let row = 0; row < CONTOUR_ROWS; row += 1) {
+    const t = CONTOUR_ROWS === 1 ? 0.5 : row / (CONTOUR_ROWS - 1);
+    const y = THREE.MathUtils.lerp(ndcBounds.minY, ndcBounds.maxY, t);
+    addPoint(traceEdgeHit(
+      target,
+      camera,
+      raycaster,
+      new THREE.Vector2(ndcBounds.minX, y),
+      new THREE.Vector2(ndcBounds.maxX, y),
+      ndc,
+    ));
+    addPoint(traceEdgeHit(
+      target,
+      camera,
+      raycaster,
+      new THREE.Vector2(ndcBounds.maxX, y),
+      new THREE.Vector2(ndcBounds.minX, y),
+      ndc,
+    ));
+  }
+
+  for (let col = 0; col < CONTOUR_COLS; col += 1) {
+    const t = CONTOUR_COLS === 1 ? 0.5 : col / (CONTOUR_COLS - 1);
+    const x = THREE.MathUtils.lerp(ndcBounds.minX, ndcBounds.maxX, t);
+    addPoint(traceEdgeHit(
+      target,
+      camera,
+      raycaster,
+      new THREE.Vector2(x, ndcBounds.minY),
+      new THREE.Vector2(x, ndcBounds.maxY),
+      ndc,
+    ));
+    addPoint(traceEdgeHit(
+      target,
+      camera,
+      raycaster,
+      new THREE.Vector2(x, ndcBounds.maxY),
+      new THREE.Vector2(x, ndcBounds.minY),
+      ndc,
+    ));
+  }
+
+  const ordered = Array.from(points.values()).slice(0, CONTOUR_MAX_POINTS);
+  if (!ordered.length) {
+    return {
+      count: 0,
+      levels: new Float32Array(0),
+      positions: new Float32Array(0),
+    };
+  }
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of ordered) {
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  const rangeY = maxY - minY || 1;
+
+  const positions = new Float32Array(ordered.length * 3);
+  const levels = new Float32Array(ordered.length);
+
+  for (let i = 0; i < ordered.length; i += 1) {
+    const point = ordered[i];
+    positions[i * 3] = point.x;
+    positions[i * 3 + 1] = point.y;
+    positions[i * 3 + 2] = point.z;
+    levels[i] = clamp01((point.y - minY) / rangeY);
+  }
+
+  return {
+    count: ordered.length,
+    levels,
+    positions,
+  };
+}
+
+function TreeContourWave({ target, localRootRef }: TreeContourWaveProps) {
+  const { camera } = useThree();
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    next.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CONTOUR_MAX_POINTS * 3), 3));
+    next.setAttribute('color', new THREE.BufferAttribute(new Float32Array(CONTOUR_MAX_POINTS * 3), 3));
+    next.setDrawRange(0, 0);
+    return next;
   }, []);
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const ndcRef = useRef(new THREE.Vector2());
+  const levelsRef = useRef(new Float32Array(CONTOUR_MAX_POINTS));
+  const countRef = useRef(0);
+  const lastScanRef = useRef(-Infinity);
 
-  const contourGeometry = useMemo(() => {
-    if (!waveData) return null;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(waveData.contourPositions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(waveData.contourPositions.length), 3));
-    return geometry;
-  }, [waveData]);
-
-  const baseGeometry = useMemo(() => {
-    if (!waveData) return null;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(waveData.basePositions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(waveData.basePositions.length), 3));
-    return geometry;
-  }, [waveData]);
-
-  useEffect(() => () => {
-    contourGeometry?.dispose();
-    baseGeometry?.dispose();
-  }, [baseGeometry, contourGeometry]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
 
   useFrame((state) => {
-    if (!waveData || !contourGeometry || !baseGeometry) return;
+    const localRoot = localRootRef.current;
+    if (!localRoot) return;
+
+    if (state.clock.elapsedTime - lastScanRef.current >= CONTOUR_RESCAN_SECONDS || countRef.current === 0) {
+      const scan = scanModelContour(target, camera, localRoot, raycaster, ndcRef.current);
+      const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
+      const positionArray = positionAttr.array as Float32Array;
+      positionArray.fill(0);
+      positionArray.set(scan.positions, 0);
+      positionAttr.needsUpdate = true;
+      geometry.setDrawRange(0, scan.count);
+      countRef.current = scan.count;
+      levelsRef.current.fill(0);
+      levelsRef.current.set(scan.levels, 0);
+      lastScanRef.current = state.clock.elapsedTime;
+    }
+
+    const count = countRef.current;
+    if (!count) return;
 
     const phase = getEnergyPhase(state.clock.elapsedTime);
-    const contourColors = contourGeometry.getAttribute('color') as THREE.BufferAttribute;
-    const baseColors = baseGeometry.getAttribute('color') as THREE.BufferAttribute;
+    const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute;
     const cool = new THREE.Color('#56fff1');
     const warm = new THREE.Color('#ffd56c');
     const white = new THREE.Color('#ffffff');
-    const contourBand = 0.11;
-    const contourTrail = 0.28;
+    const contourBand = 0.115;
+    const contourTrail = 0.3;
 
-    for (let i = 0; i < waveData.contourLevels.length; i += 1) {
-      const level = waveData.contourLevels[i];
-      const baseCharge = phase.charge * Math.max(0, 1 - level / 0.42) * 0.92;
+    for (let i = 0; i < count; i += 1) {
+      const level = levelsRef.current[i];
+      const baseCharge = phase.charge * Math.max(0, 1 - level / 0.4) * 1.22;
       const riseWave = phase.flowActive
         ? smooth01(1 - Math.abs(level - phase.flow) / contourBand)
         : 0;
       const riseTrail = phase.flowActive && phase.flow > level
-        ? Math.max(0, 1 - (phase.flow - level) / contourTrail) * 0.28
+        ? Math.max(0, 1 - (phase.flow - level) / contourTrail) * 0.34
         : 0;
       const topPulse = level > 0.74 ? phase.leafPulse * smooth01((level - 0.74) / 0.26) : 0;
-      const shimmer = 0.04 + 0.04 * Math.sin(state.clock.elapsedTime * 1.6 + i * 0.11);
-      const brightness = shimmer + baseCharge + riseWave * 2.05 + riseTrail + topPulse * 1.35;
+      const shimmer = 0.03 + 0.03 * Math.sin(state.clock.elapsedTime * 1.6 + i * 0.17);
+      const brightness = shimmer + baseCharge + riseWave * 2.35 + riseTrail + topPulse * 1.45;
       const color = cool.clone()
-        .lerp(warm, clamp01(baseCharge * 0.75 + riseWave * 0.9))
-        .lerp(white, topPulse * 0.5 + riseWave * 0.18);
+        .lerp(warm, clamp01(baseCharge * 0.82 + riseWave * 0.95))
+        .lerp(white, topPulse * 0.58 + riseWave * 0.2);
 
-      contourColors.setXYZ(i, color.r * brightness, color.g * brightness, color.b * brightness);
+      colorAttr.setXYZ(i, color.r * brightness, color.g * brightness, color.b * brightness);
     }
 
-    for (let i = 0; i < waveData.baseLevels.length; i += 1) {
-      const level = waveData.baseLevels[i];
-      const chargeCover = phase.charge * Math.max(0, 1 - level / 0.36) * 1.8;
-      const launchWave = phase.flowActive
-        ? smooth01(1 - Math.abs(level - phase.flow * 0.48) / 0.22)
-        : 0;
-      const breath = 0.08 + 0.06 * Math.sin(state.clock.elapsedTime * 2.1 + i * 0.13);
-      const brightness = breath + chargeCover + launchWave * 0.95;
-      const color = cool.clone()
-        .lerp(warm, clamp01(chargeCover * 0.6 + launchWave * 0.5))
-        .lerp(white, launchWave * 0.14);
-
-      baseColors.setXYZ(i, color.r * brightness, color.g * brightness, color.b * brightness);
-    }
-
-    contourColors.needsUpdate = true;
-    baseColors.needsUpdate = true;
+    colorAttr.needsUpdate = true;
   });
-
-  if (!contourGeometry || !baseGeometry) return null;
 
   return (
     <group renderOrder={6}>
-      <points geometry={baseGeometry} frustumCulled={false}>
+      <points geometry={geometry} frustumCulled={false}>
         <pointsMaterial
           vertexColors
-          size={7.2}
+          size={6.4}
           sizeAttenuation
           transparent
           opacity={0.16}
@@ -5687,39 +5715,13 @@ function TreeContourWave() {
           toneMapped={false}
         />
       </points>
-      <points geometry={contourGeometry} frustumCulled={false}>
+      <points geometry={geometry} frustumCulled={false}>
         <pointsMaterial
           vertexColors
-          size={5.4}
-          sizeAttenuation
-          transparent
-          opacity={0.14}
-          depthWrite={false}
-          depthTest={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </points>
-      <points geometry={baseGeometry} frustumCulled={false}>
-        <pointsMaterial
-          vertexColors
-          size={3.2}
+          size={2.4}
           sizeAttenuation
           transparent
           opacity={0.62}
-          depthWrite={false}
-          depthTest={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </points>
-      <points geometry={contourGeometry} frustumCulled={false}>
-        <pointsMaterial
-          vertexColors
-          size={2.35}
-          sizeAttenuation
-          transparent
-          opacity={0.58}
           depthWrite={false}
           depthTest={false}
           blending={THREE.AdditiveBlending}
@@ -5805,11 +5807,17 @@ function GroundEnergyGlow() {
   );
 }
 
-function TreeEnergyEffect() {
+function TreeEnergyEffect({
+  target,
+  localRootRef,
+}: {
+  target: THREE.Object3D;
+  localRootRef: React.RefObject<THREE.Group | null>;
+}) {
   return (
     <group>
       <GroundEnergyGlow />
-      <TreeContourWave />
+      <TreeContourWave target={target} localRootRef={localRootRef} />
     </group>
   );
 }
@@ -6013,7 +6021,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
-      <TreeEnergyEffect />
+      <TreeEnergyEffect target={scene} localRootRef={groupRef} />
       <TreeLeavesManual />
     </group>
   );
