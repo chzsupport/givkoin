@@ -5932,7 +5932,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
 
-  const scene = useMemo(() => {
+  const { scene, sceneBounds } = useMemo(() => {
     const cloned = loadedScene.clone(true);
 
     const box = new THREE.Box3().setFromObject(cloned);
@@ -5954,9 +5954,20 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
     }
 
     const finalBox = new THREE.Box3().setFromObject(cloned);
-    void finalBox;
-    return cloned;
+    return {
+      scene: cloned,
+      sceneBounds: {
+        minY: Number.isFinite(finalBox.min.y) ? finalBox.min.y : 0,
+        maxY: Number.isFinite(finalBox.max.y) ? finalBox.max.y : 1,
+      },
+    };
   }, [loadedScene]);
+
+  const waveBottomY = sceneBounds.minY;
+  const waveTopY = Math.max(
+    waveBottomY + 1,
+    Math.min(sceneBounds.maxY, MANUAL_LEAF_BOUNDS.maxY)
+  );
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
@@ -5967,11 +5978,12 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
+      <GroundChargeGlow />
+      <TreeSilhouetteWave source={scene} waveBottomY={waveBottomY} waveTopY={waveTopY} />
+      <TreeLeavesManual waveBottomY={waveBottomY} waveTopY={waveTopY} />
     </group>
   );
 }
-
-void [TreeLeavesManual, GroundChargeGlow, TreeSilhouetteWave];
 
 export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
   return (
