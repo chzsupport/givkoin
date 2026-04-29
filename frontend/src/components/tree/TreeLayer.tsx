@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
+import { OrbitControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -5779,6 +5779,57 @@ type SatelliteCfg = {
   dir: 1 | -1;
 };
 
+type TreeScenePreset = 'default' | 'leafTrain';
+
+type TreeSceneSettings = {
+  bloomSeedStrength: number;
+  bloomSeedRadius: number;
+  bloomSeedThreshold: number;
+  bloomStrength: number;
+  bloomRadius: number;
+  exposure: number;
+  camera: {
+    position: [number, number, number];
+    fov: number;
+    near: number;
+    far: number;
+  };
+  sceneLights: 'default' | 'leafTrain';
+};
+
+const TREE_SCENE_SETTINGS: Record<TreeScenePreset, TreeSceneSettings> = {
+  default: {
+    bloomSeedStrength: 1.2,
+    bloomSeedRadius: 0.8,
+    bloomSeedThreshold: 0.1,
+    bloomStrength: 3.0,
+    bloomRadius: 0.9,
+    exposure: 1.3,
+    camera: {
+      position: [0, 240, 620],
+      fov: 55,
+      near: 1,
+      far: 1400,
+    },
+    sceneLights: 'default',
+  },
+  leafTrain: {
+    bloomSeedStrength: 1.2,
+    bloomSeedRadius: 0.72,
+    bloomSeedThreshold: 0.05,
+    bloomStrength: 1.35,
+    bloomRadius: 0.72,
+    exposure: 1.26,
+    camera: {
+      position: [0, 240, 620],
+      fov: 55,
+      near: 0.1,
+      far: 5000,
+    },
+    sceneLights: 'leafTrain',
+  },
+};
+
 const SATELLITE_BOB_AMP = 6;
 const TREE_LIGHT_MULT_PCT = 5;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
@@ -5889,18 +5940,39 @@ function Satellite({
   );
 }
 
-function SceneBloom() {
+function SceneFillLights({ preset }: { preset: TreeScenePreset }) {
+  const settings = TREE_SCENE_SETTINGS[preset];
+
+  if (settings.sceneLights !== 'leafTrain') {
+    return null;
+  }
+
+  return (
+    <>
+      <hemisphereLight args={['#8cc8ff', '#09050e', 0.56]} />
+      <directionalLight color="#bfe9ff" intensity={0.38} position={[-180, 320, 220]} />
+    </>
+  );
+}
+
+function SceneBloom({ preset }: { preset: TreeScenePreset }) {
   const { gl, scene, camera, size } = useThree();
   const composerRef = useRef<EffectComposer | null>(null);
+  const settings = TREE_SCENE_SETTINGS[preset];
 
   useEffect(() => {
     const composer = new EffectComposer(gl);
     composer.addPass(new RenderPass(scene, camera));
 
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 1.2, 0.8, 0.1);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(size.width, size.height),
+      settings.bloomSeedStrength,
+      settings.bloomSeedRadius,
+      settings.bloomSeedThreshold
+    );
     bloomPass.threshold = 0.0;
-    bloomPass.strength = 3.0;
-    bloomPass.radius = 0.9;
+    bloomPass.strength = settings.bloomStrength;
+    bloomPass.radius = settings.bloomRadius;
 
     composer.addPass(bloomPass);
     composer.setSize(size.width, size.height);
@@ -5911,7 +5983,7 @@ function SceneBloom() {
       composerRef.current = null;
       composer.dispose();
     };
-  }, [gl, scene, camera, size.width, size.height]);
+  }, [gl, scene, camera, settings, size.width, size.height]);
 
   useEffect(() => {
     const composer = composerRef.current;
@@ -5928,7 +6000,13 @@ function SceneBloom() {
   return null;
 }
 
-function TreeModel({ rotate = true }: { rotate?: boolean }) {
+function TreeModel({
+  rotate = true,
+  preset = 'default',
+}: {
+  rotate?: boolean;
+  preset?: TreeScenePreset;
+}) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
 
@@ -5953,6 +6031,19 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
       cloned.position.y -= boxAfter.min.y;
     }
 
+    if (preset === 'leafTrain') {
+      cloned.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        node.castShadow = false;
+        node.receiveShadow = false;
+        node.renderOrder = 2;
+        if (Array.isArray(node.material)) return;
+        if ('emissiveIntensity' in node.material) {
+          node.material.emissiveIntensity *= 1.03;
+        }
+      });
+    }
+
     const finalBox = new THREE.Box3().setFromObject(cloned);
     return {
       scene: cloned,
@@ -5961,7 +6052,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
         maxY: Number.isFinite(finalBox.max.y) ? finalBox.max.y : 1,
       },
     };
-  }, [loadedScene]);
+  }, [loadedScene, preset]);
 
   const waveBottomY = sceneBounds.minY;
   const waveTopY = Math.max(
@@ -5985,11 +6076,17 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   );
 }
 
-export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
+export function YggdrasilTree({
+  rotate = true,
+  preset = 'default',
+}: {
+  rotate?: boolean;
+  preset?: TreeScenePreset;
+}) {
   return (
     <Suspense fallback={null}>
       <group>
-        <TreeModel rotate={rotate} />
+        <TreeModel rotate={rotate} preset={preset} />
         <TreeSatellites />
       </group>
     </Suspense>
@@ -6073,6 +6170,10 @@ export type TreeLayerProps = {
   pointerEvents?: 'none' | 'auto';
   className?: string;
   rotate?: boolean;
+  preset?: TreeScenePreset;
+  showControls?: boolean;
+  active?: boolean;
+  dpr?: number | [number, number];
 };
 
 export function TreeLayer({
@@ -6082,23 +6183,35 @@ export function TreeLayer({
   pointerEvents = 'none',
   className = '',
   rotate = true,
+  preset = 'default',
+  showControls = false,
+  active = true,
+  dpr = [1, 1.25],
 }: TreeLayerProps) {
+  const settings = TREE_SCENE_SETTINGS[preset];
+
   return (
     <div className={`absolute inset-0 ${className}`} style={{ pointerEvents }}>
       <Canvas
+        dpr={dpr}
+        frameloop={active ? 'always' : 'never'}
         gl={{ antialias: false, alpha: transparent }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ReinhardToneMapping;
-          gl.toneMappingExposure = 1.3;
+          gl.toneMappingExposure = settings.exposure;
           gl.outputColorSpace = THREE.SRGBColorSpace;
         }}
-        camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
+        camera={settings.camera}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
-        <SceneBloom />
+        <SceneBloom preset={preset} />
+        <SceneFillLights preset={preset} />
         <group scale={scale} position={position}>
-          <YggdrasilTree rotate={rotate} />
+          <YggdrasilTree rotate={rotate} preset={preset} />
         </group>
+        {showControls ? (
+          <OrbitControls enableDamping dampingFactor={0.08} target={[0, 210, 0]} />
+        ) : null}
       </Canvas>
     </div>
   );
@@ -6107,7 +6220,14 @@ export function TreeLayer({
 export function TreeSceneStandalone() {
   return (
     <div className="relative w-full h-screen bg-[#020202]">
-      <TreeLayer transparent={false} scale={[1, 1, 1]} position={[0, 0, 0]} pointerEvents="auto" />
+      <TreeLayer
+        transparent={false}
+        scale={[1, 1, 1]}
+        position={[0, 0, 0]}
+        pointerEvents="auto"
+        preset="leafTrain"
+        showControls
+      />
     </div>
   );
 }
