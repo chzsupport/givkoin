@@ -5414,9 +5414,10 @@ type ContourScan = {
 
 const CONTOUR_ROWS = 56;
 const CONTOUR_COLS = 28;
+const CONTOUR_RADIALS = 40;
 const CONTOUR_SCAN_STEPS = 40;
 const CONTOUR_MARGIN = 0.08;
-const CONTOUR_MAX_POINTS = CONTOUR_ROWS * 2 + CONTOUR_COLS * 2;
+const CONTOUR_MAX_POINTS = CONTOUR_ROWS * 2 + CONTOUR_COLS * 2 + CONTOUR_RADIALS;
 const CONTOUR_RESCAN_SECONDS = 0.14;
 const CONTOUR_SCAN_STEP_DIVISOR = CONTOUR_SCAN_STEPS - 1;
 const CONTOUR_ROW_DIVISOR = CONTOUR_ROWS - 1;
@@ -5446,6 +5447,9 @@ function projectObjectBoundsToNdc(target: THREE.Object3D, camera: THREE.Camera) 
 
   for (const corner of corners) {
     corner.project(camera);
+    if (!Number.isFinite(corner.x) || !Number.isFinite(corner.y)) {
+      return null;
+    }
     minX = Math.min(minX, corner.x);
     maxX = Math.max(maxX, corner.x);
     minY = Math.min(minY, corner.y);
@@ -5600,6 +5604,26 @@ function scanModelContour(
     ));
   }
 
+  const centerX = (ndcBounds.minX + ndcBounds.maxX) * 0.5;
+  const centerY = (ndcBounds.minY + ndcBounds.maxY) * 0.5;
+  const radiusX = Math.max(0.06, (ndcBounds.maxX - ndcBounds.minX) * 0.62);
+  const radiusY = Math.max(0.06, (ndcBounds.maxY - ndcBounds.minY) * 0.62);
+
+  for (let i = 0; i < CONTOUR_RADIALS; i += 1) {
+    const angle = (i / CONTOUR_RADIALS) * Math.PI * 2;
+    addPoint(traceEdgeHit(
+      target,
+      camera,
+      raycaster,
+      new THREE.Vector2(
+        centerX + Math.cos(angle) * radiusX,
+        centerY + Math.sin(angle) * radiusY,
+      ),
+      new THREE.Vector2(centerX, centerY),
+      ndc,
+    ));
+  }
+
   const ordered = Array.from(points.values()).slice(0, CONTOUR_MAX_POINTS);
   if (!ordered.length) {
     return {
@@ -5658,15 +5682,17 @@ function TreeContourWave({ target, localRootRef }: TreeContourWaveProps) {
 
     if (state.clock.elapsedTime - lastScanRef.current >= CONTOUR_RESCAN_SECONDS || countRef.current === 0) {
       const scan = scanModelContour(target, camera, localRoot, raycaster, ndcRef.current);
-      const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
-      const positionArray = positionAttr.array as Float32Array;
-      positionArray.fill(0);
-      positionArray.set(scan.positions, 0);
-      positionAttr.needsUpdate = true;
-      geometry.setDrawRange(0, scan.count);
-      countRef.current = scan.count;
-      levelsRef.current.fill(0);
-      levelsRef.current.set(scan.levels, 0);
+      if (scan.count > 0) {
+        const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute;
+        const positionArray = positionAttr.array as Float32Array;
+        positionArray.fill(0);
+        positionArray.set(scan.positions, 0);
+        positionAttr.needsUpdate = true;
+        geometry.setDrawRange(0, scan.count);
+        countRef.current = scan.count;
+        levelsRef.current.fill(0);
+        levelsRef.current.set(scan.levels, 0);
+      }
       lastScanRef.current = state.clock.elapsedTime;
     }
 
@@ -5708,10 +5734,10 @@ function TreeContourWave({ target, localRootRef }: TreeContourWaveProps) {
       <points geometry={geometry} frustumCulled={false}>
         <pointsMaterial
           vertexColors
-          size={6.4}
+          size={11.5}
           sizeAttenuation
           transparent
-          opacity={0.16}
+          opacity={0.26}
           depthWrite={false}
           depthTest={false}
           blending={THREE.AdditiveBlending}
@@ -5721,10 +5747,10 @@ function TreeContourWave({ target, localRootRef }: TreeContourWaveProps) {
       <points geometry={geometry} frustumCulled={false}>
         <pointsMaterial
           vertexColors
-          size={2.4}
+          size={4.6}
           sizeAttenuation
           transparent
-          opacity={0.62}
+          opacity={0.9}
           depthWrite={false}
           depthTest={false}
           blending={THREE.AdditiveBlending}
@@ -5758,8 +5784,8 @@ function GroundEnergyGlow() {
   useFrame((state) => {
     const phase = getEnergyPhase(state.clock.elapsedTime);
     const baseGlow = phase.cycleT < ENERGY_CHARGE_DURATION
-      ? 0.16 + phase.charge * 1.15
-      : 0.1 + Math.max(0, 1 - phase.flow) * 0.28;
+      ? 0.22 + phase.charge * 1.28
+      : 0.16 + Math.max(0, 1 - phase.flow) * 0.34;
 
     if (coreRef.current) {
       const size = 78 + baseGlow * 62;
@@ -5773,12 +5799,12 @@ function GroundEnergyGlow() {
     }
 
     if (coreMatRef.current) {
-      coreMatRef.current.opacity = Math.min(0.34, 0.07 + baseGlow * 0.19);
+      coreMatRef.current.opacity = Math.min(0.48, 0.12 + baseGlow * 0.24);
       coreMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.52);
     }
 
     if (ringMatRef.current) {
-      ringMatRef.current.opacity = Math.min(0.16, 0.04 + baseGlow * 0.08);
+      ringMatRef.current.opacity = Math.min(0.24, 0.06 + baseGlow * 0.11);
       ringMatRef.current.color.set('#79fff2').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
     }
   });
