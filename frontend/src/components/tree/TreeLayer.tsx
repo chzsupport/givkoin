@@ -5283,9 +5283,9 @@ const ENERGY_PULSE_COUNT = 3;
 const ENERGY_PULSE_PERIOD = 0.42;
 const ENERGY_PULSE_WIDTH = 0.16;
 const ENERGY_PULSE_START = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.18;
-const LEAF_IDLE_LIGHT = 7.2;
-const LEAF_FLOW_LIGHT = 6.4;
-const LEAF_PULSE_LIGHT = 15.5;
+const LEAF_IDLE_LIGHT = 56;
+const LEAF_FLOW_LIGHT = 34;
+const LEAF_PULSE_LIGHT = 110;
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -5395,19 +5395,19 @@ function TreeLeavesManual() {
       const flowTouch = phase.flowActive
         ? smooth01(1 - Math.abs(phase.flow - (0.62 + normY * 0.27)) / 0.13)
         : 0;
-      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.42 + tipWeight * 0.9);
+      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.28 + tipWeight * 1.05);
 
-      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.4);
-      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.58);
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.38 + whiteSpark * 0.22);
+      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.34);
+      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.64);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.26 + whiteSpark * 0.18);
 
       const idlePower = LEAF_IDLE_LIGHT * (
-        0.7
-        + twinkle * 0.22
-        + crystal * 0.54
-        + whiteSpark * 0.12
+        0.82
+        + twinkle * 0.24
+        + crystal * 0.44
+        + whiteSpark * 0.08
       );
-      const flowPower = LEAF_FLOW_LIGHT * flowTouch * (0.78 + crownWeight * 0.22);
+      const flowPower = LEAF_FLOW_LIGHT * flowTouch * (0.86 + crownWeight * 0.22);
       const pulsePower = LEAF_PULSE_LIGHT * pulseTouch;
       const power = idlePower + flowPower + pulsePower;
 
@@ -5432,6 +5432,7 @@ function TreeLeavesManual() {
         vertexColors
         transparent
         opacity={1}
+        depthTest={false}
         depthWrite={false}
         blending={THREE.AdditiveBlending}
         toneMapped={false}
