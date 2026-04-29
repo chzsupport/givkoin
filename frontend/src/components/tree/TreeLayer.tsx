@@ -5897,10 +5897,10 @@ function SceneBloom() {
     const composer = new EffectComposer(gl);
     composer.addPass(new RenderPass(scene, camera));
 
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 1.2, 0.8, 0.1);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), 1.2, 0.72, 0.05);
     bloomPass.threshold = 0.0;
-    bloomPass.strength = 3.0;
-    bloomPass.radius = 0.9;
+    bloomPass.strength = 1.35;
+    bloomPass.radius = 0.72;
 
     composer.addPass(bloomPass);
     composer.setSize(size.width, size.height);
@@ -6089,10 +6089,10 @@ export function TreeLayer({
         gl={{ antialias: false, alpha: transparent }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ReinhardToneMapping;
-          gl.toneMappingExposure = 1.3;
+          gl.toneMappingExposure = 1.26;
           gl.outputColorSpace = THREE.SRGBColorSpace;
         }}
-        camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
+        camera={{ position: [0, 240, 620], fov: 55, near: 0.1, far: 5000 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
         <SceneBloom />
