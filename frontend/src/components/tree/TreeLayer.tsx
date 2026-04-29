@@ -5282,8 +5282,14 @@ const ENERGY_FLOW_DURATION = 2.35;
 const ENERGY_PULSE_COUNT = 3;
 const ENERGY_PULSE_PERIOD = 0.42;
 const ENERGY_PULSE_WIDTH = 0.16;
-const ENERGY_PULSE_START = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.18;
-const EFFECT_POWER_MULT = 100;
+const ENERGY_FLOW_END = ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION;
+const LEAF_EMISSIVE_BOOST = 1.65;
+const LEAF_BASE_BRIGHTNESS = 1.45;
+const LEAF_FLOW_BRIGHTNESS = 0.72;
+const LEAF_PULSE_BRIGHTNESS = 2.35;
+const LEAF_WHITE_SPARK_BRIGHTNESS = 0.08;
+const LEAF_WAVE_TOP_ZONE = 0.14;
+const LEAF_PULSE_CACHE_KEY = 'tree-leaf-color-glow-v3';
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -5303,6 +5309,39 @@ function sampleGemPalette(value: number) {
   return GEM_LEAF_PALETTE[index].clone().lerp(GEM_LEAF_PALETTE[nextIndex], localT);
 }
 
+function parseManualLeafPoints(text: string) {
+  const out: THREE.Vector3[] = [];
+  const re = /\[leaf-point\]\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/;
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(re);
+    if (!m) continue;
+    const x = Number(m[1]);
+    const y = Number(m[2]);
+    const z = Number(m[3]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    out.push(new THREE.Vector3(x, y, z));
+  }
+  return out;
+}
+
+function getPointYBounds(points: THREE.Vector3[]) {
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (const point of points) {
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  return {
+    minY: Number.isFinite(minY) ? minY : 0,
+    maxY: Number.isFinite(maxY) ? maxY : 1,
+  };
+}
+
+const MANUAL_LEAF_POINTS = parseManualLeafPoints(MANUAL_LEAF_POINTS_TEXT);
+const MANUAL_LEAF_BOUNDS = getPointYBounds(MANUAL_LEAF_POINTS);
+
 function getEnergyPhase(timeSeconds: number) {
   const cycleT = ((timeSeconds % ENERGY_CYCLE) + ENERGY_CYCLE) % ENERGY_CYCLE;
   const charge = cycleT < ENERGY_CHARGE_DURATION
@@ -5310,42 +5349,35 @@ function getEnergyPhase(timeSeconds: number) {
     : Math.max(0, 1 - smooth01((cycleT - ENERGY_CHARGE_DURATION) / 0.7)) * 0.45;
   const flow = clamp01((cycleT - ENERGY_CHARGE_DURATION) / ENERGY_FLOW_DURATION);
   const flowActive = cycleT >= ENERGY_CHARGE_DURATION - 0.15
-    && cycleT <= ENERGY_CHARGE_DURATION + ENERGY_FLOW_DURATION + 0.28;
+    && cycleT <= ENERGY_FLOW_END;
 
   let leafPulse = 0;
-  for (let i = 0; i < ENERGY_PULSE_COUNT; i += 1) {
-    const center = ENERGY_PULSE_START + i * ENERGY_PULSE_PERIOD;
-    const pulse = clamp01(1 - Math.abs(cycleT - center) / ENERGY_PULSE_WIDTH);
-    leafPulse = Math.max(leafPulse, smooth01(pulse));
+  const pulseT = cycleT - ENERGY_FLOW_END;
+  if (pulseT >= 0) {
+    for (let i = 0; i < ENERGY_PULSE_COUNT; i += 1) {
+      const localT = pulseT - i * ENERGY_PULSE_PERIOD;
+      if (localT < 0 || localT > ENERGY_PULSE_WIDTH) continue;
+      const pulse = Math.sin((localT / ENERGY_PULSE_WIDTH) * Math.PI);
+      leafPulse = Math.max(leafPulse, pulse * pulse);
+    }
   }
 
   return { cycleT, charge, flow, flowActive, leafPulse };
 }
 
-function TreeLeavesManual() {
+function TreeLeavesManual({
+  waveBottomY,
+  waveTopY,
+}: {
+  waveBottomY: number;
+  waveTopY: number;
+}) {
   const instRef = useRef<THREE.InstancedMesh>(null);
   const colorArr = useRef<Float32Array | null>(null);
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
 
-  const points = useMemo(() => {
-    const out: THREE.Vector3[] = [];
-    const re = /\[leaf-point\]\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/;
-    for (const line of MANUAL_LEAF_POINTS_TEXT.split(/\r?\n/)) {
-      const m = line.match(re);
-      if (!m) continue;
-      const x = Number(m[1]);
-      const y = Number(m[2]);
-      const z = Number(m[3]);
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
-      out.push(new THREE.Vector3(x, y, z));
-    }
-    return out;
-  }, []);
-
-  const { minY, maxY } = useMemo(() => {
-    let lo = Infinity, hi = -Infinity;
-    for (const p of points) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); }
-    return { minY: lo, maxY: hi };
-  }, [points]);
+  const points = MANUAL_LEAF_POINTS;
+  const { minY, maxY } = MANUAL_LEAF_BOUNDS;
 
   useEffect(() => {
     const inst = instRef.current;
@@ -5369,6 +5401,23 @@ function TreeLeavesManual() {
     colorArr.current = arr;
   }, [points]);
 
+  useEffect(() => {
+    const material = materialRef.current;
+    if (!material) return;
+
+    material.customProgramCacheKey = () => LEAF_PULSE_CACHE_KEY;
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        #ifdef USE_COLOR
+          totalEmissiveRadiance += vColor.rgb * ${LEAF_EMISSIVE_BOOST.toFixed(2)};
+        #endif`
+      );
+    };
+    material.needsUpdate = true;
+  }, []);
+
   useFrame((state) => {
     const inst = instRef.current;
     const arr = colorArr.current;
@@ -5378,36 +5427,40 @@ function TreeLeavesManual() {
     const phase = getEnergyPhase(t);
     const count = points.length;
     const range = maxY - minY || 1;
+    const travelBottomY = Number.isFinite(waveBottomY) ? waveBottomY : 0;
+    const travelTopY = Number.isFinite(waveTopY) && waveTopY > travelBottomY
+      ? waveTopY
+      : travelBottomY + 1;
+    const waveRange = Math.max(1, travelTopY - travelBottomY);
+    const waveFrontY = THREE.MathUtils.lerp(travelBottomY, travelTopY, phase.flow);
+    const waveBand = Math.max(10, waveRange * 0.085);
+    const pulseTouch = phase.leafPulse;
 
     for (let i = 0; i < count; i++) {
       const py = points[i].y;
       const normY = (py - minY) / range;
-      const crownWeight = smooth01((normY - 0.64) / 0.36);
-      const tipWeight = smooth01((normY - 0.74) / 0.26);
-      const palettePhase = t * 0.048 + i * 0.016 + Math.sin(t * 0.42 + i * 0.19) * 0.028 + normY * 0.11;
-      const rainbowTint = hslToRgb((t * 16 + i * 5.4 + normY * 92) % 360, 0.68, 0.62);
-      const rainbowBlend = 0.34 + 0.08 * Math.sin(t * 0.55 + i * 0.11);
+      const tipWeight = smooth01((normY - (1 - LEAF_WAVE_TOP_ZONE)) / LEAF_WAVE_TOP_ZONE);
+      const palettePhase = t * 0.052 + i * 0.016 + Math.sin(t * 0.44 + i * 0.19) * 0.03 + normY * 0.16;
+      const rainbowTint = hslToRgb((t * 22 + i * 5.8 + normY * 104) % 360, 0.8, 0.62);
+      const rainbowBlend = 0.42 + 0.12 * Math.sin(t * 0.6 + i * 0.11);
       let col = sampleGemPalette(palettePhase).lerp(rainbowTint, rainbowBlend);
-      const twinkle = 0.9 + 0.2 * Math.sin(t * 2.0 + i * 0.73);
-      const crystal = Math.pow(clamp01(Math.sin(t * 4.4 + i * 1.73) * 0.5 + 0.5), 12) * 0.46;
-      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.1 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.16;
+      const twinkle = 0.92 + 0.18 * Math.sin(t * 2.2 + i * 0.73);
+      const crystal = Math.pow(clamp01(Math.sin(t * 4.9 + i * 1.73) * 0.5 + 0.5), 12) * 0.34;
+      const whiteSpark = Math.pow(clamp01(Math.sin(t * 6.2 + i * 2.07 + normY * 4.8) * 0.5 + 0.5), 20) * 0.12;
       const flowTouch = phase.flowActive
-        ? smooth01(1 - Math.abs(phase.flow - (0.63 + normY * 0.26)) / 0.12)
+        ? smooth01(1 - Math.abs(py - waveFrontY) / waveBand)
         : 0;
-      const pulseTouch = phase.leafPulse * clamp01(crownWeight * 0.22 + tipWeight * 1.18);
 
-      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * 0.24);
-      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.42);
-      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.12 + whiteSpark * 0.08);
+      col = col.lerp(LEAF_WAVE_GOLD, flowTouch * (0.18 + tipWeight * 0.08));
+      col = col.lerp(LEAF_PULSE_GOLD, pulseTouch * 0.2);
+      col = col.lerp(LEAF_SPARK_WHITE, pulseTouch * 0.96 + whiteSpark * 0.08);
 
-      const power = (
-        0.9
-        + twinkle * 0.24
-        + crystal * 0.46
-        + whiteSpark * 0.1
-        + flowTouch * 1.08
-        + pulseTouch * 4.4
-      ) * EFFECT_POWER_MULT;
+      const power = LEAF_BASE_BRIGHTNESS
+        + twinkle * 0.16
+        + crystal * 0.24
+        + whiteSpark * LEAF_WHITE_SPARK_BRIGHTNESS
+        + flowTouch * LEAF_FLOW_BRIGHTNESS
+        + pulseTouch * LEAF_PULSE_BRIGHTNESS;
 
       arr[i * 3] = col.r * power;
       arr[i * 3 + 1] = col.g * power;
@@ -5422,11 +5475,13 @@ function TreeLeavesManual() {
     <instancedMesh ref={instRef} args={[undefined as never, undefined as never, points.length]} frustumCulled={false}>
       <sphereGeometry args={[1.2, 16, 16]} />
       <meshStandardMaterial
+        ref={materialRef}
         vertexColors
-        emissive="#0f1014"
-        emissiveIntensity={1.8}
+        emissive="#000000"
+        emissiveIntensity={1}
         roughness={0.22}
         metalness={0.0}
+        depthWrite={false}
         toneMapped={false}
       />
     </instancedMesh>
@@ -5435,10 +5490,10 @@ function TreeLeavesManual() {
 
 function createSilhouetteMaterial(uniforms: {
   uTime: { value: number };
-  uMinY: { value: number };
-  uMaxY: { value: number };
+  uBottomY: { value: number };
+  uTopY: { value: number };
   uCharge: { value: number };
-  uWave: { value: number };
+  uWaveFrontY: { value: number };
   uWaveActive: { value: number };
   uPulse: { value: number };
 }) {
@@ -5457,10 +5512,10 @@ function createSilhouetteMaterial(uniforms: {
     `,
     fragmentShader: `
       uniform float uTime;
-      uniform float uMinY;
-      uniform float uMaxY;
+      uniform float uBottomY;
+      uniform float uTopY;
       uniform float uCharge;
-      uniform float uWave;
+      uniform float uWaveFrontY;
       uniform float uWaveActive;
       uniform float uPulse;
 
@@ -5468,26 +5523,31 @@ function createSilhouetteMaterial(uniforms: {
       varying vec3 vViewNormal;
 
       void main() {
-        float rangeY = max(0.0001, uMaxY - uMinY);
-        float level = clamp((vWorldPosition.y - uMinY) / rangeY, 0.0, 1.0);
+        float rangeY = max(0.0001, uTopY - uBottomY);
+        float waveWidth = rangeY * 0.13;
+        float waveTrail = rangeY * 0.26;
+        float cappedY = clamp(vWorldPosition.y, uBottomY, uTopY);
+        float level = clamp((cappedY - uBottomY) / rangeY, 0.0, 1.0);
         float edge = pow(clamp(1.0 - abs(normalize(vViewNormal).z), 0.0, 1.0), 1.9);
         edge = smoothstep(0.08, 0.95, edge);
+        float topFade = 1.0 - smoothstep(uTopY, uTopY + rangeY * 0.025, vWorldPosition.y);
 
-        float chargeGlow = uCharge * (1.0 - smoothstep(0.0, 0.34, level)) * 1.25;
+        float chargeGlow = uCharge * (1.0 - smoothstep(uBottomY, uBottomY + rangeY * 0.34, cappedY)) * 1.25;
         float waveGlow = 0.0;
         float trailGlow = 0.0;
 
         if (uWaveActive > 0.5) {
-          waveGlow = 1.0 - smoothstep(0.0, 0.13, abs(level - uWave));
-          if (uWave > level) {
-            trailGlow = max(0.0, 1.0 - (uWave - level) / 0.26) * 0.32;
+          waveGlow = 1.0 - smoothstep(0.0, waveWidth, abs(cappedY - uWaveFrontY));
+          if (uWaveFrontY > cappedY) {
+            trailGlow = max(0.0, 1.0 - (uWaveFrontY - cappedY) / waveTrail) * 0.32;
           }
         }
+        waveGlow *= topFade;
+        trailGlow *= topFade;
 
-        float topPulse = 0.0;
-        if (level > 0.72) {
-          topPulse = uPulse * smoothstep(0.72, 1.0, level);
-        }
+        float topPulse = uPulse
+          * smoothstep(uTopY - rangeY * 0.18, uTopY - rangeY * 0.03, cappedY)
+          * (1.0 - smoothstep(uTopY, uTopY + rangeY * 0.02, vWorldPosition.y));
 
         float shimmer = 0.028 + 0.022 * sin(uTime * 1.7 + level * 12.0);
         float glow = (shimmer + chargeGlow + waveGlow * 2.35 + trailGlow + topPulse * 1.35) * edge;
@@ -5601,14 +5661,22 @@ function GroundChargeGlow() {
   );
 }
 
-function TreeSilhouetteWave({ source }: { source: THREE.Object3D }) {
+function TreeSilhouetteWave({
+  source,
+  waveBottomY,
+  waveTopY,
+}: {
+  source: THREE.Object3D;
+  waveBottomY: number;
+  waveTopY: number;
+}) {
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uMinY: { value: 0 },
-      uMaxY: { value: 1 },
+      uBottomY: { value: 0 },
+      uTopY: { value: 1 },
       uCharge: { value: 0 },
-      uWave: { value: 0 },
+      uWaveFrontY: { value: 0 },
       uWaveActive: { value: 0 },
       uPulse: { value: 0 },
     }),
@@ -5629,8 +5697,6 @@ function TreeSilhouetteWave({ source }: { source: THREE.Object3D }) {
     return cloned;
   }, [source, uniforms]);
 
-  const overlayBox = useMemo(() => new THREE.Box3(), []);
-
   useEffect(() => {
     return () => {
       overlay.traverse((node) => {
@@ -5646,14 +5712,13 @@ function TreeSilhouetteWave({ source }: { source: THREE.Object3D }) {
 
   useFrame((state) => {
     const phase = getEnergyPhase(state.clock.elapsedTime);
-    overlayBox.setFromObject(overlay);
-    if (Number.isFinite(overlayBox.min.y) && Number.isFinite(overlayBox.max.y)) {
-      uniforms.uMinY.value = overlayBox.min.y;
-      uniforms.uMaxY.value = overlayBox.max.y;
-    }
+    const bottomY = Number.isFinite(waveBottomY) ? waveBottomY : 0;
+    const topY = Number.isFinite(waveTopY) && waveTopY > bottomY ? waveTopY : bottomY + 1;
     uniforms.uTime.value = state.clock.elapsedTime;
+    uniforms.uBottomY.value = bottomY;
+    uniforms.uTopY.value = topY;
     uniforms.uCharge.value = phase.charge;
-    uniforms.uWave.value = phase.flow;
+    uniforms.uWaveFrontY.value = THREE.MathUtils.lerp(bottomY, topY, phase.flow);
     uniforms.uWaveActive.value = phase.flowActive ? 1 : 0;
     uniforms.uPulse.value = phase.leafPulse;
   });
@@ -5828,7 +5893,7 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const { scene: loadedScene } = useGLTF('/tree.glb', true);
 
-  const scene = useMemo(() => {
+  const { scene, sceneBounds } = useMemo(() => {
     const cloned = loadedScene.clone(true);
 
     const box = new THREE.Box3().setFromObject(cloned);
@@ -5849,8 +5914,21 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
       cloned.position.y -= boxAfter.min.y;
     }
 
-    return cloned;
+    const finalBox = new THREE.Box3().setFromObject(cloned);
+    return {
+      scene: cloned,
+      sceneBounds: {
+        minY: Number.isFinite(finalBox.min.y) ? finalBox.min.y : 0,
+        maxY: Number.isFinite(finalBox.max.y) ? finalBox.max.y : 1,
+      },
+    };
   }, [loadedScene]);
+
+  const waveBottomY = sceneBounds.minY;
+  const waveTopY = Math.max(
+    waveBottomY + 1,
+    Math.min(sceneBounds.maxY, MANUAL_LEAF_BOUNDS.maxY)
+  );
 
   useFrame((state) => {
     if (rotate && groupRef.current) {
@@ -5862,8 +5940,8 @@ function TreeModel({ rotate = true }: { rotate?: boolean }) {
     <group ref={groupRef}>
       <primitive object={scene} />
       <GroundChargeGlow />
-      <TreeSilhouetteWave source={scene} />
-      <TreeLeavesManual />
+      <TreeSilhouetteWave source={scene} waveBottomY={waveBottomY} waveTopY={waveTopY} />
+      <TreeLeavesManual waveBottomY={waveBottomY} waveTopY={waveTopY} />
     </group>
   );
 }
