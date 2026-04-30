@@ -64,7 +64,7 @@ export const BaddieLayer = React.memo(function BaddieLayer({
     return (
         <div className="absolute inset-0 z-18 pointer-events-none">
             <div
-                className="absolute"
+                className="absolute overflow-hidden rounded-full"
                 style={{
                     left: `${dome.center.x * 100}%`,
                     top: `${dome.center.y * 100}%`,
@@ -77,12 +77,12 @@ export const BaddieLayer = React.memo(function BaddieLayer({
                     className="absolute inset-0 rounded-full"
                     style={{
                         background:
-                            'radial-gradient(circle at 20% 25%, rgba(255,255,255,0.55) 0%, rgba(160,240,255,0.25) 35%, rgba(0,120,255,0.12) 62%, rgba(0,0,0,0) 82%)',
-                        border: domeGlow ? '1.5px solid rgba(255,160,160,0.85)' : '1.5px solid rgba(190,250,255,0.7)',
+                            'radial-gradient(circle at 20% 25%, rgba(255,255,255,0.22) 0%, rgba(160,240,255,0.1) 35%, rgba(0,120,255,0.045) 62%, rgba(0,0,0,0) 82%)',
+                        border: domeGlow ? '1.5px solid rgba(255,160,160,0.72)' : '1.5px solid rgba(190,250,255,0.48)',
                         boxShadow: domeGlow
-                            ? '0 0 36px rgba(255,120,120,0.65), inset 0 0 60px rgba(255,170,170,0.38)'
-                            : '0 0 34px rgba(120,220,255,0.5), inset 0 0 70px rgba(255,255,255,0.25)',
-                        backdropFilter: 'blur(3px)',
+                            ? '0 0 28px rgba(255,120,120,0.42), inset 0 0 46px rgba(255,170,170,0.18)'
+                            : '0 0 24px rgba(120,220,255,0.3), inset 0 0 46px rgba(255,255,255,0.12)',
+                        backdropFilter: 'blur(2px)',
                         transition: 'box-shadow 250ms ease, border-color 250ms ease',
                     }}
                 />
@@ -90,10 +90,10 @@ export const BaddieLayer = React.memo(function BaddieLayer({
                     className="absolute inset-0 rounded-full"
                     style={{
                         background:
-                            'linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.1) 32%, rgba(255,255,255,0) 60%)',
+                            'linear-gradient(135deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.1) 32%, rgba(255,255,255,0) 60%)',
                         mixBlendMode: 'screen',
-                        opacity: 0.75,
-                        filter: 'blur(0.5px)',
+                        opacity: 0.52,
+                        filter: 'blur(1.2px)',
                     }}
                 />
                 <div
@@ -105,15 +105,42 @@ export const BaddieLayer = React.memo(function BaddieLayer({
                         height: '22%',
                         background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.45) 45%, rgba(255,255,255,0) 70%)',
                         mixBlendMode: 'screen',
-                        opacity: 0.9,
-                        filter: 'blur(1px)',
+                        opacity: 0.62,
+                        filter: 'blur(1.4px)',
+                    }}
+                />
+                <div
+                    className="absolute rounded-full"
+                    style={{
+                        left: '58%',
+                        top: '9%',
+                        width: '24%',
+                        height: '12%',
+                        background: 'linear-gradient(115deg, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.18) 38%, rgba(255,255,255,0) 72%)',
+                        mixBlendMode: 'screen',
+                        opacity: 0.42,
+                        filter: 'blur(2px)',
+                        transform: 'rotate(18deg)',
+                    }}
+                />
+                <div
+                    className="absolute rounded-full"
+                    style={{
+                        left: '23%',
+                        top: '74%',
+                        width: '38%',
+                        height: '13%',
+                        background: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0) 78%)',
+                        mixBlendMode: 'screen',
+                        opacity: 0.34,
+                        filter: 'blur(3px)',
                     }}
                 />
                 <div
                     className="absolute inset-0 rounded-full"
                     style={{
-                        border: domeGlow ? '1px dashed rgba(255,120,120,0.9)' : '1px dashed rgba(120,255,255,0.5)',
-                        boxShadow: domeGlow ? '0 0 12px rgba(255,120,120,0.6)' : '0 0 10px rgba(120,255,255,0.4)',
+                        border: domeGlow ? '1px dashed rgba(255,120,120,0.72)' : '1px dashed rgba(120,255,255,0.34)',
+                        boxShadow: domeGlow ? '0 0 10px rgba(255,120,120,0.42)' : '0 0 8px rgba(120,255,255,0.24)',
                         animation: 'spin 18s linear infinite',
                     }}
                 />

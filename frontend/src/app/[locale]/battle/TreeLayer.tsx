@@ -38,6 +38,15 @@ type BattleSatelliteCfg = {
   phase: number;
 };
 
+type Bounds3D = {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+};
+
 const BATTLE_SATELLITE_CONFIGS: BattleSatelliteCfg[] = [
   {
     color: '#ffc95c',
@@ -183,6 +192,33 @@ function scaleLeafPoints(points: THREE.Vector3[]) {
   return points.map((point) => point.clone().multiplyScalar(BATTLE_TREE_SCALE));
 }
 
+function getPointBounds(points: THREE.Vector3[]): Bounds3D {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
+  for (const point of points) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+    minZ = Math.min(minZ, point.z);
+    maxZ = Math.max(maxZ, point.z);
+  }
+
+  return {
+    minX: Number.isFinite(minX) ? minX : 0,
+    maxX: Number.isFinite(maxX) ? maxX : 0,
+    minY: Number.isFinite(minY) ? minY : 0,
+    maxY: Number.isFinite(maxY) ? maxY : 0,
+    minZ: Number.isFinite(minZ) ? minZ : 0,
+    maxZ: Number.isFinite(maxZ) ? maxZ : 0,
+  };
+}
+
 function normalizeTree(root: THREE.Object3D) {
   const cloned = root.clone(true);
   const box = new THREE.Box3().setFromObject(cloned);
@@ -236,8 +272,7 @@ function useLeafPoints() {
   return points;
 }
 
-function BattleTreeLeaves() {
-  const points = useLeafPoints();
+function BattleTreeLeaves({ points }: { points: THREE.Vector3[] }) {
   const texture = useMemo(() => makeCircleTexture(), []);
 
   useEffect(() => {
@@ -386,8 +421,64 @@ function BattleTreeSatellites() {
 function BattleTreeSystem({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene: loadedScene } = useGLTF(TREE_PATH);
+  const leafPoints = useLeafPoints();
 
-  const scene = useMemo(() => normalizeTree(loadedScene), [loadedScene]);
+  const { scene, sceneBounds } = useMemo(() => {
+    const normalized = normalizeTree(loadedScene);
+    const bounds = new THREE.Box3().setFromObject(normalized);
+    return {
+      scene: normalized,
+      sceneBounds: {
+        minX: Number.isFinite(bounds.min.x) ? bounds.min.x : 0,
+        maxX: Number.isFinite(bounds.max.x) ? bounds.max.x : 0,
+        minY: Number.isFinite(bounds.min.y) ? bounds.min.y : 0,
+        maxY: Number.isFinite(bounds.max.y) ? bounds.max.y : 0,
+        minZ: Number.isFinite(bounds.min.z) ? bounds.min.z : 0,
+        maxZ: Number.isFinite(bounds.max.z) ? bounds.max.z : 0,
+      },
+    };
+  }, [loadedScene]);
+
+  const contentOffset = useMemo<[number, number, number]>(() => {
+    const leafBounds = getPointBounds(leafPoints);
+
+    let minX = sceneBounds.minX;
+    let maxX = sceneBounds.maxX;
+    let minY = sceneBounds.minY;
+    let maxY = sceneBounds.maxY;
+    let minZ = sceneBounds.minZ;
+    let maxZ = sceneBounds.maxZ;
+
+    if (leafPoints.length) {
+      minX = Math.min(minX, leafBounds.minX);
+      maxX = Math.max(maxX, leafBounds.maxX);
+      minY = Math.min(minY, leafBounds.minY);
+      maxY = Math.max(maxY, leafBounds.maxY);
+      minZ = Math.min(minZ, leafBounds.minZ);
+      maxZ = Math.max(maxZ, leafBounds.maxZ);
+    }
+
+    for (const cfg of BATTLE_SATELLITE_CONFIGS) {
+      const size = cfg.size * BATTLE_TREE_SCALE;
+      const radius = cfg.radius * BATTLE_TREE_SCALE;
+      const y = cfg.y * BATTLE_TREE_SCALE;
+      const x = Math.cos(cfg.phase) * radius;
+      const z = Math.sin(cfg.phase) * radius;
+
+      minX = Math.min(minX, x - size * SATELLITE_AURA_OUTER_SCALE * 0.5);
+      maxX = Math.max(maxX, x + size * SATELLITE_AURA_OUTER_SCALE * 0.5);
+      minY = Math.min(minY, y - size * SATELLITE_AURA_OUTER_SCALE * 0.5);
+      maxY = Math.max(maxY, y + size * SATELLITE_AURA_OUTER_SCALE * 0.5);
+      minZ = Math.min(minZ, z - size * SATELLITE_AURA_OUTER_SCALE * 0.5);
+      maxZ = Math.max(maxZ, z + size * SATELLITE_AURA_OUTER_SCALE * 0.5);
+    }
+
+    return [
+      -((minX + maxX) / 2),
+      -((minY + maxY) / 2),
+      -((minZ + maxZ) / 2),
+    ];
+  }, [leafPoints, sceneBounds]);
 
   useEffect(() => {
     if (!rotate && groupRef.current) {
@@ -402,9 +493,11 @@ function BattleTreeSystem({ rotate = true }: { rotate?: boolean }) {
 
   return (
     <group ref={groupRef}>
-      <primitive object={scene} />
-      <BattleTreeLeaves />
-      <BattleTreeSatellites />
+      <group position={contentOffset}>
+        <primitive object={scene} />
+        <BattleTreeLeaves points={leafPoints} />
+        <BattleTreeSatellites />
+      </group>
     </group>
   );
 }
