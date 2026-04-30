@@ -108,7 +108,9 @@ const LEAF_RAINBOW_HALF_CYCLE = 2;
 const LEAF_BREATH_AMPLITUDE = 1;
 const SATELLITE_SIZE = 16;
 const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
-const TREE_LIGHT_MULT_PCT = 4;
+const SATELLITE_AURA_OUTER_SCALE = 3.0;
+const SATELLITE_AURA_INNER_SCALE = 2.4;
+const TREE_LIGHT_MULT_PCT = 18;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 const SATELLITE_LIGHT_BOOST = 0.9;
 const SATELLITE_GLOW_SCALE = 0.3;
@@ -120,8 +122,8 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 377,
     size: SATELLITE_SIZE,
     light: 26,
-    lightDistance: 340,
-    lightDecay: 1.8,
+    lightDistance: 420,
+    lightDecay: 1.3,
     radius: 210,
     speed: 0.55,
     dir: 1,
@@ -134,8 +136,8 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 208,
     size: SATELLITE_SIZE,
     light: 26,
-    lightDistance: 340,
-    lightDecay: 1.8,
+    lightDistance: 420,
+    lightDecay: 1.3,
     radius: 240,
     speed: 0.35,
     dir: -1,
@@ -148,8 +150,8 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 72,
     size: SATELLITE_SIZE,
     light: 26,
-    lightDistance: 340,
-    lightDecay: 1.8,
+    lightDistance: 420,
+    lightDecay: 1.3,
     radius: 285,
     speed: 0.7,
     dir: 1,
@@ -349,7 +351,11 @@ function createSatelliteState() {
       toneMapped: false,
     });
     const outerAura = new THREE.Sprite(outerAuraMaterial);
-    outerAura.scale.set(scaledCfg.size * 13.5, scaledCfg.size * 13.5, 1);
+    outerAura.scale.set(
+      scaledCfg.size * SATELLITE_AURA_OUTER_SCALE,
+      scaledCfg.size * SATELLITE_AURA_OUTER_SCALE,
+      1
+    );
     visualGroup.add(outerAura);
 
     const innerAuraMaterial = new THREE.SpriteMaterial({
@@ -362,7 +368,11 @@ function createSatelliteState() {
       toneMapped: false,
     });
     const innerAura = new THREE.Sprite(innerAuraMaterial);
-    innerAura.scale.set(scaledCfg.size * 6.0, scaledCfg.size * 6.0, 1);
+    innerAura.scale.set(
+      scaledCfg.size * SATELLITE_AURA_INNER_SCALE,
+      scaledCfg.size * SATELLITE_AURA_INNER_SCALE,
+      1
+    );
     visualGroup.add(innerAura);
 
     const sphere = new THREE.Mesh(
