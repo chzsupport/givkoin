@@ -2197,6 +2197,10 @@ export default function BattlePage() {
         return enemyLayerRef.current?.isPointInsideMask(worldX, worldY) ?? false;
     }, []);
 
+    const isSilhouetteEvent = useCallback((event: EnemyHitEvent) => {
+        return enemyLayerRef.current?.isPointInsideMask(event.worldPoint.x, event.worldPoint.y) ?? false;
+    }, []);
+
     const handleShotAttempt = useCallback((weaponId: number, shotId: string, telemetry: ShotAttemptTelemetry) => {
         if (!battleId || !isBattleActive || battleTimeLeftMs <= 0) return false;
 
@@ -2308,6 +2312,10 @@ export default function BattlePage() {
             return;
         }
 
+        if (!isSilhouetteEvent(event)) {
+            return;
+        }
+
         const shotPreview = shotPreviewRef.current.get(event.shotId);
         const predictedDamage = getPredictedHitDamage(event);
         if (predictedDamage > 0) {
@@ -2334,15 +2342,16 @@ export default function BattlePage() {
             : 0;
         void shotPreview;
         void battleElapsedAtHitMs;
-    }, [addPendingUserDamage, battleId, battleStartsAtMs, battleTimeLeftMs, getPredictedHitDamage, isBattleActive, persistBattleProgress, weakZone]);
+    }, [addPendingUserDamage, battleId, battleStartsAtMs, battleTimeLeftMs, getPredictedHitDamage, isBattleActive, isSilhouetteEvent, persistBattleProgress, weakZone]);
 
     const handleVisualHit = useCallback((event: EnemyHitEvent) => {
         if (!isBattleActive || battleTimeLeftMs <= 0) return;
+        if (!isSilhouetteEvent(event)) return;
         enemyLayerRef.current?.registerHit({
             ...event,
             id: hitIdRef.current++,
         });
-    }, [battleTimeLeftMs, isBattleActive]);
+    }, [battleTimeLeftMs, isBattleActive, isSilhouetteEvent]);
 
     const handleSummaryModalPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
         if (!summaryVisible || !battleSummary?.battleId) return;

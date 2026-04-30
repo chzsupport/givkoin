@@ -279,25 +279,64 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     const disableBackgroundVideo = false;
     const disableReactionVideo = isLowTier;
 
-    const mapPointToSilhouette = useCallback((worldX: number, worldY: number) => {
+    const mapPointToCoverContainer = useCallback((worldX: number, worldY: number) => {
         const { nx, ny } = normalizePointToOutline(worldX, worldY);
         if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
         if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
+
+        if (typeof window === 'undefined') {
+            return { nx, ny, topBasedY: 1 - ny };
+        }
+
+        const viewportWidth = window.innerWidth || 0;
+        const viewportHeight = window.innerHeight || 0;
+        if (viewportWidth <= 0 || viewportHeight <= 0) {
+            return { nx, ny, topBasedY: 1 - ny };
+        }
+
+        const viewportAspect = viewportWidth / viewportHeight;
+        let coverWidthRatio = 1;
+        let coverHeightRatio = 1;
+
+        if (viewportAspect > VIDEO_ASPECT_RATIO) {
+            coverHeightRatio = viewportAspect / VIDEO_ASPECT_RATIO;
+        } else if (viewportAspect > 0) {
+            coverWidthRatio = VIDEO_ASPECT_RATIO / viewportAspect;
+        }
+
+        const croppedX = (coverWidthRatio - 1) / 2;
+        const croppedY = (coverHeightRatio - 1) / 2;
+        const coverX = (nx + croppedX) / coverWidthRatio;
+        const coverTopBasedY = ((1 - ny) + croppedY) / coverHeightRatio;
+
+        if (!Number.isFinite(coverX) || !Number.isFinite(coverTopBasedY)) return null;
+        if (coverX < 0 || coverX > 1 || coverTopBasedY < 0 || coverTopBasedY > 1) return null;
+
+        return {
+            nx: coverX,
+            ny: 1 - coverTopBasedY,
+            topBasedY: coverTopBasedY,
+        };
+    }, []);
+
+    const mapPointToSilhouette = useCallback((worldX: number, worldY: number) => {
+        const coverPoint = mapPointToCoverContainer(worldX, worldY);
+        if (!coverPoint) return null;
 
         // CSS mask-position проценты считаются от свободного места, а не от всего экрана.
         // Здесь повторяем ту же математику, чтобы попадание совпадало с тем, что видно.
         const freeSpace = 1 - SILHOUETTE_SCALE;
         const left = freeSpace * (0.5 + (SILHOUETTE_OFFSET_X_PERCENT / 100));
         const top = freeSpace * (0.5 + (SILHOUETTE_OFFSET_Y_PERCENT / 100));
-        const localX = (nx - left) / SILHOUETTE_SCALE;
-        const localYFromTop = ((1 - ny) - top) / SILHOUETTE_SCALE;
+        const localX = (coverPoint.nx - left) / SILHOUETTE_SCALE;
+        const localYFromTop = (coverPoint.topBasedY - top) / SILHOUETTE_SCALE;
 
         if (localX < 0 || localX > 1 || localYFromTop < 0 || localYFromTop > 1) {
             return null;
         }
 
-        return { nx, ny, localX, localY: 1 - localYFromTop };
-    }, []);
+        return { nx: coverPoint.nx, ny: coverPoint.ny, localX, localY: 1 - localYFromTop };
+    }, [mapPointToCoverContainer]);
 
     useEffect(() => {
         if (reactionVideoRef.current) {
@@ -553,13 +592,13 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             }
 
             // Use normalized coordinates which now map to full screen
-            const { nx, ny } = normalizePointToOutline(worldPoint.x, worldPoint.y);
+            const coverPoint = mapPointToCoverContainer(worldPoint.x, worldPoint.y);
 
-            if (Number.isFinite(nx) && Number.isFinite(ny)) {
+            if (coverPoint) {
                 impactQueueRef.current.push({
                     id: impactIdRef.current++,
-                    x: nx,
-                    y: ny,
+                    x: coverPoint.nx,
+                    y: coverPoint.ny,
                     at: Date.now(),
                 });
             }
@@ -583,7 +622,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 setHitFlashKey((prev) => prev + 1);
             }, flushDelayMs);
         },
-        [enemyHit, isLowTier, isPointInsideMask, onValidHit],
+        [enemyHit, isLowTier, isPointInsideMask, mapPointToCoverContainer, onValidHit],
     );
 
     useImperativeHandle(
@@ -650,14 +689,14 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 <ImpactFlashLayer flashes={impactFlashes} />
                 {weakZone?.active && weakZone.center && (() => {
                     if (!isPointInsideSilhouette(weakZone.center.x, weakZone.center.y)) return null;
-                    const { nx, ny } = normalizePointToOutline(weakZone.center.x, weakZone.center.y);
-                    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+                    const coverPoint = mapPointToCoverContainer(weakZone.center.x, weakZone.center.y);
+                    if (!coverPoint) return null;
                     return (
                         <div
                             className="absolute z-18 pointer-events-none"
                             style={{
-                                left: `${nx * 100}%`,
-                                top: `${(1 - ny) * 100}%`,
+                                left: `${coverPoint.nx * 100}%`,
+                                top: `${(1 - coverPoint.ny) * 100}%`,
                                 transform: 'translate(-50%, -50%)',
                             }}
                         >
