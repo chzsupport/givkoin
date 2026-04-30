@@ -152,7 +152,7 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 72,
     size: SATELLITE_SIZE,
     light: 26,
-    treeLightScale: 800,
+    treeLightScale: 1000,
     lightDistance: 420,
     lightDecay: 1.3,
     radius: 285,
