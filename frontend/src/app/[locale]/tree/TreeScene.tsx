@@ -106,6 +106,11 @@ const LEAF_AURA_BRIGHTNESS_SCALE = 0.34;
 const LEAF_RAINBOW_HALF_CYCLE = 2;
 const LEAF_BREATH_AMPLITUDE = 1;
 const SATELLITE_SIZE = 16;
+const SATELLITE_SMALL_SIZE = SATELLITE_SIZE / 2;
+const SATELLITE_MID_SIZE = SATELLITE_SIZE / 1.5;
+const SATELLITE_TOP_Y = 377;
+const SATELLITE_BOTTOM_Y = 72;
+const SATELLITE_VERTICAL_STEP = (SATELLITE_TOP_Y - SATELLITE_BOTTOM_Y) / 4;
 const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
 const SATELLITE_AURA_OUTER_SCALE = 3.0;
 const TREE_LIGHT_MULT_PCT = 18;
@@ -117,10 +122,10 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     color: '#ffc95c',
     emissive: '#ff5d1f',
     emissiveIntensity: 3.2,
-    y: 377,
-    size: SATELLITE_SIZE,
+    y: SATELLITE_TOP_Y,
+    size: SATELLITE_SMALL_SIZE,
     light: 26,
-    treeLightScale: 400,
+    treeLightScale: 300,
     lightDistance: 420,
     lightDecay: 1.3,
     radius: 210,
@@ -129,34 +134,64 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     phase: 0,
   },
   {
-    color: '#f7fbff',
-    emissive: '#ffffff',
+    color: '#9fffb7',
+    emissive: '#2edd72',
     emissiveIntensity: 3.2,
-    y: 208,
-    size: SATELLITE_SIZE,
+    y: SATELLITE_TOP_Y - SATELLITE_VERTICAL_STEP,
+    size: SATELLITE_MID_SIZE,
     light: 26,
     treeLightScale: 400,
     lightDistance: 420,
     lightDecay: 1.3,
+    radius: 225,
+    speed: 0.42,
+    dir: -1,
+    phase: (Math.PI * 2) / 5,
+  },
+  {
+    color: '#f7fbff',
+    emissive: '#ffffff',
+    emissiveIntensity: 3.2,
+    y: SATELLITE_TOP_Y - SATELLITE_VERTICAL_STEP * 2,
+    size: SATELLITE_SIZE,
+    light: 26,
+    treeLightScale: 600,
+    lightDistance: 420,
+    lightDecay: 1.3,
     radius: 240,
     speed: 0.35,
+    dir: 1,
+    phase: (Math.PI * 4) / 5,
+  },
+  {
+    color: '#d1a0ff',
+    emissive: '#8b4dff',
+    emissiveIntensity: 3.2,
+    y: SATELLITE_TOP_Y - SATELLITE_VERTICAL_STEP * 3,
+    size: SATELLITE_MID_SIZE,
+    light: 26,
+    treeLightScale: 900,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 262.5,
+    speed: 0.62,
     dir: -1,
-    phase: (Math.PI * 2) / 3,
+    phase: (Math.PI * 6) / 5,
   },
   {
     color: '#78a8ff',
     emissive: '#2d63ff',
     emissiveIntensity: 3.2,
-    y: 72,
-    size: SATELLITE_SIZE,
+    y: SATELLITE_BOTTOM_Y,
+    size: SATELLITE_SMALL_SIZE,
     light: 26,
-    treeLightScale: 1000,
+    treeLightScale: 1200,
     lightDistance: 420,
     lightDecay: 1.3,
     radius: 285,
     speed: 0.7,
     dir: 1,
-    phase: (Math.PI * 4) / 3,
+    phase: (Math.PI * 8) / 5,
   },
 ];
 
