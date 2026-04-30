@@ -40,7 +40,12 @@ const WEAPON_TRIGGER_THRESHOLDS: Record<WeaponId, number> = {
     3: 1,
 };
 
-const SILHOUETTE_TRANSFORM = 'translate(1px, -2px) translateY(-2%) translateX(-0.5%)';
+const SILHOUETTE_SCALE = 1 / 3;
+const SILHOUETTE_OFFSET_X_PERCENT = -0.5;
+const SILHOUETTE_OFFSET_Y_PERCENT = -2;
+const SILHOUETTE_TRANSFORM = 'translate(1px, -2px)';
+const SILHOUETTE_MASK_SIZE = `${SILHOUETTE_SCALE * 100}% ${SILHOUETTE_SCALE * 100}%`;
+const SILHOUETTE_MASK_POSITION = `calc(50% + ${SILHOUETTE_OFFSET_X_PERCENT}%) calc(50% + ${SILHOUETTE_OFFSET_Y_PERCENT}%)`;
 const REACTION_FADE_DURATION_MS = 600;
 const VIDEO_ASPECT_RATIO = 16 / 9;
 const IMPACT_PULSE_KEYFRAMES = `
@@ -155,10 +160,10 @@ function HitFlashOverlay({
         maskImage: maskUrl,
         WebkitMaskRepeat: 'no-repeat',
         maskRepeat: 'no-repeat',
-        WebkitMaskSize: '100% 100%',
-        maskSize: '100% 100%',
-        WebkitMaskPosition: 'center',
-        maskPosition: 'center',
+        WebkitMaskSize: SILHOUETTE_MASK_SIZE,
+        maskSize: SILHOUETTE_MASK_SIZE,
+        WebkitMaskPosition: SILHOUETTE_MASK_POSITION,
+        maskPosition: SILHOUETTE_MASK_POSITION,
         background: 'transparent',
         boxShadow: `
       inset 0 0 0 4px #00ffff,
@@ -185,10 +190,10 @@ function SilhouettePositioningOverlay({ silhouetteSrc }: { silhouetteSrc: string
         maskImage: maskUrl,
         WebkitMaskRepeat: 'no-repeat',
         maskRepeat: 'no-repeat',
-        WebkitMaskSize: '100% 100%',
-        maskSize: '100% 100%',
-        WebkitMaskPosition: 'center',
-        maskPosition: 'center',
+        WebkitMaskSize: SILHOUETTE_MASK_SIZE,
+        maskSize: SILHOUETTE_MASK_SIZE,
+        WebkitMaskPosition: SILHOUETTE_MASK_POSITION,
+        maskPosition: SILHOUETTE_MASK_POSITION,
         backgroundColor: '#9efcff',
         opacity: 0.42,
         mixBlendMode: 'screen',
@@ -273,6 +278,24 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     const isLowTier = performanceTier === 'low';
     const disableBackgroundVideo = false;
     const disableReactionVideo = isLowTier;
+
+    const mapPointToSilhouette = useCallback((worldX: number, worldY: number) => {
+        const { nx, ny } = normalizePointToOutline(worldX, worldY);
+        if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+
+        const offsetX = SILHOUETTE_OFFSET_X_PERCENT / 100;
+        const offsetY = SILHOUETTE_OFFSET_Y_PERCENT / 100;
+        const left = ((1 - SILHOUETTE_SCALE) / 2) + offsetX;
+        const bottom = ((1 - SILHOUETTE_SCALE) / 2) - offsetY;
+        const localX = (nx - left) / SILHOUETTE_SCALE;
+        const localY = (ny - bottom) / SILHOUETTE_SCALE;
+
+        if (localX < 0 || localX > 1 || localY < 0 || localY > 1) {
+            return null;
+        }
+
+        return { nx, ny, localX, localY };
+    }, []);
 
     useEffect(() => {
         if (reactionVideoRef.current) {
@@ -374,24 +397,20 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
         if (!sampler) return false;
         const { width, height, data } = sampler;
 
-        // Normalize world point to outline bounds (0-1 range)
-        // Since ENEMY_OUTLINE is now set to full camera frustum, this maps directly to screen coordinates
-        const { nx, ny } = normalizePointToOutline(worldX, worldY);
-
-        if (!Number.isFinite(nx) || !Number.isFinite(ny)) return false;
-        if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return false;
+        const point = mapPointToSilhouette(worldX, worldY);
+        if (!point) return false;
 
         // Convert to pixel coordinates in the mask image
-        const px = Math.min(width - 1, Math.max(0, Math.round(nx * (width - 1))));
+        const px = Math.min(width - 1, Math.max(0, Math.round(point.localX * (width - 1))));
         // Note: ny=0 is bottom in 3D world but top=0 in image, so we flip
-        const py = Math.min(height - 1, Math.max(0, Math.round((1 - ny) * (height - 1))));
+        const py = Math.min(height - 1, Math.max(0, Math.round((1 - point.localY) * (height - 1))));
 
         const index = (py * width + px) * 4;
         const alpha = data[index + 3];
 
         // Alpha > 16 means there's visible content at this pixel
         return alpha > 16;
-    }, []);
+    }, [mapPointToSilhouette]);
 
     const isPointInsideMask = useCallback((worldX: number, worldY: number) => {
         return isPointInsideSilhouette(worldX, worldY);
