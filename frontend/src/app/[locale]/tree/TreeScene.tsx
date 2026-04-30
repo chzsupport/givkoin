@@ -81,9 +81,9 @@ type SatelliteState = {
   auraSoft: THREE.Texture;
 };
 
-const TREE_PATH = '/leaf-train/tree.glb';
-const COORDINATE_PATH = '/leaf-train/coordinate.txt';
-const DRACO_PATH = '/leaf-train/draco/';
+const TREE_PATH = '/tree.glb';
+const COORDINATE_PATH = '/api/tree-coordinate';
+const DRACO_PATH = '/draco/';
 const BASE_TREE_TARGET_SIZE = 420;
 const TREE_SCENE_SCALE = 0.8;
 const TREE_SCENE_LIFT_RATIO = 0.05;
