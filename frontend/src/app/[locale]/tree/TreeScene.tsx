@@ -113,6 +113,7 @@ const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
 const TREE_LIGHT_MULT_PCT = 5;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 const SATELLITE_LIGHT_BOOST = 1.1;
+const SATELLITE_GLOW_SCALE = 0.6;
 const SATELLITE_CONFIGS: SatelliteCfg[] = [
   {
     color: '#ffd200',
@@ -355,7 +356,7 @@ function createSatelliteState() {
 
     const pointLight = new THREE.PointLight(
       scaledCfg.color,
-      scaledCfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST * boost,
+      scaledCfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE * boost,
       scaledCfg.lightDistance,
       scaledCfg.lightDecay
     );
@@ -369,7 +370,7 @@ function createSatelliteState() {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      opacity: 0.374 * boost,
+      opacity: 0.374 * SATELLITE_GLOW_SCALE * boost,
       toneMapped: false,
     });
     const outerAura = new THREE.Sprite(outerAuraMaterial);
@@ -382,7 +383,7 @@ function createSatelliteState() {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      opacity: 0.242 * boost,
+      opacity: 0.242 * SATELLITE_GLOW_SCALE * boost,
       toneMapped: false,
     });
     const innerAura = new THREE.Sprite(innerAuraMaterial);
@@ -394,7 +395,8 @@ function createSatelliteState() {
       new THREE.MeshStandardMaterial({
         color: scaledCfg.color,
         emissive: scaledCfg.emissive,
-        emissiveIntensity: scaledCfg.emissiveIntensity * SATELLITE_LIGHT_BOOST * boost,
+        emissiveIntensity:
+          scaledCfg.emissiveIntensity * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE * boost,
         roughness: 0.25,
         metalness: 0.1,
       })
@@ -404,11 +406,30 @@ function createSatelliteState() {
     let lensflare: Lensflare | null = null;
     if (scaledCfg.color === '#ffffff') {
       lensflare = new Lensflare();
-      lensflare.addElement(new LensflareElement(flareTexture, 220 * TREE_SCENE_SCALE, 0.0, color));
       lensflare.addElement(
-        new LensflareElement(flareTexture, 120 * TREE_SCENE_SCALE, 0.35, new THREE.Color('#ffffff'))
+        new LensflareElement(
+          flareTexture,
+          220 * TREE_SCENE_SCALE,
+          0.0,
+          color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
+        )
       );
-      lensflare.addElement(new LensflareElement(flareTexture, 70 * TREE_SCENE_SCALE, 0.65, color));
+      lensflare.addElement(
+        new LensflareElement(
+          flareTexture,
+          120 * TREE_SCENE_SCALE,
+          0.35,
+          new THREE.Color('#ffffff').multiplyScalar(SATELLITE_GLOW_SCALE)
+        )
+      );
+      lensflare.addElement(
+        new LensflareElement(
+          flareTexture,
+          70 * TREE_SCENE_SCALE,
+          0.65,
+          color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
+        )
+      );
       visualGroup.add(lensflare);
     }
 
