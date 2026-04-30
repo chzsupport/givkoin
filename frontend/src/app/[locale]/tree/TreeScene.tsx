@@ -56,6 +56,8 @@ type LeafState = {
 const TREE_PATH = '/leaf-train/tree.glb';
 const COORDINATE_PATH = '/leaf-train/coordinate.txt';
 const DRACO_PATH = '/leaf-train/draco/';
+const BASE_TREE_TARGET_SIZE = 420;
+const TREE_SCENE_SCALE = 0.8;
 
 const ENERGY_CYCLE = 15;
 const ENERGY_CHARGE_DURATION = 2.8;
@@ -164,6 +166,10 @@ function getPointBounds(points: THREE.Vector3[]) {
   };
 }
 
+function scaleLeafPoints(points: THREE.Vector3[]) {
+  return points.map((point) => point.clone().multiplyScalar(TREE_SCENE_SCALE));
+}
+
 function getEnergyPhase(timeSeconds: number) {
   const cycleT = ((timeSeconds % ENERGY_CYCLE) + ENERGY_CYCLE) % ENERGY_CYCLE;
   const charge =
@@ -189,11 +195,11 @@ function getEnergyPhase(timeSeconds: number) {
 
 function createGroundGlow(leafGlowTexture: THREE.Texture): GroundGlowState {
   const group = new THREE.Group();
-  group.position.set(0, 52, 0);
+  group.position.set(0, 52 * TREE_SCENE_SCALE, 0);
   group.renderOrder = 4;
 
-  const light = new THREE.PointLight('#74fff1', 4, 360, 1.5);
-  light.position.set(0, 10, 0);
+  const light = new THREE.PointLight('#74fff1', 4, 360 * TREE_SCENE_SCALE, 1.5);
+  light.position.set(0, 10 * TREE_SCENE_SCALE, 0);
   group.add(light);
 
   const ringMaterial = new THREE.MeshBasicMaterial({
@@ -204,9 +210,9 @@ function createGroundGlow(leafGlowTexture: THREE.Texture): GroundGlowState {
     toneMapped: false,
   });
 
-  const ring = new THREE.Mesh(new THREE.CircleGeometry(88, 96), ringMaterial);
+  const ring = new THREE.Mesh(new THREE.CircleGeometry(88 * TREE_SCENE_SCALE, 96), ringMaterial);
   ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.4;
+  ring.position.y = 0.4 * TREE_SCENE_SCALE;
   group.add(ring);
 
   const coreMaterial = new THREE.SpriteMaterial({
@@ -312,7 +318,7 @@ function createLeafSystem(points: THREE.Vector3[], leafGlowTexture: THREE.Textur
     positions[i * 3 + 2] = points[i].z;
   }
 
-  const sphereGeometry = new THREE.SphereGeometry(1.25, 8, 8);
+  const sphereGeometry = new THREE.SphereGeometry(1.25 * TREE_SCENE_SCALE, 8, 8);
   const core = new THREE.InstancedMesh(
     sphereGeometry,
     new THREE.MeshBasicMaterial({ toneMapped: false }),
@@ -328,7 +334,7 @@ function createLeafSystem(points: THREE.Vector3[], leafGlowTexture: THREE.Textur
   const aura = new THREE.Points(
     auraGeometry,
     new THREE.PointsMaterial({
-      size: 10.5,
+      size: 10.5 * TREE_SCENE_SCALE,
       map: leafGlowTexture,
       alphaMap: leafGlowTexture,
       transparent: true,
@@ -381,7 +387,7 @@ function updateGroundGlow(timeSeconds: number, groundState: GroundGlowState | nu
       ? 0.18 + phase.charge * 1.25
       : 0.12 + Math.max(0, 1 - phase.flow) * 0.32;
 
-  const size = 72 + glow * 60;
+  const size = (72 + glow * 60) * TREE_SCENE_SCALE;
   groundState.core.scale.set(size, size, 1);
 
   const scale = 1 + glow * 0.2;
@@ -395,7 +401,7 @@ function updateGroundGlow(timeSeconds: number, groundState: GroundGlowState | nu
   groundState.ringMaterial.color.set('#74fff1').lerp(new THREE.Color('#ffd56c'), phase.charge * 0.42);
 
   groundState.light.intensity = 2.4 + glow * 10 + phase.leafPulse * 3.2;
-  groundState.light.distance = 300 + glow * 180;
+  groundState.light.distance = (300 + glow * 180) * TREE_SCENE_SCALE;
   groundState.light.color.set('#74fff1').lerp(new THREE.Color('#ffe08c'), phase.charge * 0.46);
 }
 
@@ -422,10 +428,10 @@ function updateLeaves(timeSeconds: number, leafState: LeafState | null, treeStat
   const phase = getEnergyPhase(timeSeconds);
   const { points, bounds, coreColors, auraColors, coreColorAttr, auraColorAttr } = leafState;
   const { minY, maxY } = bounds;
-  const range = maxY - minY || 1;
-  const waveRange = Math.max(1, treeState.waveTopY - treeState.waveBottomY);
+  const range = maxY - minY || TREE_SCENE_SCALE;
+  const waveRange = Math.max(TREE_SCENE_SCALE, treeState.waveTopY - treeState.waveBottomY);
   const waveFrontY = THREE.MathUtils.lerp(treeState.waveBottomY, treeState.waveTopY, phase.flow);
-  const waveBand = Math.max(10, waveRange * 0.085);
+  const waveBand = Math.max(10 * TREE_SCENE_SCALE, waveRange * 0.085);
 
   for (let i = 0; i < points.length; i += 1) {
     const point = points[i];
@@ -461,7 +467,7 @@ function updateLeaves(timeSeconds: number, leafState: LeafState | null, treeStat
         28
       ) * (0.06 + gemShift * 0.12);
     const flowTouch = phase.flowActive
-      ? smooth01(1 - Math.abs(py - waveFrontY) / Math.max(14, waveBand * 1.22))
+      ? smooth01(1 - Math.abs(py - waveFrontY) / Math.max(14 * TREE_SCENE_SCALE, waveBand * 1.22))
       : 0;
     const pulseTouch = phase.leafPulse;
 
@@ -511,7 +517,7 @@ function updateLeaves(timeSeconds: number, leafState: LeafState | null, treeStat
 async function loadLeafPoints() {
   const response = await fetch(COORDINATE_PATH);
   const text = await response.text();
-  const points = parseLeafPoints(text);
+  const points = scaleLeafPoints(parseLeafPoints(text));
   if (!points.length) {
     throw new Error('Leaf points not found');
   }
@@ -552,7 +558,7 @@ function normalizeTree(root: THREE.Group) {
   root.position.sub(center);
 
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  const targetSize = 420;
+  const targetSize = BASE_TREE_TARGET_SIZE * TREE_SCENE_SCALE;
   const scale = targetSize / maxDim;
   root.scale.setScalar(scale);
 
@@ -679,7 +685,10 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       };
       const leafBounds = getPointBounds(leafPoints);
       const waveBottomY = sceneBounds.minY;
-      const waveTopY = Math.max(waveBottomY + 1, Math.min(sceneBounds.maxY, leafBounds.maxY));
+      const waveTopY = Math.max(
+        waveBottomY + TREE_SCENE_SCALE,
+        Math.min(sceneBounds.maxY, leafBounds.maxY)
+      );
 
       groundState = createGroundGlow(leafGlowTexture);
       treeRig.add(groundState.group);
