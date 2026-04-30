@@ -24,6 +24,7 @@ type GroundGlowState = {
 
 type WaveState = {
   overlay: THREE.Object3D;
+  worldOffsetY: number;
   uniforms: {
     uTime: { value: number };
     uBottomY: { value: number };
@@ -58,6 +59,7 @@ const COORDINATE_PATH = '/leaf-train/coordinate.txt';
 const DRACO_PATH = '/leaf-train/draco/';
 const BASE_TREE_TARGET_SIZE = 420;
 const TREE_SCENE_SCALE = 0.8;
+const TREE_SCENE_LIFT_RATIO = 0.05;
 
 const ENERGY_CYCLE = 15;
 const ENERGY_CHARGE_DURATION = 2.8;
@@ -409,13 +411,15 @@ function updateWave(timeSeconds: number, waveState: WaveState | null, treeState:
   if (!waveState || !treeState) return;
 
   const phase = getEnergyPhase(timeSeconds);
+  const worldBottomY = treeState.waveBottomY + waveState.worldOffsetY;
+  const worldTopY = treeState.waveTopY + waveState.worldOffsetY;
   waveState.uniforms.uTime.value = timeSeconds;
-  waveState.uniforms.uBottomY.value = treeState.waveBottomY;
-  waveState.uniforms.uTopY.value = treeState.waveTopY;
+  waveState.uniforms.uBottomY.value = worldBottomY;
+  waveState.uniforms.uTopY.value = worldTopY;
   waveState.uniforms.uCharge.value = phase.charge;
   waveState.uniforms.uWaveFrontY.value = THREE.MathUtils.lerp(
-    treeState.waveBottomY,
-    treeState.waveTopY,
+    worldBottomY,
+    worldTopY,
     phase.flow
   );
   waveState.uniforms.uWaveActive.value = phase.flowActive ? 1 : 0;
@@ -689,6 +693,13 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
         waveBottomY + TREE_SCENE_SCALE,
         Math.min(sceneBounds.maxY, leafBounds.maxY)
       );
+      const structureMinY = Math.min(sceneBounds.minY, leafBounds.minY);
+      const structureMaxY = Math.max(sceneBounds.maxY, leafBounds.maxY);
+      const structureHeight =
+        structureMaxY - structureMinY || BASE_TREE_TARGET_SIZE * TREE_SCENE_SCALE;
+      const treeLiftY = structureHeight * TREE_SCENE_LIFT_RATIO;
+
+      treeRig.position.y = treeLiftY;
 
       groundState = createGroundGlow(leafGlowTexture);
       treeRig.add(groundState.group);
@@ -717,7 +728,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       treeRig.add(leafState.group);
 
       treeState = { waveBottomY, waveTopY };
-      waveState = { overlay, uniforms: waveUniforms };
+      waveState = { overlay, uniforms: waveUniforms, worldOffsetY: treeLiftY };
 
       animate();
     };
