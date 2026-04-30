@@ -2625,7 +2625,7 @@ export default function BattlePage() {
                         className="z-0"
                         backgroundSrc="/relax.mp4"
                         reactionSrc="/atack.mp4"
-                        silhouetteSrc="/silueet.svg"
+                        silhouetteSrc="/try.svg"
                         performanceTier={performanceTier}
                         weakZone={weakZone}
                     />

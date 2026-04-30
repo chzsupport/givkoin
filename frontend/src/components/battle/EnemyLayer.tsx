@@ -214,7 +214,7 @@ export function EnemyLayer({
   onValidHit,
   backgroundSrc = '/relax.mp4',
   reactionSrc = '/atack.mp4',
-  silhouetteSrc = '/silueet.svg',
+  silhouetteSrc = '/try.svg',
   pointerEvents = 'none',
   className = '',
   style,
