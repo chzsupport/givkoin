@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -67,19 +66,18 @@ type SatelliteCfg = {
   radius: number;
   speed: number;
   dir: 1 | -1;
+  phase: number;
 };
 
 type SatelliteEntry = {
   cfg: SatelliteCfg;
   group: THREE.Group;
-  lensflare: Lensflare | null;
 };
 
 type SatelliteState = {
   group: THREE.Group;
   entries: SatelliteEntry[];
   auraSoft: THREE.Texture;
-  flareTexture: THREE.Texture;
 };
 
 const TREE_PATH = '/leaf-train/tree.glb';
@@ -110,49 +108,52 @@ const LEAF_RAINBOW_HALF_CYCLE = 2;
 const LEAF_BREATH_AMPLITUDE = 1;
 const SATELLITE_SIZE = 16;
 const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
-const TREE_LIGHT_MULT_PCT = 5;
+const TREE_LIGHT_MULT_PCT = 4;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
-const SATELLITE_LIGHT_BOOST = 1.1;
-const SATELLITE_GLOW_SCALE = 0.42;
+const SATELLITE_LIGHT_BOOST = 0.9;
+const SATELLITE_GLOW_SCALE = 0.3;
 const SATELLITE_CONFIGS: SatelliteCfg[] = [
   {
-    color: '#ffd200',
-    emissive: '#ff7a00',
-    emissiveIntensity: 3.6,
+    color: '#ffc95c',
+    emissive: '#ff5d1f',
+    emissiveIntensity: 3.2,
     y: 377,
     size: SATELLITE_SIZE,
-    light: 30,
-    lightDistance: 0,
-    lightDecay: 0,
-    radius: 209,
+    light: 26,
+    lightDistance: 340,
+    lightDecay: 1.8,
+    radius: 210,
     speed: 0.55,
     dir: 1,
+    phase: 0,
   },
   {
-    color: '#f3f7ff',
-    emissive: '#f3f7ff',
-    emissiveIntensity: 3.6,
+    color: '#f7fbff',
+    emissive: '#ffffff',
+    emissiveIntensity: 3.2,
     y: 208,
     size: SATELLITE_SIZE,
-    light: 30,
-    lightDistance: 0,
-    lightDecay: 0,
-    radius: 248,
+    light: 26,
+    lightDistance: 340,
+    lightDecay: 1.8,
+    radius: 240,
     speed: 0.35,
     dir: -1,
+    phase: (Math.PI * 2) / 3,
   },
   {
-    color: '#1a7bff',
-    emissive: '#0066ff',
-    emissiveIntensity: 3.6,
+    color: '#78a8ff',
+    emissive: '#2d63ff',
+    emissiveIntensity: 3.2,
     y: 72,
     size: SATELLITE_SIZE,
-    light: 30,
-    lightDistance: 0,
-    lightDecay: 0,
-    radius: 292,
+    light: 26,
+    lightDistance: 340,
+    lightDecay: 1.8,
+    radius: 285,
     speed: 0.7,
     dir: 1,
+    phase: (Math.PI * 4) / 3,
   },
 ];
 
@@ -196,29 +197,6 @@ function makeRadialTexture(inner: number, outer: number, stops: Array<[number, n
   for (const [pos, alpha] of stops) {
     gradient.addColorStop(pos, `rgba(255,255,255,${alpha})`);
   }
-
-  ctx.clearRect(0, 0, 256, 256);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 256, 256);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function makeCircleTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return new THREE.Texture();
-  }
-
-  const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-  gradient.addColorStop(0, 'rgba(255,255,255,1)');
-  gradient.addColorStop(0.45, 'rgba(255,255,255,0.85)');
-  gradient.addColorStop(1, 'rgba(255,255,255,0)');
 
   ctx.clearRect(0, 0, 256, 256);
   ctx.fillStyle = gradient;
@@ -338,7 +316,6 @@ function createSatelliteState() {
     [0.55, 0.18],
     [1, 0],
   ]);
-  const flareTexture = makeCircleTexture();
 
   const entries = SATELLITE_CONFIGS.map((cfg) => {
     const scaledCfg: SatelliteCfg = {
@@ -389,7 +366,7 @@ function createSatelliteState() {
     visualGroup.add(innerAura);
 
     const sphere = new THREE.Mesh(
-      new THREE.SphereGeometry(scaledCfg.size, 128, 128),
+      new THREE.SphereGeometry(scaledCfg.size, 48, 48),
       new THREE.MeshStandardMaterial({
         color: scaledCfg.color,
         emissive: scaledCfg.emissive,
@@ -400,40 +377,12 @@ function createSatelliteState() {
     );
     visualGroup.add(sphere);
 
-    const lensflare = new Lensflare();
-    lensflare.addElement(
-      new LensflareElement(
-        flareTexture,
-        220 * TREE_SCENE_SCALE,
-        0.0,
-        color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
-      )
-    );
-    lensflare.addElement(
-      new LensflareElement(
-        flareTexture,
-        120 * TREE_SCENE_SCALE,
-        0.35,
-        new THREE.Color('#ffffff').multiplyScalar(SATELLITE_GLOW_SCALE)
-      )
-    );
-    lensflare.addElement(
-      new LensflareElement(
-        flareTexture,
-        70 * TREE_SCENE_SCALE,
-        0.65,
-        color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
-      )
-    );
-    visualGroup.add(lensflare);
-
     satGroup.add(visualGroup);
     group.add(satGroup);
 
     return {
       cfg: scaledCfg,
       group: satGroup,
-      lensflare,
     };
   });
 
@@ -441,7 +390,6 @@ function createSatelliteState() {
     group,
     entries,
     auraSoft,
-    flareTexture,
   };
 }
 
@@ -449,18 +397,13 @@ function updateSatellites(timeSeconds: number, satelliteState: SatelliteState | 
   if (!satelliteState) return;
 
   for (const entry of satelliteState.entries) {
-    const { cfg, group, lensflare } = entry;
-    const angle = timeSeconds * cfg.speed * cfg.dir;
+    const { cfg, group } = entry;
+    const angle = timeSeconds * cfg.speed * cfg.dir + cfg.phase;
     const x = Math.cos(angle) * cfg.radius;
     const z = Math.sin(angle) * cfg.radius;
     const y = cfg.y + Math.sin(timeSeconds * 1.1 + cfg.speed) * SATELLITE_BOB_AMP;
 
     group.position.set(x, y, z);
-
-    if (lensflare) {
-      const scale = 1 + Math.sin(timeSeconds * 1.7) * 0.12;
-      lensflare.scale.setScalar(scale);
-    }
   }
 }
 
@@ -468,7 +411,6 @@ function disposeSatelliteState(satelliteState: SatelliteState | null) {
   if (!satelliteState) return;
 
   satelliteState.auraSoft.dispose();
-  satelliteState.flareTexture.dispose();
 
   satelliteState.group.traverse((node) => {
     if (node instanceof THREE.Mesh) {
