@@ -61,6 +61,7 @@ type SatelliteCfg = {
   y: number;
   size: number;
   light: number;
+  treeLightScale: number;
   lightDistance: number;
   lightDecay: number;
   radius: number;
@@ -113,7 +114,6 @@ const TREE_LIGHT_MULT_PCT = 18;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 const SATELLITE_LIGHT_BOOST = 0.9;
 const SATELLITE_GLOW_SCALE = 0.3;
-const SATELLITE_TREE_LIGHT_SCALE = 600;
 const SATELLITE_CONFIGS: SatelliteCfg[] = [
   {
     color: '#ffc95c',
@@ -122,6 +122,7 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 377,
     size: SATELLITE_SIZE,
     light: 26,
+    treeLightScale: 400,
     lightDistance: 420,
     lightDecay: 1.3,
     radius: 210,
@@ -136,6 +137,7 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 208,
     size: SATELLITE_SIZE,
     light: 26,
+    treeLightScale: 400,
     lightDistance: 420,
     lightDecay: 1.3,
     radius: 240,
@@ -150,6 +152,7 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     y: 72,
     size: SATELLITE_SIZE,
     light: 26,
+    treeLightScale: 800,
     lightDistance: 420,
     lightDecay: 1.3,
     radius: 285,
@@ -337,7 +340,7 @@ function createSatelliteState() {
         TREE_LIGHT_MULT *
         SATELLITE_LIGHT_BOOST *
         SATELLITE_GLOW_SCALE *
-        SATELLITE_TREE_LIGHT_SCALE,
+        scaledCfg.treeLightScale,
       scaledCfg.lightDistance,
       scaledCfg.lightDecay
     );
