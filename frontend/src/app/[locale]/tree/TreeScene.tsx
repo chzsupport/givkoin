@@ -10,7 +10,6 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 
 type TreeSceneProps = {
   isTabVisible: boolean;
-  isUnderAttack: boolean;
 };
 
 type GroundGlowState = {
@@ -782,19 +781,6 @@ function updateLeaves(timeSeconds: number, leafState: LeafState | null, treeStat
   auraColorAttr.needsUpdate = true;
 }
 
-function syncBattleSceneVisibility(
-  isUnderAttack: boolean,
-  waveState: WaveState | null,
-  satelliteState: SatelliteState | null
-) {
-  if (waveState) {
-    waveState.overlay.visible = !isUnderAttack;
-  }
-  if (satelliteState) {
-    satelliteState.group.visible = !isUnderAttack;
-  }
-}
-
 async function loadLeafPoints() {
   const response = await fetch(COORDINATE_PATH);
   const text = await response.text();
@@ -856,18 +842,13 @@ function normalizeTree(root: THREE.Group) {
   return root;
 }
 
-export default function TreeScene({ isTabVisible, isUnderAttack }: TreeSceneProps) {
+export default function TreeScene({ isTabVisible }: TreeSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const visibleRef = useRef(isTabVisible);
-  const underAttackRef = useRef(isUnderAttack);
 
   useEffect(() => {
     visibleRef.current = isTabVisible;
   }, [isTabVisible]);
-
-  useEffect(() => {
-    underAttackRef.current = isUnderAttack;
-  }, [isUnderAttack]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -926,32 +907,6 @@ export default function TreeScene({ isTabVisible, isUnderAttack }: TreeSceneProp
     let groundState: GroundGlowState | null = null;
     let leafState: LeafState | null = null;
     let satelliteState: SatelliteState | null = null;
-    let totalBattlePauseSeconds = 0;
-    let battlePauseStartedAt: number | null = null;
-    let lastUnderAttack = underAttackRef.current;
-
-    const getSceneTime = (elapsedSeconds: number) => {
-      if (underAttackRef.current) {
-        if (battlePauseStartedAt === null) {
-          battlePauseStartedAt = elapsedSeconds;
-        }
-        return Math.max(0, battlePauseStartedAt - totalBattlePauseSeconds);
-      }
-
-      if (battlePauseStartedAt !== null) {
-        totalBattlePauseSeconds += elapsedSeconds - battlePauseStartedAt;
-        battlePauseStartedAt = null;
-      }
-
-      return Math.max(0, elapsedSeconds - totalBattlePauseSeconds);
-    };
-
-    const syncBattleScene = () => {
-      const nextUnderAttack = underAttackRef.current;
-      if (nextUnderAttack === lastUnderAttack) return;
-      lastUnderAttack = nextUnderAttack;
-      syncBattleSceneVisibility(nextUnderAttack, waveState, satelliteState);
-    };
 
     const onResize = () => {
       const nextWidth = container.clientWidth || window.innerWidth;
@@ -964,11 +919,9 @@ export default function TreeScene({ isTabVisible, isUnderAttack }: TreeSceneProp
 
     const animate = () => {
       frameId = window.requestAnimationFrame(animate);
-      const elapsedSeconds = clock.getElapsedTime();
-      const timeSeconds = getSceneTime(elapsedSeconds);
-      syncBattleScene();
       if (!visibleRef.current) return;
 
+      const timeSeconds = clock.getElapsedTime();
       treeRig.rotation.y = timeSeconds * 0.05;
 
       updateGroundGlow(timeSeconds, groundState);
@@ -1037,7 +990,6 @@ export default function TreeScene({ isTabVisible, isUnderAttack }: TreeSceneProp
 
       treeState = { waveBottomY, waveTopY };
       waveState = { overlay, uniforms: waveUniforms, worldOffsetY: treeLiftY };
-      syncBattleSceneVisibility(underAttackRef.current, waveState, satelliteState);
 
       animate();
     };

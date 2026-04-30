@@ -7,14 +7,104 @@ import * as THREE from 'three';
 
 const TREE_PATH = '/tree.glb';
 const LEAF_POINTS_PATH = '/tree-data/coordinate.txt';
+
 const BASE_TREE_TARGET_SIZE = 420;
 const BATTLE_TREE_TARGET_SIZE = 336;
 const BATTLE_TREE_SCALE = BATTLE_TREE_TARGET_SIZE / BASE_TREE_TARGET_SIZE;
+
 const LEAF_POINT_SIZE = 4.4;
+
+const SATELLITE_LIGHT_MULT_PCT = 18;
+const SATELLITE_LIGHT_MULT = SATELLITE_LIGHT_MULT_PCT / 100;
+const SATELLITE_LIGHT_BOOST = 0.9;
+const SATELLITE_GLOW_SCALE = 0.3;
+const SATELLITE_AURA_OUTER_SCALE = 3.0;
 
 const LEAF_BASE_COLOR = new THREE.Color('#57d96f');
 const LEAF_TOP_COLOR = new THREE.Color('#dfffe8');
 const LEAF_DEEP_COLOR = new THREE.Color('#7fe39b');
+
+type BattleSatelliteCfg = {
+  color: string;
+  emissive: string;
+  emissiveIntensity: number;
+  y: number;
+  size: number;
+  light: number;
+  treeLightScale: number;
+  lightDistance: number;
+  lightDecay: number;
+  radius: number;
+  phase: number;
+};
+
+const BATTLE_SATELLITE_CONFIGS: BattleSatelliteCfg[] = [
+  {
+    color: '#ffc95c',
+    emissive: '#ff5d1f',
+    emissiveIntensity: 3.2,
+    y: 377,
+    size: 8,
+    light: 26,
+    treeLightScale: 300,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 210,
+    phase: 0,
+  },
+  {
+    color: '#9fffb7',
+    emissive: '#2edd72',
+    emissiveIntensity: 3.2,
+    y: 377 - (377 - 72) / 4,
+    size: 8,
+    light: 26,
+    treeLightScale: 400,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 225,
+    phase: (Math.PI * 2) / 5,
+  },
+  {
+    color: '#78a8ff',
+    emissive: '#2d63ff',
+    emissiveIntensity: 3.2,
+    y: 377 - ((377 - 72) / 4) * 2,
+    size: 8,
+    light: 26,
+    treeLightScale: 600,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 240,
+    phase: (Math.PI * 4) / 5,
+  },
+  {
+    color: '#d1a0ff',
+    emissive: '#8b4dff',
+    emissiveIntensity: 3.2,
+    y: 377 - ((377 - 72) / 4) * 3,
+    size: 8,
+    light: 26,
+    treeLightScale: 900,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 262.5,
+    phase: (Math.PI * 6) / 5,
+  },
+  {
+    color: '#f7fbff',
+    emissive: '#ffffff',
+    emissiveIntensity: 3.2,
+    y: 72,
+    size: 8,
+    light: 26,
+    treeLightScale: 1500,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 285,
+    phase: (Math.PI * 8) / 5,
+  },
+];
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -38,6 +128,29 @@ function makeCircleTexture() {
   ctx.arc(16, 16, 15, 0, Math.PI * 2);
   ctx.fillStyle = '#ffffff';
   ctx.fill();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function makeRadialTexture(inner: number, outer: number, stops: Array<[number, number]>) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return new THREE.Texture();
+  }
+
+  const gradient = ctx.createRadialGradient(128, 128, inner, 128, 128, outer);
+  for (const [pos, alpha] of stops) {
+    gradient.addColorStop(pos, `rgba(255,255,255,${alpha})`);
+  }
+
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 256);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
@@ -189,7 +302,88 @@ function BattleTreeLeaves() {
   );
 }
 
-function BattleTreeModel({ rotate = true }: { rotate?: boolean }) {
+function BattleTreeSatellites() {
+  const auraTexture = useMemo(
+    () =>
+      makeRadialTexture(6, 120, [
+        [0, 0.9],
+        [0.22, 0.55],
+        [0.55, 0.18],
+        [1, 0],
+      ]),
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      auraTexture.dispose();
+    };
+  }, [auraTexture]);
+
+  const satellites = useMemo(
+    () =>
+      BATTLE_SATELLITE_CONFIGS.map((cfg) => {
+        const scaledCfg = {
+          ...cfg,
+          y: cfg.y * BATTLE_TREE_SCALE,
+          size: cfg.size * BATTLE_TREE_SCALE,
+          radius: cfg.radius * BATTLE_TREE_SCALE,
+          lightDistance: cfg.lightDistance * BATTLE_TREE_SCALE,
+        };
+
+        return {
+          cfg: scaledCfg,
+          x: Math.cos(scaledCfg.phase) * scaledCfg.radius,
+          z: Math.sin(scaledCfg.phase) * scaledCfg.radius,
+        };
+      }),
+    []
+  );
+
+  return (
+    <group>
+      {satellites.map(({ cfg, x, z }, index) => (
+        <group key={`${cfg.color}-${cfg.phase}-${index}`} position={[x, cfg.y, z]}>
+          <pointLight
+            intensity={
+              cfg.light *
+              SATELLITE_LIGHT_MULT *
+              SATELLITE_LIGHT_BOOST *
+              SATELLITE_GLOW_SCALE *
+              cfg.treeLightScale
+            }
+            distance={cfg.lightDistance}
+            decay={cfg.lightDecay}
+            color={cfg.color}
+          />
+          <sprite scale={[cfg.size * SATELLITE_AURA_OUTER_SCALE, cfg.size * SATELLITE_AURA_OUTER_SCALE, 1]}>
+            <spriteMaterial
+              map={auraTexture}
+              color={cfg.color}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              opacity={0.374 * SATELLITE_GLOW_SCALE}
+              toneMapped={false}
+            />
+          </sprite>
+          <mesh renderOrder={9}>
+            <sphereGeometry args={[cfg.size, 48, 48]} />
+            <meshStandardMaterial
+              color={cfg.color}
+              emissive={cfg.emissive}
+              emissiveIntensity={cfg.emissiveIntensity * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE}
+              roughness={0.25}
+              metalness={0.1}
+            />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function BattleTreeSystem({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene: loadedScene } = useGLTF(TREE_PATH);
 
@@ -210,6 +404,7 @@ function BattleTreeModel({ rotate = true }: { rotate?: boolean }) {
     <group ref={groupRef}>
       <primitive object={scene} />
       <BattleTreeLeaves />
+      <BattleTreeSatellites />
     </group>
   );
 }
@@ -217,7 +412,7 @@ function BattleTreeModel({ rotate = true }: { rotate?: boolean }) {
 export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
   return (
     <Suspense fallback={null}>
-      <BattleTreeModel rotate={rotate} />
+      <BattleTreeSystem rotate={rotate} />
     </Suspense>
   );
 }

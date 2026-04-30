@@ -526,7 +526,7 @@ export default function TreePage() {
       </div>
 
       {/* Full Screen 3D Scene */}
-      <TreeScene isTabVisible={isTabVisible} isUnderAttack={isUnderAttack} />
+      <TreeScene isTabVisible={isTabVisible} />
 
       <div className="fixed inset-0 z-10 pointer-events-none overflow-hidden" style={{ top: 'var(--header-height, 64px)', bottom: 0 }}>
 
