@@ -552,7 +552,7 @@ function normalizeTree(root: THREE.Group) {
   root.position.sub(center);
 
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  const targetSize = 420;
+  const targetSize = 378;
   const scale = targetSize / maxDim;
   root.scale.setScalar(scale);
 
