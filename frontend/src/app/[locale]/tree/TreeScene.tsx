@@ -109,11 +109,11 @@ const LEAF_BREATH_AMPLITUDE = 1;
 const SATELLITE_SIZE = 16;
 const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
 const SATELLITE_AURA_OUTER_SCALE = 3.0;
-const SATELLITE_AURA_INNER_SCALE = 2.4;
 const TREE_LIGHT_MULT_PCT = 18;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 const SATELLITE_LIGHT_BOOST = 0.9;
 const SATELLITE_GLOW_SCALE = 0.3;
+const SATELLITE_TREE_LIGHT_SCALE = 1.2;
 const SATELLITE_CONFIGS: SatelliteCfg[] = [
   {
     color: '#ffc95c',
@@ -333,7 +333,11 @@ function createSatelliteState() {
 
     const pointLight = new THREE.PointLight(
       scaledCfg.color,
-      scaledCfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE,
+      scaledCfg.light *
+        TREE_LIGHT_MULT *
+        SATELLITE_LIGHT_BOOST *
+        SATELLITE_GLOW_SCALE *
+        SATELLITE_TREE_LIGHT_SCALE,
       scaledCfg.lightDistance,
       scaledCfg.lightDecay
     );
@@ -357,23 +361,6 @@ function createSatelliteState() {
       1
     );
     visualGroup.add(outerAura);
-
-    const innerAuraMaterial = new THREE.SpriteMaterial({
-      map: auraSoft,
-      color,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      opacity: 0.242 * SATELLITE_GLOW_SCALE,
-      toneMapped: false,
-    });
-    const innerAura = new THREE.Sprite(innerAuraMaterial);
-    innerAura.scale.set(
-      scaledCfg.size * SATELLITE_AURA_INNER_SCALE,
-      scaledCfg.size * SATELLITE_AURA_INNER_SCALE,
-      1
-    );
-    visualGroup.add(innerAura);
 
     const sphere = new THREE.Mesh(
       new THREE.SphereGeometry(scaledCfg.size, 48, 48),
