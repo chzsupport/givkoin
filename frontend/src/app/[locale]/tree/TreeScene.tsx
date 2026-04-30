@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -54,6 +55,34 @@ type LeafState = {
   auraColorAttr: THREE.BufferAttribute;
 };
 
+type SatelliteCfg = {
+  color: string;
+  emissive: string;
+  emissiveIntensity: number;
+  boost?: number;
+  y: number;
+  size: number;
+  light: number;
+  lightDistance: number;
+  lightDecay: number;
+  radius: number;
+  speed: number;
+  dir: 1 | -1;
+};
+
+type SatelliteEntry = {
+  cfg: SatelliteCfg;
+  group: THREE.Group;
+  lensflare: Lensflare | null;
+};
+
+type SatelliteState = {
+  group: THREE.Group;
+  entries: SatelliteEntry[];
+  auraSoft: THREE.Texture;
+  flareTexture: THREE.Texture;
+};
+
 const TREE_PATH = '/leaf-train/tree.glb';
 const COORDINATE_PATH = '/leaf-train/coordinate.txt';
 const DRACO_PATH = '/leaf-train/draco/';
@@ -80,6 +109,52 @@ const LEAF_CORE_CONTRAST = 1.788;
 const LEAF_AURA_BRIGHTNESS_SCALE = 0.34;
 const LEAF_RAINBOW_HALF_CYCLE = 2;
 const LEAF_BREATH_AMPLITUDE = 1;
+const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
+const TREE_LIGHT_MULT_PCT = 5;
+const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
+const SATELLITE_LIGHT_BOOST = 1.1;
+const SATELLITE_CONFIGS: SatelliteCfg[] = [
+  {
+    color: '#ffd200',
+    emissive: '#ff7a00',
+    emissiveIntensity: 3.6,
+    y: 377,
+    size: 18,
+    light: 30,
+    lightDistance: 0,
+    lightDecay: 0,
+    radius: 209,
+    speed: 0.55,
+    dir: 1,
+  },
+  {
+    color: '#f3f7ff',
+    emissive: '#f3f7ff',
+    emissiveIntensity: 3.6,
+    y: 208,
+    size: 16,
+    light: 30,
+    lightDistance: 0,
+    lightDecay: 0,
+    radius: 248,
+    speed: 0.35,
+    dir: -1,
+  },
+  {
+    color: '#1a7bff',
+    emissive: '#0066ff',
+    emissiveIntensity: 3.6,
+    boost: 1.1,
+    y: 72,
+    size: 16,
+    light: 30,
+    lightDistance: 0,
+    lightDecay: 0,
+    radius: 292,
+    speed: 0.7,
+    dir: 1,
+  },
+];
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -121,6 +196,29 @@ function makeRadialTexture(inner: number, outer: number, stops: Array<[number, n
   for (const [pos, alpha] of stops) {
     gradient.addColorStop(pos, `rgba(255,255,255,${alpha})`);
   }
+
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 256);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function makeCircleTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return new THREE.Texture();
+  }
+
+  const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.45, 'rgba(255,255,255,0.85)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
 
   ctx.clearRect(0, 0, 256, 256);
   ctx.fillStyle = gradient;
@@ -230,6 +328,150 @@ function createGroundGlow(leafGlowTexture: THREE.Texture): GroundGlowState {
   group.add(core);
 
   return { group, light, ring, ringMaterial, core, coreMaterial };
+}
+
+function createSatelliteState() {
+  const group = new THREE.Group();
+  const auraSoft = makeRadialTexture(6, 120, [
+    [0, 0.9],
+    [0.22, 0.55],
+    [0.55, 0.18],
+    [1, 0],
+  ]);
+  const flareTexture = makeCircleTexture();
+
+  const entries = SATELLITE_CONFIGS.map((cfg) => {
+    const scaledCfg: SatelliteCfg = {
+      ...cfg,
+      y: cfg.y * TREE_SCENE_SCALE,
+      size: cfg.size * TREE_SCENE_SCALE,
+      lightDistance: cfg.lightDistance * TREE_SCENE_SCALE,
+      radius: cfg.radius * TREE_SCENE_SCALE,
+    };
+
+    const satGroup = new THREE.Group();
+    const boost = scaledCfg.boost ?? 1;
+    const color = new THREE.Color(scaledCfg.color);
+
+    const pointLight = new THREE.PointLight(
+      scaledCfg.color,
+      scaledCfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST * boost,
+      scaledCfg.lightDistance,
+      scaledCfg.lightDecay
+    );
+    satGroup.add(pointLight);
+
+    const visualGroup = new THREE.Group();
+
+    const outerAuraMaterial = new THREE.SpriteMaterial({
+      map: auraSoft,
+      color,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      opacity: 0.374 * boost,
+      toneMapped: false,
+    });
+    const outerAura = new THREE.Sprite(outerAuraMaterial);
+    outerAura.scale.set(scaledCfg.size * 13.5, scaledCfg.size * 13.5, 1);
+    visualGroup.add(outerAura);
+
+    const innerAuraMaterial = new THREE.SpriteMaterial({
+      map: auraSoft,
+      color,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      opacity: 0.242 * boost,
+      toneMapped: false,
+    });
+    const innerAura = new THREE.Sprite(innerAuraMaterial);
+    innerAura.scale.set(scaledCfg.size * 6.0, scaledCfg.size * 6.0, 1);
+    visualGroup.add(innerAura);
+
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(scaledCfg.size, 128, 128),
+      new THREE.MeshStandardMaterial({
+        color: scaledCfg.color,
+        emissive: scaledCfg.emissive,
+        emissiveIntensity: scaledCfg.emissiveIntensity * SATELLITE_LIGHT_BOOST * boost,
+        roughness: 0.25,
+        metalness: 0.1,
+      })
+    );
+    visualGroup.add(sphere);
+
+    let lensflare: Lensflare | null = null;
+    if (scaledCfg.color === '#ffffff') {
+      lensflare = new Lensflare();
+      lensflare.addElement(new LensflareElement(flareTexture, 220 * TREE_SCENE_SCALE, 0.0, color));
+      lensflare.addElement(
+        new LensflareElement(flareTexture, 120 * TREE_SCENE_SCALE, 0.35, new THREE.Color('#ffffff'))
+      );
+      lensflare.addElement(new LensflareElement(flareTexture, 70 * TREE_SCENE_SCALE, 0.65, color));
+      visualGroup.add(lensflare);
+    }
+
+    satGroup.add(visualGroup);
+    group.add(satGroup);
+
+    return {
+      cfg: scaledCfg,
+      group: satGroup,
+      lensflare,
+    };
+  });
+
+  return {
+    group,
+    entries,
+    auraSoft,
+    flareTexture,
+  };
+}
+
+function updateSatellites(timeSeconds: number, satelliteState: SatelliteState | null) {
+  if (!satelliteState) return;
+
+  for (const entry of satelliteState.entries) {
+    const { cfg, group, lensflare } = entry;
+    const angle = timeSeconds * cfg.speed * cfg.dir;
+    const x = Math.cos(angle) * cfg.radius;
+    const z = Math.sin(angle) * cfg.radius;
+    const y = cfg.y + Math.sin(timeSeconds * 1.1 + cfg.speed) * SATELLITE_BOB_AMP;
+
+    group.position.set(x, y, z);
+
+    if (lensflare) {
+      const scale = 1 + Math.sin(timeSeconds * 1.7) * 0.12;
+      lensflare.scale.setScalar(scale);
+    }
+  }
+}
+
+function disposeSatelliteState(satelliteState: SatelliteState | null) {
+  if (!satelliteState) return;
+
+  satelliteState.auraSoft.dispose();
+  satelliteState.flareTexture.dispose();
+
+  satelliteState.group.traverse((node) => {
+    if (node instanceof THREE.Mesh) {
+      node.geometry.dispose();
+      if (Array.isArray(node.material)) {
+        for (const material of node.material) {
+          material.dispose();
+        }
+      } else {
+        node.material.dispose();
+      }
+      return;
+    }
+
+    if (node instanceof THREE.Sprite) {
+      node.material.dispose();
+    }
+  });
 }
 
 function createSilhouetteMaterial(uniforms: WaveState['uniforms']) {
@@ -650,6 +892,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
     let waveState: WaveState | null = null;
     let groundState: GroundGlowState | null = null;
     let leafState: LeafState | null = null;
+    let satelliteState: SatelliteState | null = null;
 
     const onResize = () => {
       const nextWidth = container.clientWidth || window.innerWidth;
@@ -670,6 +913,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       updateGroundGlow(timeSeconds, groundState);
       updateWave(timeSeconds, waveState, treeState);
       updateLeaves(timeSeconds, leafState, treeState);
+      updateSatellites(timeSeconds, satelliteState);
 
       controls.update();
       composer.render();
@@ -727,6 +971,9 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       leafState = createLeafSystem(leafPoints, leafGlowTexture);
       treeRig.add(leafState.group);
 
+      satelliteState = createSatelliteState();
+      treeRig.add(satelliteState.group);
+
       treeState = { waveBottomY, waveTopY };
       waveState = { overlay, uniforms: waveUniforms, worldOffsetY: treeLiftY };
 
@@ -745,6 +992,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       controls.dispose();
       composer.dispose();
       leafGlowTexture.dispose();
+      disposeSatelliteState(satelliteState);
       renderer.dispose();
       container.replaceChildren();
     };
