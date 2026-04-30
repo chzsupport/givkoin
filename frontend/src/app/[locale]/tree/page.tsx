@@ -341,6 +341,22 @@ export default function TreePage() {
     }
   }, [loadBattleStatus, loadSolarStatus, loadTreeStatus]);
 
+  useEffect(() => {
+    void loadBattleStatus().catch((e) => {
+      console.error('Failed to refresh battle status:', e);
+    });
+
+    const timer = window.setInterval(() => {
+      void loadBattleStatus().catch((e) => {
+        console.error('Failed to refresh battle status:', e);
+      });
+    }, 15000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [loadBattleStatus]);
+
   // Загружаем реальные данные дерева/солнечного заряда при монтировании
   useEffect(() => {
     void loadTreeData();
@@ -510,7 +526,7 @@ export default function TreePage() {
       </div>
 
       {/* Full Screen 3D Scene */}
-      <TreeScene isTabVisible={isTabVisible} />
+      <TreeScene isTabVisible={isTabVisible} isUnderAttack={isUnderAttack} />
 
       <div className="fixed inset-0 z-10 pointer-events-none overflow-hidden" style={{ top: 'var(--header-height, 64px)', bottom: 0 }}>
 
