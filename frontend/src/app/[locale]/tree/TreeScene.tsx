@@ -59,7 +59,6 @@ type SatelliteCfg = {
   color: string;
   emissive: string;
   emissiveIntensity: number;
-  boost?: number;
   y: number;
   size: number;
   light: number;
@@ -109,18 +108,19 @@ const LEAF_CORE_CONTRAST = 1.788;
 const LEAF_AURA_BRIGHTNESS_SCALE = 0.34;
 const LEAF_RAINBOW_HALF_CYCLE = 2;
 const LEAF_BREATH_AMPLITUDE = 1;
+const SATELLITE_SIZE = 16;
 const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
 const TREE_LIGHT_MULT_PCT = 5;
 const TREE_LIGHT_MULT = TREE_LIGHT_MULT_PCT / 100;
 const SATELLITE_LIGHT_BOOST = 1.1;
-const SATELLITE_GLOW_SCALE = 0.6;
+const SATELLITE_GLOW_SCALE = 0.42;
 const SATELLITE_CONFIGS: SatelliteCfg[] = [
   {
     color: '#ffd200',
     emissive: '#ff7a00',
     emissiveIntensity: 3.6,
     y: 377,
-    size: 18,
+    size: SATELLITE_SIZE,
     light: 30,
     lightDistance: 0,
     lightDecay: 0,
@@ -133,7 +133,7 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     emissive: '#f3f7ff',
     emissiveIntensity: 3.6,
     y: 208,
-    size: 16,
+    size: SATELLITE_SIZE,
     light: 30,
     lightDistance: 0,
     lightDecay: 0,
@@ -145,9 +145,8 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     color: '#1a7bff',
     emissive: '#0066ff',
     emissiveIntensity: 3.6,
-    boost: 1.1,
     y: 72,
-    size: 16,
+    size: SATELLITE_SIZE,
     light: 30,
     lightDistance: 0,
     lightDecay: 0,
@@ -351,12 +350,11 @@ function createSatelliteState() {
     };
 
     const satGroup = new THREE.Group();
-    const boost = scaledCfg.boost ?? 1;
     const color = new THREE.Color(scaledCfg.color);
 
     const pointLight = new THREE.PointLight(
       scaledCfg.color,
-      scaledCfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE * boost,
+      scaledCfg.light * TREE_LIGHT_MULT * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE,
       scaledCfg.lightDistance,
       scaledCfg.lightDecay
     );
@@ -370,7 +368,7 @@ function createSatelliteState() {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      opacity: 0.374 * SATELLITE_GLOW_SCALE * boost,
+      opacity: 0.374 * SATELLITE_GLOW_SCALE,
       toneMapped: false,
     });
     const outerAura = new THREE.Sprite(outerAuraMaterial);
@@ -383,7 +381,7 @@ function createSatelliteState() {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      opacity: 0.242 * SATELLITE_GLOW_SCALE * boost,
+      opacity: 0.242 * SATELLITE_GLOW_SCALE,
       toneMapped: false,
     });
     const innerAura = new THREE.Sprite(innerAuraMaterial);
@@ -395,43 +393,39 @@ function createSatelliteState() {
       new THREE.MeshStandardMaterial({
         color: scaledCfg.color,
         emissive: scaledCfg.emissive,
-        emissiveIntensity:
-          scaledCfg.emissiveIntensity * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE * boost,
+        emissiveIntensity: scaledCfg.emissiveIntensity * SATELLITE_LIGHT_BOOST * SATELLITE_GLOW_SCALE,
         roughness: 0.25,
         metalness: 0.1,
       })
     );
     visualGroup.add(sphere);
 
-    let lensflare: Lensflare | null = null;
-    if (scaledCfg.color === '#ffffff') {
-      lensflare = new Lensflare();
-      lensflare.addElement(
-        new LensflareElement(
-          flareTexture,
-          220 * TREE_SCENE_SCALE,
-          0.0,
-          color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
-        )
-      );
-      lensflare.addElement(
-        new LensflareElement(
-          flareTexture,
-          120 * TREE_SCENE_SCALE,
-          0.35,
-          new THREE.Color('#ffffff').multiplyScalar(SATELLITE_GLOW_SCALE)
-        )
-      );
-      lensflare.addElement(
-        new LensflareElement(
-          flareTexture,
-          70 * TREE_SCENE_SCALE,
-          0.65,
-          color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
-        )
-      );
-      visualGroup.add(lensflare);
-    }
+    const lensflare = new Lensflare();
+    lensflare.addElement(
+      new LensflareElement(
+        flareTexture,
+        220 * TREE_SCENE_SCALE,
+        0.0,
+        color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
+      )
+    );
+    lensflare.addElement(
+      new LensflareElement(
+        flareTexture,
+        120 * TREE_SCENE_SCALE,
+        0.35,
+        new THREE.Color('#ffffff').multiplyScalar(SATELLITE_GLOW_SCALE)
+      )
+    );
+    lensflare.addElement(
+      new LensflareElement(
+        flareTexture,
+        70 * TREE_SCENE_SCALE,
+        0.65,
+        color.clone().multiplyScalar(SATELLITE_GLOW_SCALE)
+      )
+    );
+    visualGroup.add(lensflare);
 
     satGroup.add(visualGroup);
     group.add(satGroup);
