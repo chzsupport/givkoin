@@ -248,7 +248,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     onValidHit,
     backgroundSrc = '/relax.mp4',
     reactionSrc = '/atack.mp4',
-    silhouetteSrc = '/gorilla_silhouette.svg',
+    silhouetteSrc = '/www.svg',
     performanceTier = 'high',
     pointerEvents = 'none',
     className = '',
