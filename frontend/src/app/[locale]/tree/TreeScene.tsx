@@ -827,8 +827,8 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
     controls.dampingFactor = 0.08;
     controls.target.set(0, 210, 0);
 
-    scene.add(new THREE.HemisphereLight('#8cc8ff', '#09050e', 0.56));
-    const fillLight = new THREE.DirectionalLight('#bfe9ff', 0.38);
+    scene.add(new THREE.HemisphereLight('#8cc8ff', '#09050e', 0));
+    const fillLight = new THREE.DirectionalLight('#bfe9ff', 0);
     fillLight.position.set(-180, 320, 220);
     scene.add(fillLight);
 
