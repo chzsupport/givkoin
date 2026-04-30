@@ -189,13 +189,14 @@ function SilhouettePositioningOverlay({ silhouetteSrc }: { silhouetteSrc: string
         maskSize: '100% 100%',
         WebkitMaskPosition: 'center',
         maskPosition: 'center',
-        backgroundColor: '#ffff00',
-        opacity: 0,
+        backgroundColor: '#9efcff',
+        opacity: 0.42,
         mixBlendMode: 'screen',
+        filter: 'drop-shadow(0 0 8px rgba(180,255,255,0.82)) drop-shadow(0 0 18px rgba(70,160,255,0.6))',
     };
 
     return (
-        <div className="absolute inset-0 z-5 pointer-events-none" style={{ transform: SILHOUETTE_TRANSFORM }}>
+        <div className="absolute inset-0 z-12 pointer-events-none" style={{ transform: SILHOUETTE_TRANSFORM }}>
             <div className="w-full h-full" style={style} />
         </div>
     );

@@ -2587,7 +2587,7 @@ export default function BattlePage() {
         [performanceTier]
     );
     const treePosition = useMemo<[number, number, number]>(
-        () => (performanceTier === 'low' ? [0, -155, -100] : [0, -147, -100]),
+        () => (performanceTier === 'low' ? [0, -139.5, -100] : [0, -132.3, -100]),
         [performanceTier]
     );
     const domeState = useMemo(
