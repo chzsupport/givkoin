@@ -40,11 +40,12 @@ const WEAPON_TRIGGER_THRESHOLDS: Record<WeaponId, number> = {
     3: 1,
 };
 
-const SILHOUETTE_SCALE = (40131 / 80000) * 0.98 * 0.95;
+const SILHOUETTE_SCALE_Y = (40131 / 80000) * 0.98 * 0.95;
+const SILHOUETTE_SCALE_X = SILHOUETTE_SCALE_Y * 0.7;
 const SILHOUETTE_OFFSET_X_PERCENT = 1;
 const SILHOUETTE_OFFSET_Y_PERCENT = -31;
 const SILHOUETTE_TRANSFORM = 'translate(1px, -2px)';
-const SILHOUETTE_MASK_SIZE = `${SILHOUETTE_SCALE * 100}% ${SILHOUETTE_SCALE * 100}%`;
+const SILHOUETTE_MASK_SIZE = `${SILHOUETTE_SCALE_X * 100}% ${SILHOUETTE_SCALE_Y * 100}%`;
 const SILHOUETTE_MASK_POSITION = `calc(50% + ${SILHOUETTE_OFFSET_X_PERCENT}%) calc(50% + ${SILHOUETTE_OFFSET_Y_PERCENT}%)`;
 const REACTION_FADE_DURATION_MS = 600;
 const VIDEO_ASPECT_RATIO = 16 / 9;
@@ -325,11 +326,12 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
 
         // CSS mask-position проценты считаются от свободного места, а не от всего экрана.
         // Здесь повторяем ту же математику, чтобы попадание совпадало с тем, что видно.
-        const freeSpace = 1 - SILHOUETTE_SCALE;
-        const left = freeSpace * (0.5 + (SILHOUETTE_OFFSET_X_PERCENT / 100));
-        const top = freeSpace * (0.5 + (SILHOUETTE_OFFSET_Y_PERCENT / 100));
-        const localX = (coverPoint.nx - left) / SILHOUETTE_SCALE;
-        const localYFromTop = (coverPoint.topBasedY - top) / SILHOUETTE_SCALE;
+        const freeSpaceX = 1 - SILHOUETTE_SCALE_X;
+        const freeSpaceY = 1 - SILHOUETTE_SCALE_Y;
+        const left = freeSpaceX * (0.5 + (SILHOUETTE_OFFSET_X_PERCENT / 100));
+        const top = freeSpaceY * (0.5 + (SILHOUETTE_OFFSET_Y_PERCENT / 100));
+        const localX = (coverPoint.nx - left) / SILHOUETTE_SCALE_X;
+        const localYFromTop = (coverPoint.topBasedY - top) / SILHOUETTE_SCALE_Y;
 
         if (localX < 0 || localX > 1 || localYFromTop < 0 || localYFromTop > 1) {
             return null;
