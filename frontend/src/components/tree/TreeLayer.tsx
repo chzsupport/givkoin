@@ -5248,9 +5248,6 @@ const MANUAL_LEAF_POINTS_TEXT = `
 [0] [leaf-point] 106.16038463524140 240.05854380989118 -10.36502362787152
 `;
 
-const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
-(useGLTF as unknown as { setDecoderPath: (path: string) => void }).setDecoderPath(DRACO_DECODER_PATH);
-
 function hslToRgb(h: number, s: number, l: number): THREE.Color {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
@@ -5938,7 +5935,7 @@ function SceneBloom() {
 
 function TreeModel({ rotate = true }: { rotate?: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const { scene: loadedScene } = useGLTF('/tree.glb', true);
+  const { scene: loadedScene } = useGLTF('/tree.glb');
 
   const { scene, sceneBounds } = useMemo(() => {
     const cloned = loadedScene.clone(true);

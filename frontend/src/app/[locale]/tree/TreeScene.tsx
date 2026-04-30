@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -83,7 +82,6 @@ type SatelliteState = {
 
 const TREE_PATH = '/tree.glb';
 const COORDINATE_PATH = '/api/tree-coordinate';
-const DRACO_PATH = '/draco/';
 const BASE_TREE_TARGET_SIZE = 420;
 const TREE_SCENE_SCALE = 0.8;
 const TREE_SCENE_LIFT_RATIO = 0.05;
@@ -729,22 +727,15 @@ async function loadLeafPoints() {
 
 async function loadTree() {
   const loader = new GLTFLoader();
-  const dracoLoader = new DRACOLoader();
-  dracoLoader.setDecoderPath(DRACO_PATH);
-  dracoLoader.setDecoderConfig({ type: 'js' });
-  dracoLoader.preload();
-  loader.setDRACOLoader(dracoLoader);
 
   return new Promise<THREE.Group>((resolve, reject) => {
     loader.load(
       TREE_PATH,
       (gltf) => {
-        dracoLoader.dispose();
         resolve(gltf.scene.clone(true));
       },
       undefined,
       (error) => {
-        dracoLoader.dispose();
         reject(error);
       }
     );
