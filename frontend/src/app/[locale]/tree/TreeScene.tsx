@@ -111,6 +111,7 @@ const SATELLITE_MID_SIZE = SATELLITE_SIZE / 1.5;
 const SATELLITE_TOP_Y = 377;
 const SATELLITE_BOTTOM_Y = 72;
 const SATELLITE_VERTICAL_STEP = (SATELLITE_TOP_Y - SATELLITE_BOTTOM_Y) / 4;
+const SATELLITE_MIRROR_PHASE_SHIFT = Math.PI;
 const SATELLITE_BOB_AMP = 6 * TREE_SCENE_SCALE;
 const SATELLITE_AURA_OUTER_SCALE = 3.0;
 const TREE_LIGHT_MULT_PCT = 18;
@@ -149,8 +150,8 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     phase: (Math.PI * 2) / 5,
   },
   {
-    color: '#f7fbff',
-    emissive: '#ffffff',
+    color: '#78a8ff',
+    emissive: '#2d63ff',
     emissiveIntensity: 3.2,
     y: SATELLITE_TOP_Y - SATELLITE_VERTICAL_STEP * 2,
     size: SATELLITE_SIZE,
@@ -179,8 +180,8 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     phase: (Math.PI * 6) / 5,
   },
   {
-    color: '#78a8ff',
-    emissive: '#2d63ff',
+    color: '#f7fbff',
+    emissive: '#ffffff',
     emissiveIntensity: 3.2,
     y: SATELLITE_BOTTOM_Y,
     size: SATELLITE_SMALL_SIZE,
@@ -192,6 +193,36 @@ const SATELLITE_CONFIGS: SatelliteCfg[] = [
     speed: 0.7,
     dir: 1,
     phase: (Math.PI * 8) / 5,
+  },
+  {
+    color: '#d1a0ff',
+    emissive: '#8b4dff',
+    emissiveIntensity: 3.2,
+    y: SATELLITE_TOP_Y - SATELLITE_VERTICAL_STEP * 3,
+    size: SATELLITE_MID_SIZE,
+    light: 26,
+    treeLightScale: 900,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 262.5,
+    speed: 0.62,
+    dir: -1,
+    phase: (Math.PI * 6) / 5 + SATELLITE_MIRROR_PHASE_SHIFT,
+  },
+  {
+    color: '#f7fbff',
+    emissive: '#ffffff',
+    emissiveIntensity: 3.2,
+    y: SATELLITE_BOTTOM_Y,
+    size: SATELLITE_SMALL_SIZE,
+    light: 26,
+    treeLightScale: 1500,
+    lightDistance: 420,
+    lightDecay: 1.3,
+    radius: 285,
+    speed: 0.7,
+    dir: 1,
+    phase: (Math.PI * 8) / 5 + SATELLITE_MIRROR_PHASE_SHIFT,
   },
 ];
 
