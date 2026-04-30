@@ -42,7 +42,7 @@ const WEAPON_TRIGGER_THRESHOLDS: Record<WeaponId, number> = {
 
 const SILHOUETTE_SCALE = 40131 / 80000;
 const SILHOUETTE_OFFSET_X_PERCENT = -0.5;
-const SILHOUETTE_OFFSET_Y_PERCENT = -23;
+const SILHOUETTE_OFFSET_Y_PERCENT = -26;
 const SILHOUETTE_TRANSFORM = 'translate(1px, -2px)';
 const SILHOUETTE_MASK_SIZE = `${SILHOUETTE_SCALE * 100}% ${SILHOUETTE_SCALE * 100}%`;
 const SILHOUETTE_MASK_POSITION = `calc(50% + ${SILHOUETTE_OFFSET_X_PERCENT}%) calc(50% + ${SILHOUETTE_OFFSET_Y_PERCENT}%)`;
@@ -282,19 +282,21 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     const mapPointToSilhouette = useCallback((worldX: number, worldY: number) => {
         const { nx, ny } = normalizePointToOutline(worldX, worldY);
         if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+        if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
 
-        const offsetX = SILHOUETTE_OFFSET_X_PERCENT / 100;
-        const offsetY = SILHOUETTE_OFFSET_Y_PERCENT / 100;
-        const left = ((1 - SILHOUETTE_SCALE) / 2) + offsetX;
-        const bottom = ((1 - SILHOUETTE_SCALE) / 2) - offsetY;
+        // CSS mask-position проценты считаются от свободного места, а не от всего экрана.
+        // Здесь повторяем ту же математику, чтобы попадание совпадало с тем, что видно.
+        const freeSpace = 1 - SILHOUETTE_SCALE;
+        const left = freeSpace * (0.5 + (SILHOUETTE_OFFSET_X_PERCENT / 100));
+        const top = freeSpace * (0.5 + (SILHOUETTE_OFFSET_Y_PERCENT / 100));
         const localX = (nx - left) / SILHOUETTE_SCALE;
-        const localY = (ny - bottom) / SILHOUETTE_SCALE;
+        const localYFromTop = ((1 - ny) - top) / SILHOUETTE_SCALE;
 
-        if (localX < 0 || localX > 1 || localY < 0 || localY > 1) {
+        if (localX < 0 || localX > 1 || localYFromTop < 0 || localYFromTop > 1) {
             return null;
         }
 
-        return { nx, ny, localX, localY };
+        return { nx, ny, localX, localY: 1 - localYFromTop };
     }, []);
 
     useEffect(() => {
