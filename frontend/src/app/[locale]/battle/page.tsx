@@ -643,8 +643,8 @@ export default function BattlePage() {
             scale: treeScale,
             position: treePosition,
         },
-        silhouette: getBattleSilhouetteLayout(battleViewportLayout),
-    }), [battleViewportLayout, domeBlinkAt, domeCenter, domeRadius, domeVisualScale, treePosition, treeScale]);
+        silhouette: getBattleSilhouetteLayout(battleViewportLayout, { mobile: useMobileBattleVideos }),
+    }), [battleViewportLayout, domeBlinkAt, domeCenter, domeRadius, domeVisualScale, treePosition, treeScale, useMobileBattleVideos]);
     const battleVideoSources = useMemo(
         () => (
             useMobileBattleVideos

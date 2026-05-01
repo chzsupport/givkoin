@@ -71,6 +71,10 @@ export type BattleSceneLayout = {
   silhouette: BattleSilhouetteLayout;
 };
 
+type BattleSilhouetteOptions = {
+  mobile?: boolean;
+};
+
 export function getBattleViewportLayout(width?: number, height?: number): BattleViewportLayout {
   const safeWidth = Math.max(1, Math.round(Number(width) || BATTLE_REFERENCE_WIDTH));
   const safeHeight = Math.max(1, Math.round(Number(height) || BATTLE_REFERENCE_HEIGHT));
@@ -95,9 +99,13 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
   };
 }
 
-export function getBattleSilhouetteLayout(viewport: BattleViewportLayout): BattleSilhouetteLayout {
-  const widthPx = BASE_SILHOUETTE_WIDTH_PX * viewport.scale;
-  const heightPx = BASE_SILHOUETTE_HEIGHT_PX * viewport.scale;
+export function getBattleSilhouetteLayout(
+  viewport: BattleViewportLayout,
+  options?: BattleSilhouetteOptions,
+): BattleSilhouetteLayout {
+  const mobileScale = options?.mobile ? 2 : 1;
+  const widthPx = BASE_SILHOUETTE_WIDTH_PX * viewport.scale * mobileScale;
+  const heightPx = BASE_SILHOUETTE_HEIGHT_PX * viewport.scale * mobileScale;
   const centerX = (viewport.coverWidth / 2) + (BASE_SILHOUETTE_CENTER_OFFSET_X_PX * viewport.scale);
   const centerY = (viewport.coverHeight / 2) + (BASE_SILHOUETTE_CENTER_OFFSET_Y_PX * viewport.scale);
   const leftPx = centerX - (widthPx / 2);
