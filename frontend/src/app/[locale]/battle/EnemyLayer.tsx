@@ -674,7 +674,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                         top: `${silhouetteLayout.topPx}px`,
                         width: `${silhouetteLayout.widthPx}px`,
                         height: `${silhouetteLayout.heightPx}px`,
-                        opacity: 0.42,
+                        opacity: 0.72,
                         mixBlendMode: 'screen',
                     }}
                 >
@@ -686,7 +686,8 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                         draggable={false}
                         style={{
                             objectFit: 'fill',
-                            filter: 'drop-shadow(0 0 12px rgba(0,255,255,0.35)) drop-shadow(0 0 22px rgba(0,153,255,0.22))',
+                            filter:
+                                'brightness(0) invert(1) drop-shadow(0 0 14px rgba(255,255,255,0.42)) drop-shadow(0 0 26px rgba(120,220,255,0.28))',
                         }}
                     />
                 </div>
