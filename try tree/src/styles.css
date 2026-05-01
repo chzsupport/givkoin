@@ -1,0 +1,153 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(92, 128, 93, 0.28), transparent 34%),
+    linear-gradient(180deg, #040709 0%, #07110d 45%, #020302 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  color: #eef6de;
+}
+
+.app-shell {
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.tree-workspace {
+  width: min(100%, 1180px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tree-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(196, 229, 156, 0.18);
+  border-radius: 18px;
+  background: rgba(10, 17, 13, 0.82);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.tree-toolbar-copy h1,
+.tree-toolbar-copy p {
+  margin: 0;
+}
+
+.tree-toolbar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tree-toolbar-copy h1 {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.tree-toolbar-copy p {
+  font-size: 14px;
+  color: rgba(238, 246, 222, 0.8);
+}
+
+.tree-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 16px;
+  background: linear-gradient(180deg, #cce878 0%, #7eb44e 100%);
+  color: #142008;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tree-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.tree-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.tree-stack {
+  position: relative;
+  width: min(92vw, 980px);
+  aspect-ratio: 2054 / 2185;
+}
+
+.tree-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 30px 80px rgba(111, 189, 86, 0.18));
+}
+
+.leaf-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.leaf-overlay.is-dragging {
+  cursor: grabbing;
+}
+
+.tree-status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 240px;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(5, 9, 6, 0.84);
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
+}
+
+@media (max-width: 820px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .tree-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tree-button {
+    width: 100%;
+  }
+}
