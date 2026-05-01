@@ -122,63 +122,6 @@ function ImpactFlashLayer({ flashes }: { flashes: ImpactFlash[] }) {
   );
 }
 
-function HitFlashOverlay({
-  flashKey,
-  silhouetteSrc,
-}: {
-  flashKey: number;
-  silhouetteSrc: string;
-}) {
-  const [visible, setVisible] = useState(false);
-  const [pulse, setPulse] = useState(0);
-
-  useEffect(() => {
-    if (!flashKey) return;
-    setVisible(true);
-    setPulse(0);
-    let frame = 0;
-    const interval = setInterval(() => {
-      frame += 1;
-      setPulse(frame / 20);
-      if (frame >= 20) {
-        clearInterval(interval);
-        setVisible(false);
-      }
-    }, 20);
-    return () => clearInterval(interval);
-  }, [flashKey]);
-
-  if (ENEMY_ZONES.length === 0) return null;
-  const maskUrl = `url("${silhouetteSrc}")`;
-  const outlineStyle: CSSProperties = {
-    WebkitMaskImage: maskUrl,
-    maskImage: maskUrl,
-    WebkitMaskRepeat: 'no-repeat',
-    maskRepeat: 'no-repeat',
-    WebkitMaskSize: '100% 100%',
-    maskSize: '100% 100%',
-    WebkitMaskPosition: 'center',
-    maskPosition: 'center',
-    background: 'transparent',
-    boxShadow: `
-      inset 0 0 0 ${2 + pulse * 4}px #00ffff,
-      inset 0 0 ${20 + pulse * 30}px ${2 + pulse * 3}px #00ffff,
-      0 0 ${8 + pulse * 12}px #00ffff,
-      0 0 ${16 + pulse * 20}px #0099ff
-    `,
-    filter: `drop-shadow(0 0 ${8 + pulse * 10}px #00ffff) drop-shadow(0 0 ${16 + pulse * 15}px #0099ff)`,
-    mixBlendMode: 'screen',
-    opacity: visible ? Math.max(0, 1 - pulse * 0.5) : 0,
-    transition: 'opacity 50ms linear',
-  };
-
-  return (
-    <div className="absolute inset-0 z-16 pointer-events-none" style={{ transform: SILHOUETTE_TRANSFORM }}>
-      <div className="w-full h-full" style={outlineStyle} />
-    </div>
-  );
-}
-
 function DebugGridOverlay() {
   if (ENEMY_ZONES.length === 0) return null;
   const outline = ENEMY_ZONES[0];
@@ -221,7 +164,6 @@ export function EnemyLayer({
   showDebugGrid = false,
 }: EnemyLayerProps) {
   const [enemyHit, setEnemyHit] = useState(false);
-  const [hitFlashKey, setHitFlashKey] = useState(0);
   const [impactFlashes, setImpactFlashes] = useState<ImpactFlash[]>([]);
   const [reactionOverlayVisible, setReactionOverlayVisible] = useState(false);
   const [reactionOpacity, setReactionOpacity] = useState(0);
@@ -422,7 +364,6 @@ export function EnemyLayer({
       }
 
       onValidHit?.(event);
-      setHitFlashKey((prev) => prev + 1);
       const { nx, ny } = normalizePointToOutline(worldPoint.x, worldPoint.y);
       if (Number.isFinite(nx) && Number.isFinite(ny)) {
         const newFlash: ImpactFlash = {
@@ -483,7 +424,6 @@ export function EnemyLayer({
         opacity={reactionOpacity}
         src={reactionSrc}
       />
-      <HitFlashOverlay flashKey={hitFlashKey} silhouetteSrc={silhouetteSrc} />
       <ImpactFlashLayer flashes={impactFlashes} />
       {showDebugGrid && <DebugGridOverlay />}
     </div>

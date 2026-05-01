@@ -44,9 +44,6 @@ const SILHOUETTE_SCALE_Y = (40131 / 80000) * 0.98 * 0.95;
 const SILHOUETTE_SCALE_X = SILHOUETTE_SCALE_Y * 0.7 * 0.9 * 0.95 * 0.97 * 0.98 * 0.98;
 const SILHOUETTE_OFFSET_X_PERCENT = 1;
 const SILHOUETTE_OFFSET_Y_PERCENT = -31;
-const SILHOUETTE_TRANSFORM = 'translate(1px, -2px)';
-const SILHOUETTE_MASK_SIZE = `${SILHOUETTE_SCALE_X * 100}% ${SILHOUETTE_SCALE_Y * 100}%`;
-const SILHOUETTE_MASK_POSITION = `calc(50% + ${SILHOUETTE_OFFSET_X_PERCENT}%) calc(50% + ${SILHOUETTE_OFFSET_Y_PERCENT}%)`;
 const REACTION_FADE_DURATION_MS = 600;
 const VIDEO_ASPECT_RATIO = 16 / 9;
 const IMPACT_PULSE_KEYFRAMES = `
@@ -146,68 +143,6 @@ function ImpactFlashLayer({ flashes }: { flashes: ImpactFlash[] }) {
     );
 }
 
-function HitFlashOverlay({
-    flashKey,
-    silhouetteSrc,
-}: {
-    flashKey: number;
-    silhouetteSrc: string;
-}) {
-    if (ENEMY_ZONES.length === 0 || flashKey === 0) return null;
-
-    const maskUrl = `url("${silhouetteSrc}")`;
-    const outlineStyle: CSSProperties = {
-        WebkitMaskImage: maskUrl,
-        maskImage: maskUrl,
-        WebkitMaskRepeat: 'no-repeat',
-        maskRepeat: 'no-repeat',
-        WebkitMaskSize: SILHOUETTE_MASK_SIZE,
-        maskSize: SILHOUETTE_MASK_SIZE,
-        WebkitMaskPosition: SILHOUETTE_MASK_POSITION,
-        maskPosition: SILHOUETTE_MASK_POSITION,
-        background: 'transparent',
-        boxShadow: `
-      inset 0 0 0 4px #00ffff,
-      inset 0 0 30px 5px #00ffff,
-      0 0 15px #00ffff,
-      0 0 25px #0099ff
-    `,
-        mixBlendMode: 'screen',
-        animation: 'hitFlashPulse 300ms ease-out forwards',
-    };
-
-    // key={flashKey} forces React to remount the component, restarting the CSS animation
-    return (
-        <div key={flashKey} className="absolute inset-0 z-16 pointer-events-none" style={{ transform: SILHOUETTE_TRANSFORM }}>
-            <div className="w-full h-full" style={outlineStyle} />
-        </div>
-    );
-}
-
-function SilhouettePositioningOverlay({ silhouetteSrc }: { silhouetteSrc: string }) {
-    const maskUrl = `url("${silhouetteSrc}")`;
-    const style: CSSProperties = {
-        WebkitMaskImage: maskUrl,
-        maskImage: maskUrl,
-        WebkitMaskRepeat: 'no-repeat',
-        maskRepeat: 'no-repeat',
-        WebkitMaskSize: SILHOUETTE_MASK_SIZE,
-        maskSize: SILHOUETTE_MASK_SIZE,
-        WebkitMaskPosition: SILHOUETTE_MASK_POSITION,
-        maskPosition: SILHOUETTE_MASK_POSITION,
-        backgroundColor: '#9efcff',
-        opacity: 0.42,
-        mixBlendMode: 'screen',
-        filter: 'drop-shadow(0 0 8px rgba(180,255,255,0.82)) drop-shadow(0 0 18px rgba(70,160,255,0.6))',
-    };
-
-    return (
-        <div className="absolute inset-0 z-12 pointer-events-none" style={{ transform: SILHOUETTE_TRANSFORM }}>
-            <div className="w-full h-full" style={style} />
-        </div>
-    );
-}
-
 function DebugGridOverlay() {
     if (ENEMY_ZONES.length === 0) return null;
     const outline = ENEMY_ZONES[0];
@@ -258,7 +193,6 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     weakZone = null,
 }, ref) => {
     const [enemyHit, setEnemyHit] = useState(false);
-    const [hitFlashKey, setHitFlashKey] = useState(0);
     const [impactFlashes, setImpactFlashes] = useState<ImpactFlash[]>([]);
     const [reactionOverlayVisible, setReactionOverlayVisible] = useState(false);
     const [reactionOpacity, setReactionOpacity] = useState(0);
@@ -621,7 +555,6 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                     const merged = [...kept, ...queued];
                     return merged.slice(-12);
                 });
-                setHitFlashKey((prev) => prev + 1);
             }, flushDelayMs);
         },
         [enemyHit, isLowTier, isPointInsideMask, mapPointToCoverContainer, onValidHit],
@@ -686,8 +619,6 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 {(reactionVideoFailed || disableReactionVideo) && reactionOverlayVisible && (
                     <div className="absolute inset-0 z-10 pointer-events-none bg-red-500/10" />
                 )}
-                <HitFlashOverlay flashKey={hitFlashKey} silhouetteSrc={silhouetteSrc} />
-                <SilhouettePositioningOverlay silhouetteSrc={silhouetteSrc} />
                 <ImpactFlashLayer flashes={impactFlashes} />
                 {weakZone?.active && weakZone.center && (() => {
                     if (!isPointInsideSilhouette(weakZone.center.x, weakZone.center.y)) return null;
