@@ -605,6 +605,7 @@ export default function BattlePage() {
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [rulesModalVisible, setRulesModalVisible] = useState(false);
     const [performanceTier, setPerformanceTier] = useState<'low' | 'medium' | 'high'>('high');
+    const [useMobileBattleVideos, setUseMobileBattleVideos] = useState(false);
     const [isTabVisible, setIsTabVisible] = useState(true);
     const [displayedLumens, setDisplayedLumens] = useState(0);
     const [sparkRewardLumens, setSparkRewardLumens] = useState(100);
@@ -644,6 +645,14 @@ export default function BattlePage() {
         },
         silhouette: getBattleSilhouetteLayout(battleViewportLayout),
     }), [battleViewportLayout, domeBlinkAt, domeCenter, domeRadius, domeVisualScale, treePosition, treeScale]);
+    const battleVideoSources = useMemo(
+        () => (
+            useMobileBattleVideos
+                ? { background: '/relax-mobile.mp4', reaction: '/atack-mobile.mp4' }
+                : { background: '/relax.mp4', reaction: '/atack.mp4' }
+        ),
+        [useMobileBattleVideos],
+    );
 
     const enemyLayerRef = useRef<EnemyLayerHandle>(null);
     const hitIdRef = useRef(0);
@@ -1740,14 +1749,23 @@ export default function BattlePage() {
 
     useEffect(() => {
         const detectTier = () => {
+            const safeWidth = window.innerWidth || BATTLE_REFERENCE_WIDTH;
+            const safeHeight = window.innerHeight || BATTLE_REFERENCE_HEIGHT;
             setViewportSize({
-                width: window.innerWidth || BATTLE_REFERENCE_WIDTH,
-                height: window.innerHeight || BATTLE_REFERENCE_HEIGHT,
+                width: safeWidth,
+                height: safeHeight,
             });
             const nav = navigator as Navigator & { deviceMemory?: number };
             const memory = Number(nav.deviceMemory || 0);
             const cores = Number(nav.hardwareConcurrency || 0);
-            const isMobile = window.innerWidth <= 900;
+            const maxTouchPoints = Number(nav.maxTouchPoints || 0);
+            const hasCoarsePointer = typeof window.matchMedia === 'function'
+                ? window.matchMedia('(pointer: coarse)').matches
+                : false;
+            const isTouchDevice = maxTouchPoints > 0 || hasCoarsePointer;
+            const isMobile = safeWidth <= 900;
+            const longestSide = Math.max(safeWidth, safeHeight);
+            setUseMobileBattleVideos(Boolean(isTouchDevice && longestSide <= 1400));
 
             if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4) || isMobile) {
                 setPerformanceTier('low');
@@ -2683,8 +2701,8 @@ export default function BattlePage() {
                     <EnemyLayer
                         ref={enemyLayerRef}
                         className="z-0"
-                        backgroundSrc="/relax.mp4"
-                        reactionSrc="/atack.mp4"
+                        backgroundSrc={battleVideoSources.background}
+                        reactionSrc={battleVideoSources.reaction}
                         silhouetteSrc="/qwer1.svg"
                         layout={battleLayout}
                         performanceTier={performanceTier}
