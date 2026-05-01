@@ -7,7 +7,7 @@ import { GameScene, type ShotAttemptTelemetry } from './GameScene';
 import { TreeLayer } from './TreeLayer';
 import { BaddieLayer, type Baddie } from './BaddieLayer';
 import type { EnemyHitEvent } from './enemyZones';
-import { ENEMY_OUTLINE, ENEMY_OUTLINE_HEIGHT, ENEMY_OUTLINE_WIDTH } from './enemyZones';
+import { ENEMY_OUTLINE_HEIGHT, ENEMY_OUTLINE_WIDTH } from './enemyZones';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { apiGet, apiPost } from '@/utils/api';
@@ -2555,15 +2555,8 @@ export default function BattlePage() {
         const interval = window.setInterval(tick, tickMs);
         return () => window.clearInterval(interval);
     }, [
-        battleLayout.dome.center.x,
-        battleLayout.dome.center.y,
-        battleLayout.dome.radius,
-        battleLayout.dome.visualScale,
-        battleLayout.dome.worldCenter.x,
-        battleLayout.dome.worldCenter.y,
-        battleLayout.dome.worldRadius,
-        battleLayout.viewport.height,
-        battleLayout.viewport.width,
+        battleLayout.dome,
+        battleLayout.viewport,
         battleScenario?.baddieDamageIntervalMs,
         battleScenario?.baddieDamagePerTick,
         isBattleActive,
