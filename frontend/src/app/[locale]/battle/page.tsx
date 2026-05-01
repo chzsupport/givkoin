@@ -2325,8 +2325,8 @@ export default function BattlePage() {
             const dy = payload.worldPoint.y - worldPoint.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             const radius = Math.max(
-                baddie.size * worldMin * (baddie.attached ? 1.15 : 1.08),
-                worldMin * (baddie.attached ? 0.05 : 0.042),
+                baddie.size * worldMin * (baddie.attached ? 1.05 : 1.08),
+                worldMin * (baddie.attached ? 0.043 : 0.042),
             );
             if (dist < bestDist) {
                 bestDist = dist;
@@ -2471,7 +2471,7 @@ export default function BattlePage() {
 
     useEffect(() => {
         if (!isBattleActive) return;
-        const tickMs = performanceTier === 'medium' ? 110 : 70;
+        const tickMs = performanceTier === 'low' ? 150 : performanceTier === 'medium' ? 110 : 70;
         let lastTime = performance.now();
         const baddieDamageIntervalMs = Math.max(1, battleScenario?.baddieDamageIntervalMs || BADDIE_DAMAGE_INTERVAL);
         const baddieDamagePerTick = Math.max(0, battleScenario?.baddieDamagePerTick || 1);
@@ -2492,26 +2492,19 @@ export default function BattlePage() {
                         const attachAngle = Number.isFinite(baddie.attachedAngle)
                             ? (baddie.attachedAngle || 0)
                             : Math.atan2(baddie.y - centerWorld.y, baddie.x - centerWorld.x);
-                        const attachedWorldPoint = getBattleAttachedWorldPoint(battleLayout.viewport, battleLayout.dome, attachAngle);
-                        const attachX = attachedWorldPoint.x;
-                        const attachY = attachedWorldPoint.y;
                         if (now - baddie.lastDamageAt >= baddieDamageIntervalMs) {
                             damageTicks += baddieDamagePerTick;
                             return {
                                 ...baddie,
-                                x: attachX,
-                                y: attachY,
                                 attachedAngle: attachAngle,
                                 lastDamageAt: now,
                             };
                         }
-                        if (baddie.x === attachX && baddie.y === attachY && baddie.attachedAngle === attachAngle) {
+                        if (baddie.attachedAngle === attachAngle) {
                             return baddie;
                         }
                         return {
                             ...baddie,
-                            x: attachX,
-                            y: attachY,
                             attachedAngle: attachAngle,
                         };
                     }

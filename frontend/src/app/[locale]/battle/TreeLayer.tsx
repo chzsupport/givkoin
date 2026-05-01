@@ -48,6 +48,12 @@ type Bounds3D = {
   maxZ: number;
 };
 
+let cachedBattleLeafPoints: THREE.Vector3[] | null = null;
+let cachedBattleLeafPointsPromise: Promise<THREE.Vector3[]> | null = null;
+let cachedNormalizedBattleTreeTemplate: THREE.Object3D | null = null;
+let cachedNormalizedBattleTreeBounds: Bounds3D | null = null;
+let cachedNormalizedBattleTreeSourceUuid: string | null = null;
+
 const BATTLE_SATELLITE_CONFIGS: BattleSatelliteCfg[] = [
   {
     color: '#ffc95c',
@@ -249,17 +255,69 @@ function normalizeTree(root: THREE.Object3D) {
   return cloned;
 }
 
+function buildSceneBounds(root: THREE.Object3D): Bounds3D {
+  const bounds = new THREE.Box3().setFromObject(root);
+  return {
+    minX: Number.isFinite(bounds.min.x) ? bounds.min.x : 0,
+    maxX: Number.isFinite(bounds.max.x) ? bounds.max.x : 0,
+    minY: Number.isFinite(bounds.min.y) ? bounds.min.y : 0,
+    maxY: Number.isFinite(bounds.max.y) ? bounds.max.y : 0,
+    minZ: Number.isFinite(bounds.min.z) ? bounds.min.z : 0,
+    maxZ: Number.isFinite(bounds.max.z) ? bounds.max.z : 0,
+  };
+}
+
+function getNormalizedBattleTree(root: THREE.Object3D) {
+  if (
+    !cachedNormalizedBattleTreeTemplate
+    || !cachedNormalizedBattleTreeBounds
+    || cachedNormalizedBattleTreeSourceUuid !== root.uuid
+  ) {
+    const normalized = normalizeTree(root);
+    cachedNormalizedBattleTreeTemplate = normalized;
+    cachedNormalizedBattleTreeBounds = buildSceneBounds(normalized);
+    cachedNormalizedBattleTreeSourceUuid = root.uuid;
+  }
+
+  return {
+    scene: cachedNormalizedBattleTreeTemplate.clone(true),
+    sceneBounds: { ...cachedNormalizedBattleTreeBounds! },
+  };
+}
+
+function loadBattleLeafPoints() {
+  if (cachedBattleLeafPoints) {
+    return Promise.resolve(cachedBattleLeafPoints);
+  }
+  if (cachedBattleLeafPointsPromise) {
+    return cachedBattleLeafPointsPromise;
+  }
+
+  cachedBattleLeafPointsPromise = fetch(LEAF_POINTS_PATH)
+    .then((response) => response.text())
+    .then((text) => {
+      const points = scaleLeafPoints(parseLeafPoints(text));
+      cachedBattleLeafPoints = points;
+      return points;
+    })
+    .catch((error) => {
+      cachedBattleLeafPointsPromise = null;
+      throw error;
+    });
+
+  return cachedBattleLeafPointsPromise;
+}
+
 function useLeafPoints() {
   const [points, setPoints] = useState<THREE.Vector3[]>([]);
 
   useEffect(() => {
     let active = true;
 
-    fetch(LEAF_POINTS_PATH)
-      .then((response) => response.text())
-      .then((text) => {
+    loadBattleLeafPoints()
+      .then((loadedPoints) => {
         if (!active) return;
-        setPoints(scaleLeafPoints(parseLeafPoints(text)));
+        setPoints(loadedPoints);
       })
       .catch((error) => {
         console.error('Failed to load battle leaf points:', error);
@@ -434,19 +492,7 @@ function BattleTreeSystem({
   const leafPoints = useLeafPoints();
 
   const { scene, sceneBounds } = useMemo(() => {
-    const normalized = normalizeTree(loadedScene);
-    const bounds = new THREE.Box3().setFromObject(normalized);
-    return {
-      scene: normalized,
-      sceneBounds: {
-        minX: Number.isFinite(bounds.min.x) ? bounds.min.x : 0,
-        maxX: Number.isFinite(bounds.max.x) ? bounds.max.x : 0,
-        minY: Number.isFinite(bounds.min.y) ? bounds.min.y : 0,
-        maxY: Number.isFinite(bounds.max.y) ? bounds.max.y : 0,
-        minZ: Number.isFinite(bounds.min.z) ? bounds.min.z : 0,
-        maxZ: Number.isFinite(bounds.max.z) ? bounds.max.z : 0,
-      },
-    };
+    return getNormalizedBattleTree(loadedScene);
   }, [loadedScene]);
 
   const contentOffset = useMemo<[number, number, number]>(() => {

@@ -8,6 +8,8 @@ const { getSupabaseClient } = require('../lib/supabaseClient');
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const BATTLE_REPORT_SECRET = String(process.env.BATTLE_REPORT_SECRET || 'givkoin_battle_secret_key_2026').trim();
 const HEARTBEAT_BATTLE_CACHE_TTL_MS = 5000;
+const CURRENT_BATTLE_SHARED_CACHE_TTL_MS = 3000;
+const CURRENT_BATTLE_PERSONAL_CACHE_TTL_MS = 1200;
 const BATTLE_JOIN_BATCH_SIZE = 100;
 const BATTLE_JOIN_BATCH_DELAY_MS = 2000;
 const BATTLE_JOIN_TICKET_TTL_MS = 10 * 60 * 1000;
@@ -17,6 +19,12 @@ const battleJoinPayloadCache = new Map();
 const battleJoinQueueState = new Map();
 const battleFinalReportCapacityState = new Map();
 const battleFinalReportProgressState = new Map();
+let currentBattleSharedCache = {
+    battle: null,
+    upcoming: null,
+    expiresAtMs: 0,
+};
+const currentBattlePersonalCache = new Map();
 
 function normalizeLang(value) {
     return value === 'en' ? 'en' : 'ru';
@@ -24,6 +32,84 @@ function normalizeLang(value) {
 
 function pickLang(lang, ru, en) {
     return normalizeLang(lang) === 'en' ? en : ru;
+}
+
+function clearCurrentBattlePersonalCache({ battleId = null, userId = null } = {}) {
+    const safeBattleId = String(battleId || '').trim();
+    const safeUserId = String(userId || '').trim();
+    if (!safeBattleId && !safeUserId) {
+        currentBattlePersonalCache.clear();
+        return;
+    }
+
+    for (const key of currentBattlePersonalCache.keys()) {
+        const [cachedBattleId, cachedUserId] = String(key || '').split(':');
+        if (safeBattleId && cachedBattleId !== safeBattleId) continue;
+        if (safeUserId && cachedUserId !== safeUserId) continue;
+        currentBattlePersonalCache.delete(key);
+    }
+}
+
+function primeCurrentBattleSharedCache({ battle = null, upcoming = null, nowMs = Date.now() } = {}) {
+    currentBattleSharedCache = {
+        battle,
+        upcoming,
+        expiresAtMs: nowMs + CURRENT_BATTLE_SHARED_CACHE_TTL_MS,
+    };
+}
+
+async function getCachedCurrentBattleShared(nowMs = Date.now()) {
+    if (currentBattleSharedCache.expiresAtMs > nowMs) {
+        return {
+            battle: currentBattleSharedCache.battle || null,
+            upcoming: currentBattleSharedCache.upcoming || null,
+        };
+    }
+
+    const battle = await battleService.getCurrentBattle();
+    if (!battle) {
+        const upcoming = await battleService.getUpcomingBattle();
+        primeCurrentBattleSharedCache({ battle: null, upcoming, nowMs });
+        return { battle: null, upcoming };
+    }
+
+    primeCurrentBattleSharedCache({ battle, upcoming: null, nowMs });
+    return { battle, upcoming: null };
+}
+
+async function getCachedCurrentBattlePersonal({ battleId, userId, fallbackUser = null, nowMs = Date.now() }) {
+    const safeBattleId = String(battleId || '').trim();
+    const safeUserId = String(userId || '').trim();
+
+    if (!safeBattleId || !safeUserId) {
+        return {
+            attendanceEntry: null,
+            personalState: buildBattlePersonalStatePayload(null, fallbackUser),
+        };
+    }
+
+    const cacheKey = `${safeBattleId}:${safeUserId}`;
+    const cached = currentBattlePersonalCache.get(cacheKey);
+    if (cached && cached.expiresAtMs > nowMs) {
+        return {
+            attendanceEntry: cached.attendanceEntry || null,
+            personalState: cached.personalState || buildBattlePersonalStatePayload(cached.attendanceEntry || null, fallbackUser),
+        };
+    }
+
+    const attendanceEntry = await getAttendanceRuntimeSnapshot({
+        battleId: safeBattleId,
+        userId: safeUserId,
+    }).catch(() => null);
+    const personalState = buildBattlePersonalStatePayload(attendanceEntry, fallbackUser);
+
+    currentBattlePersonalCache.set(cacheKey, {
+        attendanceEntry,
+        personalState,
+        expiresAtMs: nowMs + CURRENT_BATTLE_PERSONAL_CACHE_TTL_MS,
+    });
+
+    return { attendanceEntry, personalState };
 }
 
 function getBattleFinalReportCapacityState(battleId) {
@@ -2041,16 +2127,16 @@ async function finalizeComboIfExpired({ battleId, userId, at, entry: inputEntry 
 exports.getCurrentBattle = async (req, res) => {
     try {
         const nowMs = Date.now();
-        let battle = await battleService.getCurrentBattle();
+        const { battle, upcoming } = await getCachedCurrentBattleShared(nowMs);
         if (!battle) {
-            const upcoming = await battleService.getUpcomingBattle();
             return res.json({ status: 'none', upcoming });
         }
-        const attendanceEntry = await getAttendanceRuntimeSnapshot({
+        const { attendanceEntry, personalState } = await getCachedCurrentBattlePersonal({
             battleId: battle._id,
             userId: req.user?._id,
-        }).catch(() => null);
-        const personalState = buildBattlePersonalStatePayload(attendanceEntry, req.user || null);
+            fallbackUser: req.user || null,
+            nowMs,
+        });
 
         const endsAtMs = battle?.endsAt ? new Date(battle.endsAt).getTime() : NaN;
         const battlePublic = serializeBattleForClient(battle, { includeScenario: true });
@@ -2458,8 +2544,15 @@ exports.joinBattle = async (req, res) => {
             battle: updatedBattle,
             expiresAtMs: Date.now() + HEARTBEAT_BATTLE_CACHE_TTL_MS,
         });
+        primeCurrentBattleSharedCache({ battle: updatedBattle });
+        clearCurrentBattlePersonalCache({ battleId: updatedBattle._id });
         releaseBattleJoinSlot({ battleId: updatedBattle._id, userId: req.user._id });
         const personalState = buildBattlePersonalStatePayload(attendanceReady?.entry || null, userData);
+        currentBattlePersonalCache.set(`${String(updatedBattle._id)}:${String(req.user._id)}`, {
+            attendanceEntry: attendanceReady?.entry || null,
+            personalState,
+            expiresAtMs: Date.now() + CURRENT_BATTLE_PERSONAL_CACHE_TTL_MS,
+        });
 
         res.json({
             ok: true,

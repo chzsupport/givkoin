@@ -278,6 +278,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             const backgroundVideo = videoRef.current;
             backgroundVideo.loop = true;
             backgroundVideo.muted = true;
+            setBackgroundVideoFailed(false);
             const syncVisibilityPlayback = () => {
                 if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
                     backgroundVideo.pause();
@@ -290,30 +291,54 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                     });
                 }
             };
-            const playbackWatchdogMs = isLowTier ? 9000 : performanceTier === 'medium' ? 6500 : 5000;
-            const playbackWatchdog = window.setTimeout(() => {
+            const softRetryDelayMs = isLowTier ? 11000 : performanceTier === 'medium' ? 9000 : 7000;
+            const hardFallbackDelayMs = isLowTier ? 24000 : performanceTier === 'medium' ? 18000 : 15000;
+            const requestVideoRetry = () => {
                 const video = backgroundVideo;
                 if (!video) return;
-                if (video.readyState < 2) {
+                video.load();
+                video.play().catch(() => {
+                    /* autoplay guard */
+                });
+            };
+            const softRetryTimer = window.setTimeout(() => {
+                const video = backgroundVideo;
+                if (!video || video.readyState >= 2 || video.error) return;
+                if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                requestVideoRetry();
+            }, softRetryDelayMs);
+            const hardFallbackTimer = window.setTimeout(() => {
+                const video = backgroundVideo;
+                if (!video || video.readyState >= 2) return;
+                if (video.error || video.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
                     setBackgroundVideoFailed(true);
                 }
-            }, playbackWatchdogMs);
+            }, hardFallbackDelayMs);
 
             syncVisibilityPlayback();
             const handleReady = () => {
-                window.clearTimeout(playbackWatchdog);
+                window.clearTimeout(softRetryTimer);
+                window.clearTimeout(hardFallbackTimer);
                 setBackgroundVideoFailed(false);
+            };
+            const handleError = () => {
+                window.clearTimeout(softRetryTimer);
+                window.clearTimeout(hardFallbackTimer);
+                setBackgroundVideoFailed(true);
             };
             backgroundVideo.addEventListener('loadeddata', handleReady);
             backgroundVideo.addEventListener('canplay', handleReady);
             backgroundVideo.addEventListener('playing', handleReady);
+            backgroundVideo.addEventListener('error', handleError);
             document.addEventListener('visibilitychange', syncVisibilityPlayback);
 
             return () => {
-                window.clearTimeout(playbackWatchdog);
+                window.clearTimeout(softRetryTimer);
+                window.clearTimeout(hardFallbackTimer);
                 backgroundVideo.removeEventListener('loadeddata', handleReady);
                 backgroundVideo.removeEventListener('canplay', handleReady);
                 backgroundVideo.removeEventListener('playing', handleReady);
+                backgroundVideo.removeEventListener('error', handleError);
                 document.removeEventListener('visibilitychange', syncVisibilityPlayback);
                 if (reactionTimeoutRef.current) window.clearTimeout(reactionTimeoutRef.current);
                 if (reactionFadeTimeoutRef.current) window.clearTimeout(reactionFadeTimeoutRef.current);

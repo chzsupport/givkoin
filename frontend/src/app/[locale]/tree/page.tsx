@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost } from '@/utils/api';
 import { useSocket } from '@/hooks/useSocket';
+import { useBattleSocket } from '@/hooks/useBattleSocket';
 import { useRouter } from 'next/navigation';
 import { useStatusTracking } from '@/hooks/useStatusTracking';
 import { useToast } from '@/context/ToastContext';
@@ -84,6 +85,7 @@ export default function TreePage() {
   const toast = useToast();
   const router = useRouter();
   const { t, localePath } = useI18n();
+  const { battleState } = useBattleSocket();
 
   const [isFoundNotice, setIsFoundNotice] = useState(false);
   const [isUnderAttack, setIsUnderAttack] = useState(false);
@@ -342,20 +344,33 @@ export default function TreePage() {
   }, [loadBattleStatus, loadSolarStatus, loadTreeStatus]);
 
   useEffect(() => {
-    void loadBattleStatus().catch((e) => {
-      console.error('Failed to refresh battle status:', e);
-    });
-
-    const timer = window.setInterval(() => {
+    const refreshBattleStatus = () => {
       void loadBattleStatus().catch((e) => {
         console.error('Failed to refresh battle status:', e);
       });
-    }, 15000);
+    };
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        refreshBattleStatus();
+      }
+    };
+
+    window.addEventListener('focus', refreshBattleStatus);
+    window.addEventListener('online', refreshBattleStatus);
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
 
     return () => {
-      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshBattleStatus);
+      window.removeEventListener('online', refreshBattleStatus);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
     };
   }, [loadBattleStatus]);
+
+  useEffect(() => {
+    if (!battleState) return;
+    setIsUnderAttack(String(battleState.active?.status || '') === 'active');
+  }, [battleState]);
 
   // Загружаем реальные данные дерева/солнечного заряда при монтировании
   useEffect(() => {
