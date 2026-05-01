@@ -2703,7 +2703,7 @@ export default function BattlePage() {
                         className="z-0"
                         backgroundSrc={battleVideoSources.background}
                         reactionSrc={battleVideoSources.reaction}
-                        silhouetteSrc="/qwer1.svg"
+                        silhouetteSrc="/qwer1-frame.svg"
                         layout={battleLayout}
                         performanceTier={performanceTier}
                         weakZone={weakZone}

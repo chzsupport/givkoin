@@ -191,7 +191,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     onValidHit,
     backgroundSrc = '/relax.mp4',
     reactionSrc = '/atack.mp4',
-    silhouetteSrc = '/qwer1.svg',
+    silhouetteSrc = '/qwer1-frame.svg',
     layout,
     performanceTier = 'high',
     pointerEvents = 'none',
@@ -232,7 +232,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
         return getBattleViewportLayout(window.innerWidth, window.innerHeight);
     }, [layout]);
 
-    const mapPointToCoverContainer = useCallback((worldX: number, worldY: number) => {
+    const mapPointToVideoContainer = useCallback((worldX: number, worldY: number) => {
         const { nx, ny } = normalizePointToOutline(worldX, worldY);
         if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
         if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
@@ -242,29 +242,27 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             return { nx, ny, topBasedY: 1 - ny };
         }
 
-        const croppedX = (viewport.coverWidth - viewport.width) / 2;
-        const croppedY = (viewport.coverHeight - viewport.height) / 2;
-        const coverX = ((nx * viewport.width) + croppedX) / viewport.coverWidth;
-        const coverTopBasedY = (((1 - ny) * viewport.height) + croppedY) / viewport.coverHeight;
+        const frameX = ((nx * viewport.width) - viewport.frameLeft) / viewport.frameWidth;
+        const frameTopBasedY = (((1 - ny) * viewport.height) - viewport.frameTop) / viewport.frameHeight;
 
-        if (!Number.isFinite(coverX) || !Number.isFinite(coverTopBasedY)) return null;
-        if (coverX < 0 || coverX > 1 || coverTopBasedY < 0 || coverTopBasedY > 1) return null;
+        if (!Number.isFinite(frameX) || !Number.isFinite(frameTopBasedY)) return null;
+        if (frameX < 0 || frameX > 1 || frameTopBasedY < 0 || frameTopBasedY > 1) return null;
 
         return {
-            nx: coverX,
-            ny: 1 - coverTopBasedY,
-            topBasedY: coverTopBasedY,
+            nx: frameX,
+            ny: 1 - frameTopBasedY,
+            topBasedY: frameTopBasedY,
         };
     }, [resolveViewportLayout]);
 
     const mapPointToSilhouette = useCallback((worldX: number, worldY: number) => {
-        const coverPoint = mapPointToCoverContainer(worldX, worldY);
-        if (!coverPoint) return null;
+        const videoPoint = mapPointToVideoContainer(worldX, worldY);
+        if (!videoPoint) return null;
 
         const viewport = resolveViewportLayout();
         const silhouette = layout?.silhouette ?? getBattleSilhouetteLayout(viewport);
-        const pointPxX = coverPoint.nx * viewport.coverWidth;
-        const pointPxY = coverPoint.topBasedY * viewport.coverHeight;
+        const pointPxX = silhouette.leftPx + (videoPoint.nx * silhouette.widthPx);
+        const pointPxY = silhouette.topPx + (videoPoint.topBasedY * silhouette.heightPx);
         const localX = (pointPxX - silhouette.leftPx) / silhouette.widthPx;
         const localYFromTop = (pointPxY - silhouette.topPx) / silhouette.heightPx;
 
@@ -272,8 +270,8 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             return null;
         }
 
-        return { nx: coverPoint.nx, ny: coverPoint.ny, localX, localY: 1 - localYFromTop };
-    }, [layout, mapPointToCoverContainer, resolveViewportLayout]);
+        return { nx: videoPoint.nx, ny: videoPoint.ny, localX, localY: 1 - localYFromTop };
+    }, [layout, mapPointToVideoContainer, resolveViewportLayout]);
 
     useEffect(() => {
         if (reactionVideoRef.current) {
@@ -582,14 +580,13 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 }
             }
 
-            // Use normalized coordinates which now map to full screen
-            const coverPoint = mapPointToCoverContainer(worldPoint.x, worldPoint.y);
+            const videoPoint = mapPointToVideoContainer(worldPoint.x, worldPoint.y);
 
-            if (coverPoint) {
+            if (videoPoint) {
                 impactQueueRef.current.push({
                     id: impactIdRef.current++,
-                    x: coverPoint.nx,
-                    y: coverPoint.ny,
+                    x: videoPoint.nx,
+                    y: videoPoint.ny,
                     at: Date.now(),
                 });
             }
@@ -600,7 +597,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
 
             impactFlushFrameRef.current = window.requestAnimationFrame(flushQueuedImpacts);
         },
-        [enemyHit, flushQueuedImpacts, isPointInsideMask, mapPointToCoverContainer, onValidHit],
+        [enemyHit, flushQueuedImpacts, isPointInsideMask, mapPointToVideoContainer, onValidHit],
     );
 
     const viewportLayout = resolveViewportLayout();
@@ -620,19 +617,21 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             className={`absolute inset-0 overflow-hidden ${className}`}
             style={{ pointerEvents, ...style }}
         >
-            {/* Scaling Container that mimics object-cover */}
+            {/* Shared 16:9 frame for both the video and the silhouette */}
             <div
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                className="absolute overflow-hidden"
                 style={{
-                    width: `max(100%, calc(100vh * ${BATTLE_VIDEO_ASPECT_RATIO}))`,
-                    height: `max(100%, calc(100vw / ${BATTLE_VIDEO_ASPECT_RATIO}))`,
+                    left: `${viewportLayout.frameLeft}px`,
+                    top: `${viewportLayout.frameTop}px`,
+                    width: `${viewportLayout.frameWidth}px`,
+                    height: `${viewportLayout.frameHeight}px`,
                     aspectRatio: `${BATTLE_VIDEO_ASPECT_RATIO}`,
                 }}
             >
                 {!disableBackgroundVideo && (
                     <video
                         ref={videoRef}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         src={backgroundSrc}
                         playsInline
                         muted
@@ -694,14 +693,14 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 <ImpactFlashLayer flashes={impactFlashes} />
                 {weakZone?.active && weakZone.center && (() => {
                     if (!isPointInsideSilhouette(weakZone.center.x, weakZone.center.y)) return null;
-                    const coverPoint = mapPointToCoverContainer(weakZone.center.x, weakZone.center.y);
-                    if (!coverPoint) return null;
+                    const videoPoint = mapPointToVideoContainer(weakZone.center.x, weakZone.center.y);
+                    if (!videoPoint) return null;
                     return (
                         <div
                             className="absolute z-18 pointer-events-none"
                             style={{
-                                left: `${coverPoint.nx * 100}%`,
-                                top: `${(1 - coverPoint.ny) * 100}%`,
+                                left: `${videoPoint.nx * 100}%`,
+                                top: `${(1 - videoPoint.ny) * 100}%`,
                                 transform: 'translate(-50%, -50%)',
                             }}
                         >

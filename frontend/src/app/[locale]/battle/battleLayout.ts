@@ -19,8 +19,10 @@ export type BattleViewportLayout = {
   width: number;
   height: number;
   aspectRatio: number;
-  coverWidth: number;
-  coverHeight: number;
+  frameWidth: number;
+  frameHeight: number;
+  frameLeft: number;
+  frameTop: number;
   scale: number;
 };
 
@@ -65,21 +67,25 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
   const safeHeight = Math.max(1, Math.round(Number(height) || BATTLE_REFERENCE_HEIGHT));
   const aspectRatio = safeWidth / safeHeight;
 
-  const coverWidth =
+  const frameWidth =
     aspectRatio > BATTLE_VIDEO_ASPECT_RATIO
-      ? safeWidth
-      : safeHeight * BATTLE_VIDEO_ASPECT_RATIO;
-  const coverHeight =
+      ? safeHeight * BATTLE_VIDEO_ASPECT_RATIO
+      : safeWidth;
+  const frameHeight =
     aspectRatio > BATTLE_VIDEO_ASPECT_RATIO
-      ? safeWidth / BATTLE_VIDEO_ASPECT_RATIO
-      : safeHeight;
+      ? safeHeight
+      : safeWidth / BATTLE_VIDEO_ASPECT_RATIO;
+  const frameLeft = (safeWidth - frameWidth) / 2;
+  const frameTop = (safeHeight - frameHeight) / 2;
 
   return {
     width: safeWidth,
     height: safeHeight,
     aspectRatio,
-    coverWidth,
-    coverHeight,
+    frameWidth,
+    frameHeight,
+    frameLeft,
+    frameTop,
     scale: Math.min(safeWidth, safeHeight) / BATTLE_REFERENCE_HEIGHT,
   };
 }
@@ -87,20 +93,20 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
 export function getBattleSilhouetteLayout(
   viewport: BattleViewportLayout,
 ): BattleSilhouetteLayout {
-  const leftPx = viewport.coverWidth * VIDEO_FRAME_SILHOUETTE_LEFT_RATIO;
-  const topPx = viewport.coverHeight * VIDEO_FRAME_SILHOUETTE_TOP_RATIO;
-  const widthPx = viewport.coverWidth * VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO;
-  const heightPx = viewport.coverHeight * VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO;
-  const centerOffsetX = (leftPx + (widthPx / 2)) - (viewport.coverWidth / 2);
-  const centerOffsetY = (topPx + (heightPx / 2)) - (viewport.coverHeight / 2);
+  const leftPx = viewport.frameLeft;
+  const topPx = viewport.frameTop;
+  const widthPx = viewport.frameWidth;
+  const heightPx = viewport.frameHeight;
+  const centerOffsetX = (VIDEO_FRAME_SILHOUETTE_LEFT_RATIO + (VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO / 2) - 0.5) * viewport.frameWidth;
+  const centerOffsetY = (VIDEO_FRAME_SILHOUETTE_TOP_RATIO + (VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO / 2) - 0.5) * viewport.frameHeight;
 
   return {
     widthPx,
     heightPx,
     leftPx,
     topPx,
-    scaleX: widthPx / viewport.coverWidth,
-    scaleY: heightPx / viewport.coverHeight,
+    scaleX: 1,
+    scaleY: 1,
     centerOffsetX,
     centerOffsetY,
   };
