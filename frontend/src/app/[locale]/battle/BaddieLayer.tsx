@@ -3,6 +3,10 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ENEMY_OUTLINE, ENEMY_OUTLINE_HEIGHT, ENEMY_OUTLINE_WIDTH } from './enemyZones';
+import {
+    getBattleAttachedWorldPoint,
+    type BattleSceneLayout,
+} from './battleLayout';
 
 export type BaddieShape = 'blob' | 'spike' | 'crystal';
 
@@ -13,14 +17,9 @@ export type Baddie = {
     size: number;
     color: string;
     shape: BaddieShape;
+    attached?: boolean;
+    attachedAngle?: number | null;
     exploding?: boolean;
-};
-
-export type DomeState = {
-    center: { x: number; y: number };
-    radius: number;
-    visualScale: number;
-    blinkAt: number;
 };
 
 const shapeStyles: Record<BaddieShape, React.CSSProperties> = {
@@ -39,20 +38,28 @@ const shapeStyles: Record<BaddieShape, React.CSSProperties> = {
 
 export const BaddieLayer = React.memo(function BaddieLayer({
     baddies,
-    dome,
+    layout,
     coords = 'normalized',
 }: {
     baddies: Baddie[];
-    dome: DomeState;
+    layout: BattleSceneLayout;
     coords?: 'normalized' | 'world';
 }) {
-    const domeSize = `${dome.radius * dome.visualScale * 210}vmin`;
-    const domeGlow = dome.blinkAt > 0;
+    const domeGlow = layout.dome.blinkAt > 0;
+    const domeSize = `${layout.dome.radius * layout.dome.visualScale * 210}vmin`;
+
+    const getWorldPosition = (baddie: Baddie) => {
+        if (baddie.attached && Number.isFinite(baddie.attachedAngle)) {
+            return getBattleAttachedWorldPoint(layout.viewport, layout.dome, baddie.attachedAngle || 0);
+        }
+        return { x: baddie.x, y: baddie.y };
+    };
 
     const normalizeBaddie = (baddie: Baddie) => {
         if (coords === 'world') {
-            const nx = (baddie.x - ENEMY_OUTLINE.minX) / ENEMY_OUTLINE_WIDTH;
-            const ny = (ENEMY_OUTLINE.maxY - baddie.y) / ENEMY_OUTLINE_HEIGHT;
+            const world = getWorldPosition(baddie);
+            const nx = (world.x - ENEMY_OUTLINE.minX) / ENEMY_OUTLINE_WIDTH;
+            const ny = (ENEMY_OUTLINE.maxY - world.y) / ENEMY_OUTLINE_HEIGHT;
             return {
                 x: Math.min(0.98, Math.max(0.02, nx)),
                 y: Math.min(0.98, Math.max(0.02, ny)),
@@ -66,8 +73,8 @@ export const BaddieLayer = React.memo(function BaddieLayer({
             <div
                 className="absolute overflow-hidden rounded-full"
                 style={{
-                    left: `${dome.center.x * 100}%`,
-                    top: `${dome.center.y * 100}%`,
+                    left: `${layout.dome.center.x * 100}%`,
+                    top: `${layout.dome.center.y * 100}%`,
                     width: domeSize,
                     height: domeSize,
                     transform: 'translate(-50%, -50%)',

@@ -17,6 +17,15 @@ import { useSocketContext } from '@/context/SocketContext';
 import { useToast } from '@/context/ToastContext';
 import { BattleSummaryOverlay } from '@/components/battle/BattleSummaryOverlay';
 import { parseBattleSummaryPayload, type BattleSummary, type BattleSummaryPayload } from '@/lib/battleSummary';
+import {
+    getBattleAttachedWorldPoint,
+    BATTLE_REFERENCE_HEIGHT,
+    BATTLE_REFERENCE_WIDTH,
+    getBattleDomeLayout,
+    getBattleSilhouetteLayout,
+    getBattleViewportLayout,
+    type BattleSceneLayout,
+} from './battleLayout';
 
 const COMBO_RESET_MS = 3000;
 const BASE_DOME_CENTER = { x: 0.5, y: 0.57 };
@@ -124,6 +133,13 @@ type BattleScenario = {
     voiceCommands: BattleScenarioVoiceCommand[];
     sparks: BattleScenarioSpark[];
     baddieWaves: BattleScenarioBaddieWave[];
+};
+
+type BattleBaddieState = Baddie & {
+    speed: number;
+    attached: boolean;
+    attachedAngle: number | null;
+    lastDamageAt: number;
 };
 
 type BattleVoiceResult = {
@@ -576,7 +592,7 @@ export default function BattlePage() {
     const [battleTimeLeftMs, setBattleTimeLeftMs] = useState<number>(0);
     const [weakZone, setWeakZone] = useState<BattleWeakZone | null>(null);
     const [battleInjuries, setBattleInjuries] = useState<BattleInjury[]>([]);
-    const [baddies, setBaddies] = useState<Array<Baddie & { speed: number; attached: boolean; lastDamageAt: number }>>([]);
+    const [baddies, setBaddies] = useState<BattleBaddieState[]>([]);
     const [domeBlinkAt, setDomeBlinkAt] = useState(0);
 
     const [spark, setSpark] = useState<{ id: string; x: number; y: number; vx: number; vy: number } | null>(null);
@@ -597,12 +613,37 @@ export default function BattlePage() {
     const [isBrowserOnline, setIsBrowserOnline] = useState(
         typeof window === 'undefined' ? true : window.navigator.onLine,
     );
+    const [viewportSize, setViewportSize] = useState({
+        width: BATTLE_REFERENCE_WIDTH,
+        height: BATTLE_REFERENCE_HEIGHT,
+    });
     const domeCenter = useMemo(
         () => (performanceTier === 'low' ? { x: 0.5, y: 0.6 } : BASE_DOME_CENTER),
         [performanceTier]
     );
     const domeRadius = performanceTier === 'low' ? 0.29 : BASE_DOME_RADIUS;
     const domeVisualScale = performanceTier === 'low' ? 1.22 : BASE_DOME_VISUAL_SCALE;
+    const treeScale = useMemo<[number, number, number]>(
+        () => (performanceTier === 'low' ? [0.58, 0.58, 0.58] : [0.66, 0.66, 0.66]),
+        [performanceTier]
+    );
+    const treePosition = useMemo<[number, number, number]>(
+        () => (performanceTier === 'low' ? [0, -139.5, -100] : [0, -132.3, -100]),
+        [performanceTier]
+    );
+    const battleViewportLayout = useMemo(
+        () => getBattleViewportLayout(viewportSize.width, viewportSize.height),
+        [viewportSize.height, viewportSize.width],
+    );
+    const battleLayout = useMemo<BattleSceneLayout>(() => ({
+        viewport: battleViewportLayout,
+        dome: getBattleDomeLayout(domeCenter, domeRadius, domeVisualScale, domeBlinkAt),
+        tree: {
+            scale: treeScale,
+            position: treePosition,
+        },
+        silhouette: getBattleSilhouetteLayout(battleViewportLayout),
+    }), [battleViewportLayout, domeBlinkAt, domeCenter, domeRadius, domeVisualScale, treePosition, treeScale]);
 
     const enemyLayerRef = useRef<EnemyLayerHandle>(null);
     const hitIdRef = useRef(0);
@@ -1699,6 +1740,10 @@ export default function BattlePage() {
 
     useEffect(() => {
         const detectTier = () => {
+            setViewportSize({
+                width: window.innerWidth || BATTLE_REFERENCE_WIDTH,
+                height: window.innerHeight || BATTLE_REFERENCE_HEIGHT,
+            });
             const nav = navigator as Navigator & { deviceMemory?: number };
             const memory = Number(nav.deviceMemory || 0);
             const cores = Number(nav.hardwareConcurrency || 0);
@@ -2174,6 +2219,13 @@ export default function BattlePage() {
         baddiesRef.current = baddies;
     }, [baddies]);
 
+    const getBaddieWorldPoint = useCallback((baddie: Pick<BattleBaddieState, 'x' | 'y' | 'attached' | 'attachedAngle'>) => {
+        if (baddie.attached && Number.isFinite(baddie.attachedAngle)) {
+            return getBattleAttachedWorldPoint(battleLayout.viewport, battleLayout.dome, baddie.attachedAngle || 0);
+        }
+        return { x: baddie.x, y: baddie.y };
+    }, [battleLayout.dome, battleLayout.viewport]);
+
     const clearDomeBlink = useCallback(() => {
         if (domeBlinkTimeoutRef.current) {
             window.clearTimeout(domeBlinkTimeoutRef.current);
@@ -2268,12 +2320,13 @@ export default function BattlePage() {
 
         activeBaddies.forEach((baddie) => {
             if (baddie.exploding) return;
-            const dx = payload.worldPoint.x - baddie.x;
-            const dy = payload.worldPoint.y - baddie.y;
+            const worldPoint = getBaddieWorldPoint(baddie);
+            const dx = payload.worldPoint.x - worldPoint.x;
+            const dy = payload.worldPoint.y - worldPoint.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             const radius = Math.max(
-                baddie.size * worldMin * (baddie.attached ? 1.7 : 1.15),
-                worldMin * (baddie.attached ? 0.075 : 0.06),
+                baddie.size * worldMin * (baddie.attached ? 1.15 : 1.08),
+                worldMin * (baddie.attached ? 0.05 : 0.042),
             );
             if (dist < bestDist) {
                 bestDist = dist;
@@ -2301,7 +2354,7 @@ export default function BattlePage() {
         }
 
         return;
-    }, [persistBattleProgress]);
+    }, [getBaddieWorldPoint, persistBattleProgress]);
 
     const handleHit = useCallback((event: EnemyHitEvent) => {
         if (!battleId || !isBattleActive || battleTimeLeftMs <= 0) {
@@ -2401,6 +2454,7 @@ export default function BattlePage() {
                         shape: sphere.shape,
                         speed: sphere.speed,
                         attached: false,
+                        attachedAngle: null,
                         lastDamageAt: 0,
                     }));
             });
@@ -2426,6 +2480,8 @@ export default function BattlePage() {
             const now = performance.now();
             const delta = now - lastTime;
             lastTime = now;
+            const centerWorld = battleLayout.dome.worldCenter;
+            const domeRadiusWorld = battleLayout.dome.worldRadius;
 
             setBaddies((prev) => {
                 if (!prev.length) return prev;
@@ -2433,35 +2489,49 @@ export default function BattlePage() {
                 const next = prev.map((baddie) => {
                     if (baddie.exploding) return baddie;
                     if (baddie.attached) {
+                        const attachAngle = Number.isFinite(baddie.attachedAngle)
+                            ? (baddie.attachedAngle || 0)
+                            : Math.atan2(baddie.y - centerWorld.y, baddie.x - centerWorld.x);
+                        const attachedWorldPoint = getBattleAttachedWorldPoint(battleLayout.viewport, battleLayout.dome, attachAngle);
+                        const attachX = attachedWorldPoint.x;
+                        const attachY = attachedWorldPoint.y;
                         if (now - baddie.lastDamageAt >= baddieDamageIntervalMs) {
                             damageTicks += baddieDamagePerTick;
-                            return { ...baddie, lastDamageAt: now };
+                            return {
+                                ...baddie,
+                                x: attachX,
+                                y: attachY,
+                                attachedAngle: attachAngle,
+                                lastDamageAt: now,
+                            };
                         }
-                        return baddie;
+                        if (baddie.x === attachX && baddie.y === attachY && baddie.attachedAngle === attachAngle) {
+                            return baddie;
+                        }
+                        return {
+                            ...baddie,
+                            x: attachX,
+                            y: attachY,
+                            attachedAngle: attachAngle,
+                        };
                     }
 
-                    const worldMin = Math.min(ENEMY_OUTLINE_WIDTH, ENEMY_OUTLINE_HEIGHT);
-                    const centerWorld = {
-                        x: ENEMY_OUTLINE.minX + domeCenter.x * ENEMY_OUTLINE_WIDTH,
-                        y: ENEMY_OUTLINE.maxY - domeCenter.y * ENEMY_OUTLINE_HEIGHT,
-                    };
-                    const domeRadiusWorld = domeRadius * domeVisualScale * worldMin;
                     const dx = centerWorld.x - baddie.x;
                     const dy = centerWorld.y - baddie.y;
                     const dist = Math.sqrt(dx * dx + dy * dy);
 
                     if (dist <= domeRadiusWorld) {
-                        const safeDist = dist || 1;
-                        const baddieRadiusWorld = Math.max(baddie.size * worldMin * 0.58, worldMin * 0.03);
-                        const attachOrbitRadius = domeRadiusWorld + baddieRadiusWorld;
-                        const attachX = centerWorld.x - (dx / safeDist) * attachOrbitRadius;
-                        const attachY = centerWorld.y - (dy / safeDist) * attachOrbitRadius;
+                        const attachAngle = Math.atan2(baddie.y - centerWorld.y, baddie.x - centerWorld.x);
+                        const attachedWorldPoint = getBattleAttachedWorldPoint(battleLayout.viewport, battleLayout.dome, attachAngle);
+                        const attachX = attachedWorldPoint.x;
+                        const attachY = attachedWorldPoint.y;
                         damageTicks += baddieDamagePerTick;
                         return {
                             ...baddie,
-                            x: Math.min(ENEMY_OUTLINE.maxX, Math.max(ENEMY_OUTLINE.minX, attachX)),
-                            y: Math.min(ENEMY_OUTLINE.maxY, Math.max(ENEMY_OUTLINE.minY, attachY)),
+                            x: attachX,
+                            y: attachY,
                             attached: true,
+                            attachedAngle: attachAngle,
                             lastDamageAt: now,
                         };
                     }
@@ -2484,7 +2554,23 @@ export default function BattlePage() {
         tick();
         const interval = window.setInterval(tick, tickMs);
         return () => window.clearInterval(interval);
-    }, [battleScenario?.baddieDamageIntervalMs, battleScenario?.baddieDamagePerTick, domeCenter.x, domeCenter.y, domeRadius, domeVisualScale, isBattleActive, performanceTier, persistBattleProgress, triggerDomeBlink]);
+    }, [
+        battleLayout.dome.center.x,
+        battleLayout.dome.center.y,
+        battleLayout.dome.radius,
+        battleLayout.dome.visualScale,
+        battleLayout.dome.worldCenter.x,
+        battleLayout.dome.worldCenter.y,
+        battleLayout.dome.worldRadius,
+        battleLayout.viewport.height,
+        battleLayout.viewport.width,
+        battleScenario?.baddieDamageIntervalMs,
+        battleScenario?.baddieDamagePerTick,
+        isBattleActive,
+        performanceTier,
+        persistBattleProgress,
+        triggerDomeBlink,
+    ]);
 
     useEffect(() => {
         if (!isBattleActive || !battleScenario || battleStartsAtMs == null || battleJoinedAtMs == null || !battleJoinedRef.current) return;
@@ -2591,18 +2677,6 @@ export default function BattlePage() {
     }, [isTabVisible, performanceTier, spark]);
 
     const comboMultiplier = useMemo(() => getComboMultiplier(comboCount), [comboCount]);
-    const treeScale = useMemo<[number, number, number]>(
-        () => (performanceTier === 'low' ? [0.58, 0.58, 0.58] : [0.66, 0.66, 0.66]),
-        [performanceTier]
-    );
-    const treePosition = useMemo<[number, number, number]>(
-        () => (performanceTier === 'low' ? [0, -139.5, -100] : [0, -132.3, -100]),
-        [performanceTier]
-    );
-    const domeState = useMemo(
-        () => ({ center: domeCenter, radius: domeRadius, visualScale: domeVisualScale, blinkAt: domeBlinkAt }),
-        [domeBlinkAt, domeCenter, domeRadius, domeVisualScale],
-    );
     const showActiveBattleScene = isBattleActive && !summaryVisible;
     const showSummaryBackdrop = summaryVisible && !isBattleActive;
 
@@ -2626,6 +2700,7 @@ export default function BattlePage() {
                         backgroundSrc="/relax.mp4"
                         reactionSrc="/atack.mp4"
                         silhouetteSrc="/qwer1.svg"
+                        layout={battleLayout}
                         performanceTier={performanceTier}
                         weakZone={weakZone}
                     />
@@ -2633,14 +2708,16 @@ export default function BattlePage() {
                     {/* Middle Layer: Tree (Optional, but looks cool) */}
                     <TreeLayer
                         className="z-10 pointer-events-none"
-                        scale={treeScale}
-                        position={treePosition}
+                        scale={battleLayout.tree.scale}
+                        position={battleLayout.tree.position}
+                        layout={battleLayout}
+                        performanceTier={performanceTier}
                         rotate={false}
                     />
 
                     <BaddieLayer
                         baddies={baddies}
-                        dome={domeState}
+                        layout={battleLayout}
                         coords="world"
                     />
 

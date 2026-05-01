@@ -4,6 +4,7 @@ import { useGLTF } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import type { BattleSceneLayout } from './battleLayout';
 
 const TREE_PATH = '/tree.glb';
 const LEAF_POINTS_PATH = '/tree-data/coordinate.txt';
@@ -337,7 +338,7 @@ function BattleTreeLeaves({ points }: { points: THREE.Vector3[] }) {
   );
 }
 
-function BattleTreeSatellites() {
+function BattleTreeSatellites({ performanceTier }: { performanceTier: 'low' | 'medium' | 'high' }) {
   const auraTexture = useMemo(
     () =>
       makeRadialTexture(6, 120, [
@@ -374,6 +375,7 @@ function BattleTreeSatellites() {
       }),
     []
   );
+  const sphereSegments = performanceTier === 'low' ? 12 : performanceTier === 'medium' ? 18 : 28;
 
   return (
     <group>
@@ -403,7 +405,7 @@ function BattleTreeSatellites() {
             />
           </sprite>
           <mesh renderOrder={9}>
-            <sphereGeometry args={[cfg.size, 48, 48]} />
+            <sphereGeometry args={[cfg.size, sphereSegments, sphereSegments]} />
             <meshStandardMaterial
               color={cfg.color}
               emissive={cfg.emissive}
@@ -418,7 +420,15 @@ function BattleTreeSatellites() {
   );
 }
 
-function BattleTreeSystem({ rotate = true }: { rotate?: boolean }) {
+function BattleTreeSystem({
+  rotate = true,
+  performanceTier = 'high',
+  layoutScale = 1,
+}: {
+  rotate?: boolean;
+  performanceTier?: 'low' | 'medium' | 'high';
+  layoutScale?: number;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene: loadedScene } = useGLTF(TREE_PATH);
   const leafPoints = useLeafPoints();
@@ -480,6 +490,25 @@ function BattleTreeSystem({ rotate = true }: { rotate?: boolean }) {
     ];
   }, [leafPoints, sceneBounds]);
 
+  const leafStep = useMemo(() => {
+    if (performanceTier === 'low') {
+      return layoutScale < 0.7 ? 4 : 3;
+    }
+    if (performanceTier === 'medium') {
+      return layoutScale < 0.8 ? 3 : 2;
+    }
+    return layoutScale < 0.55 ? 2 : 1;
+  }, [layoutScale, performanceTier]);
+
+  const visibleLeafPoints = useMemo(() => {
+    if (leafStep <= 1) return leafPoints;
+    const reduced: THREE.Vector3[] = [];
+    for (let i = 0; i < leafPoints.length; i += leafStep) {
+      reduced.push(leafPoints[i]);
+    }
+    return reduced;
+  }, [leafPoints, leafStep]);
+
   useEffect(() => {
     if (!rotate && groupRef.current) {
       groupRef.current.rotation.y = 0;
@@ -495,17 +524,25 @@ function BattleTreeSystem({ rotate = true }: { rotate?: boolean }) {
     <group ref={groupRef}>
       <group position={contentOffset}>
         <primitive object={scene} />
-        <BattleTreeLeaves points={leafPoints} />
-        <BattleTreeSatellites />
+        <BattleTreeLeaves points={visibleLeafPoints} />
+        <BattleTreeSatellites performanceTier={performanceTier} />
       </group>
     </group>
   );
 }
 
-export function YggdrasilTree({ rotate = true }: { rotate?: boolean }) {
+export function YggdrasilTree({
+  rotate = true,
+  performanceTier = 'high',
+  layoutScale = 1,
+}: {
+  rotate?: boolean;
+  performanceTier?: 'low' | 'medium' | 'high';
+  layoutScale?: number;
+}) {
   return (
     <Suspense fallback={null}>
-      <BattleTreeSystem rotate={rotate} />
+      <BattleTreeSystem rotate={rotate} performanceTier={performanceTier} layoutScale={layoutScale} />
     </Suspense>
   );
 }
@@ -517,6 +554,8 @@ export type TreeLayerProps = {
   pointerEvents?: 'none' | 'auto';
   className?: string;
   rotate?: boolean;
+  performanceTier?: 'low' | 'medium' | 'high';
+  layout?: BattleSceneLayout;
 };
 
 export function TreeLayer({
@@ -526,11 +565,27 @@ export function TreeLayer({
   pointerEvents = 'none',
   className = '',
   rotate = true,
+  performanceTier = 'high',
+  layout,
 }: TreeLayerProps) {
+  const layoutScale = layout?.viewport.scale ?? 1;
+  const canvasDpr =
+    performanceTier === 'low'
+      ? Math.max(0.55, Math.min(0.8, layoutScale * 0.9))
+      : performanceTier === 'medium'
+        ? Math.max(0.75, Math.min(1, layoutScale))
+        : Math.max(0.9, Math.min(1.2, layoutScale * 1.05));
+
   return (
     <div className={`absolute inset-0 ${className}`} style={{ pointerEvents }}>
       <Canvas
-        gl={{ antialias: false, alpha: transparent }}
+        frameloop={rotate ? 'always' : 'demand'}
+        dpr={canvasDpr}
+        gl={{
+          antialias: performanceTier === 'high',
+          alpha: transparent,
+          powerPreference: (performanceTier === 'low' ? 'low-power' : 'high-performance') as WebGLPowerPreference,
+        }}
         camera={{ position: [0, 240, 620], fov: 55, near: 1, far: 1400 }}
         style={{ background: transparent ? 'transparent' : '#020202' }}
       >
@@ -538,7 +593,7 @@ export function TreeLayer({
         <pointLight position={[100, 200, 100]} intensity={0.8} />
         <pointLight position={[-100, 150, -100]} intensity={0.5} />
         <group scale={scale} position={position}>
-          <YggdrasilTree rotate={rotate} />
+          <YggdrasilTree rotate={rotate} performanceTier={performanceTier} layoutScale={layoutScale} />
         </group>
       </Canvas>
     </div>

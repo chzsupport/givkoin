@@ -16,6 +16,12 @@ import {
     isPointWithinOutline,
     normalizePointToOutline,
 } from './enemyZones';
+import {
+    BATTLE_VIDEO_ASPECT_RATIO,
+    getBattleSilhouetteLayout,
+    getBattleViewportLayout,
+    type BattleSceneLayout,
+} from './battleLayout';
 
 type WeaponId = 1 | 2 | 3;
 
@@ -40,12 +46,7 @@ const WEAPON_TRIGGER_THRESHOLDS: Record<WeaponId, number> = {
     3: 1,
 };
 
-const SILHOUETTE_SCALE_Y = (40131 / 80000) * 0.98 * 0.95;
-const SILHOUETTE_SCALE_X = SILHOUETTE_SCALE_Y * 0.7 * 0.9 * 0.95 * 0.97 * 0.98 * 0.98;
-const SILHOUETTE_OFFSET_X_PERCENT = 1;
-const SILHOUETTE_OFFSET_Y_PERCENT = -31;
 const REACTION_FADE_DURATION_MS = 600;
-const VIDEO_ASPECT_RATIO = 16 / 9;
 const IMPACT_PULSE_KEYFRAMES = `
 @keyframes impactPulseAnimation {
   0% {
@@ -167,6 +168,7 @@ export interface EnemyLayerProps {
     backgroundSrc?: string;
     reactionSrc?: string;
     silhouetteSrc?: string;
+    layout?: BattleSceneLayout;
     performanceTier?: 'low' | 'medium' | 'high';
     pointerEvents?: CSSProperties['pointerEvents'];
     className?: string;
@@ -185,6 +187,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     backgroundSrc = '/relax.mp4',
     reactionSrc = '/atack.mp4',
     silhouetteSrc = '/qwer1.svg',
+    layout,
     performanceTier = 'high',
     pointerEvents = 'none',
     className = '',
@@ -214,35 +217,30 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     const disableBackgroundVideo = false;
     const disableReactionVideo = isLowTier;
 
+    const resolveViewportLayout = useCallback(() => {
+        if (layout?.viewport) {
+            return layout.viewport;
+        }
+        if (typeof window === 'undefined') {
+            return getBattleViewportLayout();
+        }
+        return getBattleViewportLayout(window.innerWidth, window.innerHeight);
+    }, [layout]);
+
     const mapPointToCoverContainer = useCallback((worldX: number, worldY: number) => {
         const { nx, ny } = normalizePointToOutline(worldX, worldY);
         if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
         if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
 
-        if (typeof window === 'undefined') {
+        const viewport = resolveViewportLayout();
+        if (!viewport.width || !viewport.height) {
             return { nx, ny, topBasedY: 1 - ny };
         }
 
-        const viewportWidth = window.innerWidth || 0;
-        const viewportHeight = window.innerHeight || 0;
-        if (viewportWidth <= 0 || viewportHeight <= 0) {
-            return { nx, ny, topBasedY: 1 - ny };
-        }
-
-        const viewportAspect = viewportWidth / viewportHeight;
-        let coverWidthRatio = 1;
-        let coverHeightRatio = 1;
-
-        if (viewportAspect > VIDEO_ASPECT_RATIO) {
-            coverHeightRatio = viewportAspect / VIDEO_ASPECT_RATIO;
-        } else if (viewportAspect > 0) {
-            coverWidthRatio = VIDEO_ASPECT_RATIO / viewportAspect;
-        }
-
-        const croppedX = (coverWidthRatio - 1) / 2;
-        const croppedY = (coverHeightRatio - 1) / 2;
-        const coverX = (nx + croppedX) / coverWidthRatio;
-        const coverTopBasedY = ((1 - ny) + croppedY) / coverHeightRatio;
+        const croppedX = (viewport.coverWidth - viewport.width) / 2;
+        const croppedY = (viewport.coverHeight - viewport.height) / 2;
+        const coverX = ((nx * viewport.width) + croppedX) / viewport.coverWidth;
+        const coverTopBasedY = (((1 - ny) * viewport.height) + croppedY) / viewport.coverHeight;
 
         if (!Number.isFinite(coverX) || !Number.isFinite(coverTopBasedY)) return null;
         if (coverX < 0 || coverX > 1 || coverTopBasedY < 0 || coverTopBasedY > 1) return null;
@@ -252,27 +250,25 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             ny: 1 - coverTopBasedY,
             topBasedY: coverTopBasedY,
         };
-    }, []);
+    }, [resolveViewportLayout]);
 
     const mapPointToSilhouette = useCallback((worldX: number, worldY: number) => {
         const coverPoint = mapPointToCoverContainer(worldX, worldY);
         if (!coverPoint) return null;
 
-        // CSS mask-position проценты считаются от свободного места, а не от всего экрана.
-        // Здесь повторяем ту же математику, чтобы попадание совпадало с тем, что видно.
-        const freeSpaceX = 1 - SILHOUETTE_SCALE_X;
-        const freeSpaceY = 1 - SILHOUETTE_SCALE_Y;
-        const left = freeSpaceX * (0.5 + (SILHOUETTE_OFFSET_X_PERCENT / 100));
-        const top = freeSpaceY * (0.5 + (SILHOUETTE_OFFSET_Y_PERCENT / 100));
-        const localX = (coverPoint.nx - left) / SILHOUETTE_SCALE_X;
-        const localYFromTop = (coverPoint.topBasedY - top) / SILHOUETTE_SCALE_Y;
+        const viewport = resolveViewportLayout();
+        const silhouette = layout?.silhouette ?? getBattleSilhouetteLayout(viewport);
+        const pointPxX = coverPoint.nx * viewport.coverWidth;
+        const pointPxY = coverPoint.topBasedY * viewport.coverHeight;
+        const localX = (pointPxX - silhouette.leftPx) / silhouette.widthPx;
+        const localYFromTop = (pointPxY - silhouette.topPx) / silhouette.heightPx;
 
         if (localX < 0 || localX > 1 || localYFromTop < 0 || localYFromTop > 1) {
             return null;
         }
 
         return { nx: coverPoint.nx, ny: coverPoint.ny, localX, localY: 1 - localYFromTop };
-    }, [mapPointToCoverContainer]);
+    }, [layout, mapPointToCoverContainer, resolveViewportLayout]);
 
     useEffect(() => {
         if (reactionVideoRef.current) {
@@ -294,25 +290,29 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                     });
                 }
             };
+            const playbackWatchdogMs = isLowTier ? 9000 : performanceTier === 'medium' ? 6500 : 5000;
             const playbackWatchdog = window.setTimeout(() => {
                 const video = backgroundVideo;
                 if (!video) return;
                 if (video.readyState < 2) {
                     setBackgroundVideoFailed(true);
                 }
-            }, 3500);
+            }, playbackWatchdogMs);
 
             syncVisibilityPlayback();
             const handleReady = () => {
                 window.clearTimeout(playbackWatchdog);
+                setBackgroundVideoFailed(false);
             };
             backgroundVideo.addEventListener('loadeddata', handleReady);
+            backgroundVideo.addEventListener('canplay', handleReady);
             backgroundVideo.addEventListener('playing', handleReady);
             document.addEventListener('visibilitychange', syncVisibilityPlayback);
 
             return () => {
                 window.clearTimeout(playbackWatchdog);
                 backgroundVideo.removeEventListener('loadeddata', handleReady);
+                backgroundVideo.removeEventListener('canplay', handleReady);
                 backgroundVideo.removeEventListener('playing', handleReady);
                 document.removeEventListener('visibilitychange', syncVisibilityPlayback);
                 if (reactionTimeoutRef.current) window.clearTimeout(reactionTimeoutRef.current);
@@ -331,7 +331,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             impactFlushTimerRef.current = null;
             impactQueueRef.current = [];
         };
-    }, [disableBackgroundVideo]);
+    }, [disableBackgroundVideo, isLowTier, performanceTier]);
 
     useEffect(() => {
         let cancelled = false;
@@ -578,9 +578,9 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             <div
                 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
                 style={{
-                    width: `max(100%, calc(100vh * ${VIDEO_ASPECT_RATIO}))`,
-                    height: `max(100%, calc(100vw / ${VIDEO_ASPECT_RATIO}))`,
-                    aspectRatio: `${VIDEO_ASPECT_RATIO}`,
+                    width: `max(100%, calc(100vh * ${BATTLE_VIDEO_ASPECT_RATIO}))`,
+                    height: `max(100%, calc(100vw / ${BATTLE_VIDEO_ASPECT_RATIO}))`,
+                    aspectRatio: `${BATTLE_VIDEO_ASPECT_RATIO}`,
                 }}
             >
                 {!disableBackgroundVideo && (
@@ -591,7 +591,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                         playsInline
                         muted
                         loop
-                        preload="metadata"
+                        preload="auto"
                         onError={() => setBackgroundVideoFailed(true)}
                     />
                 )}
