@@ -5,8 +5,6 @@ import { ENEMY_OUTLINE, ENEMY_OUTLINE_HEIGHT, ENEMY_OUTLINE_WIDTH } from './enem
 export const BATTLE_REFERENCE_WIDTH = 1400;
 export const BATTLE_REFERENCE_HEIGHT = 900;
 export const BATTLE_VIDEO_ASPECT_RATIO = 16 / 9;
-const BATTLE_REFERENCE_COVER_WIDTH = BATTLE_REFERENCE_HEIGHT * BATTLE_VIDEO_ASPECT_RATIO;
-const BATTLE_REFERENCE_COVER_HEIGHT = BATTLE_REFERENCE_HEIGHT;
 
 const BASE_SILHOUETTE_SCALE_Y = (40131 / 80000) * 0.98 * 0.95;
 const BASE_SILHOUETTE_SCALE_X = BASE_SILHOUETTE_SCALE_Y * 0.7 * 0.9 * 0.95 * 0.97 * 0.98 * 0.98;
@@ -27,11 +25,6 @@ const BASE_SILHOUETTE_CENTER_OFFSET_X_PX =
   (BASE_SILHOUETTE_LEFT_PX + (BASE_SILHOUETTE_WIDTH_PX / 2)) - (BATTLE_REFERENCE_WIDTH / 2);
 const BASE_SILHOUETTE_CENTER_OFFSET_Y_PX =
   (BASE_SILHOUETTE_TOP_PX + (BASE_SILHOUETTE_HEIGHT_PX / 2)) - (BATTLE_REFERENCE_HEIGHT / 2);
-const BASE_SILHOUETTE_WIDTH_RATIO = BASE_SILHOUETTE_WIDTH_PX / BATTLE_REFERENCE_COVER_WIDTH;
-const BASE_SILHOUETTE_HEIGHT_RATIO = BASE_SILHOUETTE_HEIGHT_PX / BATTLE_REFERENCE_COVER_HEIGHT;
-const BASE_SILHOUETTE_CENTER_OFFSET_X_RATIO = BASE_SILHOUETTE_CENTER_OFFSET_X_PX / BATTLE_REFERENCE_COVER_WIDTH;
-const BASE_SILHOUETTE_CENTER_OFFSET_Y_RATIO = BASE_SILHOUETTE_CENTER_OFFSET_Y_PX / BATTLE_REFERENCE_COVER_HEIGHT;
-
 export type BattleViewportLayout = {
   width: number;
   height: number;
@@ -106,7 +99,7 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
     aspectRatio,
     coverWidth,
     coverHeight,
-    scale: coverHeight / BATTLE_REFERENCE_COVER_HEIGHT,
+    scale: Math.min(safeWidth, safeHeight) / BATTLE_REFERENCE_HEIGHT,
   };
 }
 
@@ -118,10 +111,10 @@ export function getBattleSilhouetteLayout(
   const mobileWidthStretch = options?.mobile ? MOBILE_SILHOUETTE_WIDTH_STRETCH : 1;
   const mobileShiftXPx = options?.mobile ? viewport.coverWidth * (MOBILE_SILHOUETTE_SHIFT_X_PERCENT / 100) : 0;
   const mobileShiftYPx = options?.mobile ? viewport.coverHeight * (MOBILE_SILHOUETTE_SHIFT_Y_PERCENT / 100) : 0;
-  const widthPx = viewport.coverWidth * BASE_SILHOUETTE_WIDTH_RATIO * mobileScale * mobileWidthStretch;
-  const heightPx = viewport.coverHeight * BASE_SILHOUETTE_HEIGHT_RATIO * mobileScale;
-  const centerX = (viewport.coverWidth / 2) + (viewport.coverWidth * BASE_SILHOUETTE_CENTER_OFFSET_X_RATIO) + mobileShiftXPx;
-  const centerY = (viewport.coverHeight / 2) + (viewport.coverHeight * BASE_SILHOUETTE_CENTER_OFFSET_Y_RATIO) + mobileShiftYPx;
+  const widthPx = BASE_SILHOUETTE_WIDTH_PX * viewport.scale * mobileScale * mobileWidthStretch;
+  const heightPx = BASE_SILHOUETTE_HEIGHT_PX * viewport.scale * mobileScale;
+  const centerX = (viewport.coverWidth / 2) + (BASE_SILHOUETTE_CENTER_OFFSET_X_PX * viewport.scale) + mobileShiftXPx;
+  const centerY = (viewport.coverHeight / 2) + (BASE_SILHOUETTE_CENTER_OFFSET_Y_PX * viewport.scale) + mobileShiftYPx;
   const leftPx = centerX - (widthPx / 2);
   const topPx = centerY - (heightPx / 2);
 
@@ -132,8 +125,8 @@ export function getBattleSilhouetteLayout(
     topPx,
     scaleX: widthPx / viewport.coverWidth,
     scaleY: heightPx / viewport.coverHeight,
-    centerOffsetX: viewport.coverWidth * BASE_SILHOUETTE_CENTER_OFFSET_X_RATIO,
-    centerOffsetY: viewport.coverHeight * BASE_SILHOUETTE_CENTER_OFFSET_Y_RATIO,
+    centerOffsetX: BASE_SILHOUETTE_CENTER_OFFSET_X_PX * viewport.scale,
+    centerOffsetY: BASE_SILHOUETTE_CENTER_OFFSET_Y_PX * viewport.scale,
   };
 }
 

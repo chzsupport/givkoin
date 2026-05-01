@@ -1759,14 +1759,12 @@ export default function BattlePage() {
             const memory = Number(nav.deviceMemory || 0);
             const cores = Number(nav.hardwareConcurrency || 0);
             const maxTouchPoints = Number(nav.maxTouchPoints || 0);
-            const userAgent = typeof navigator.userAgent === 'string' ? navigator.userAgent : '';
             const hasCoarsePointer = typeof window.matchMedia === 'function'
                 ? window.matchMedia('(pointer: coarse)').matches
                 : false;
             const isTouchDevice = maxTouchPoints > 0 || hasCoarsePointer;
             const longestSide = Math.max(safeWidth, safeHeight);
-            const looksLikeMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(userAgent);
-            const isMobileBattleDevice = Boolean(looksLikeMobileUserAgent || (isTouchDevice && longestSide <= 1600));
+            const isMobileBattleDevice = Boolean(isTouchDevice && longestSide <= 1400);
             setUseMobileBattleVideos(isMobileBattleDevice);
 
             if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4)) {
