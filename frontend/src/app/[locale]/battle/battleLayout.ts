@@ -75,8 +75,9 @@ type BattleSilhouetteOptions = {
   mobile?: boolean;
 };
 
-const MOBILE_SILHOUETTE_SHIFT_X_PERCENT = 3;
+const MOBILE_SILHOUETTE_SHIFT_X_PERCENT = 4;
 const MOBILE_SILHOUETTE_SHIFT_Y_PERCENT = -5;
+const MOBILE_SILHOUETTE_SCALE = 2 * 0.97;
 
 export function getBattleViewportLayout(width?: number, height?: number): BattleViewportLayout {
   const safeWidth = Math.max(1, Math.round(Number(width) || BATTLE_REFERENCE_WIDTH));
@@ -106,7 +107,7 @@ export function getBattleSilhouetteLayout(
   viewport: BattleViewportLayout,
   options?: BattleSilhouetteOptions,
 ): BattleSilhouetteLayout {
-  const mobileScale = options?.mobile ? 2 : 1;
+  const mobileScale = options?.mobile ? MOBILE_SILHOUETTE_SCALE : 1;
   const mobileShiftXPx = options?.mobile ? viewport.coverWidth * (MOBILE_SILHOUETTE_SHIFT_X_PERCENT / 100) : 0;
   const mobileShiftYPx = options?.mobile ? viewport.coverHeight * (MOBILE_SILHOUETTE_SHIFT_Y_PERCENT / 100) : 0;
   const widthPx = BASE_SILHOUETTE_WIDTH_PX * viewport.scale * mobileScale;
