@@ -603,6 +603,9 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
         [enemyHit, flushQueuedImpacts, isPointInsideMask, mapPointToCoverContainer, onValidHit],
     );
 
+    const viewportLayout = resolveViewportLayout();
+    const silhouetteLayout = layout?.silhouette ?? getBattleSilhouetteLayout(viewportLayout);
+
     useImperativeHandle(
         ref,
         () => ({
@@ -664,6 +667,29 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                     opacity={reactionOpacity}
                     src={reactionSrc}
                 />
+                <div
+                    className="absolute z-12 pointer-events-none"
+                    style={{
+                        left: `${silhouetteLayout.leftPx}px`,
+                        top: `${silhouetteLayout.topPx}px`,
+                        width: `${silhouetteLayout.widthPx}px`,
+                        height: `${silhouetteLayout.heightPx}px`,
+                        opacity: 0.42,
+                        mixBlendMode: 'screen',
+                    }}
+                >
+                    <img
+                        src={silhouetteSrc}
+                        alt=""
+                        aria-hidden="true"
+                        className="w-full h-full select-none"
+                        draggable={false}
+                        style={{
+                            objectFit: 'fill',
+                            filter: 'drop-shadow(0 0 12px rgba(0,255,255,0.35)) drop-shadow(0 0 22px rgba(0,153,255,0.22))',
+                        }}
+                    />
+                </div>
                 <ImpactFlashLayer flashes={impactFlashes} />
                 {weakZone?.active && weakZone.center && (() => {
                     if (!isPointInsideSilhouette(weakZone.center.x, weakZone.center.y)) return null;
