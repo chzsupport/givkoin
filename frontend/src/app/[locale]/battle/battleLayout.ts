@@ -76,7 +76,7 @@ type BattleSilhouetteOptions = {
 };
 
 const MOBILE_SILHOUETTE_SHIFT_X_PERCENT = 4;
-const MOBILE_SILHOUETTE_SHIFT_Y_PERCENT = -5;
+const MOBILE_SILHOUETTE_SHIFT_Y_PERCENT = -7;
 const MOBILE_SILHOUETTE_SCALE = 2 * 0.97;
 
 export function getBattleViewportLayout(width?: number, height?: number): BattleViewportLayout {
