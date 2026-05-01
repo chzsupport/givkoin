@@ -86,6 +86,8 @@ export interface GameSceneProps {
 
 const randomRange = (min: number, max: number) => Math.random() * (max - min) + min;
 type Vec3Tuple = [number, number, number];
+const PROJECTILE_REFERENCE_FPS = 60;
+const MAX_PROJECTILE_STEP_DELTA = 1 / 20;
 
 interface ProjectileProps {
     weaponId: WeaponId;
@@ -180,10 +182,12 @@ const Projectile = ({
         }
     }, [startPosition]);
 
-    useFrame(() => {
+    useFrame((_, delta) => {
+        const safeDelta = Math.min(Math.max(delta, 0), MAX_PROJECTILE_STEP_DELTA);
+        const frameScale = safeDelta * PROJECTILE_REFERENCE_FPS;
         const previous = positionRef.current.clone();
-        positionRef.current.add(velocityRef);
-        distanceTraveled.current += velocityRef.length();
+        positionRef.current.addScaledVector(velocityRef, frameScale);
+        distanceTraveled.current += velocityRef.length() * frameScale;
 
         if (ref.current) {
             ref.current.position.copy(positionRef.current);

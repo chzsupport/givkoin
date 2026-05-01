@@ -1763,15 +1763,15 @@ export default function BattlePage() {
                 ? window.matchMedia('(pointer: coarse)').matches
                 : false;
             const isTouchDevice = maxTouchPoints > 0 || hasCoarsePointer;
-            const isMobile = safeWidth <= 900;
             const longestSide = Math.max(safeWidth, safeHeight);
-            setUseMobileBattleVideos(Boolean(isTouchDevice && longestSide <= 1400));
+            const isMobileBattleDevice = Boolean(isTouchDevice && longestSide <= 1400);
+            setUseMobileBattleVideos(isMobileBattleDevice);
 
-            if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4) || isMobile) {
+            if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4)) {
                 setPerformanceTier('low');
                 return;
             }
-            if ((memory > 0 && memory <= 8) || (cores > 0 && cores <= 8)) {
+            if (isMobileBattleDevice || (memory > 0 && memory <= 8) || (cores > 0 && cores <= 8)) {
                 setPerformanceTier('medium');
                 return;
             }

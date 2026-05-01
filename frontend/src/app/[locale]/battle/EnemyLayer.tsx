@@ -47,6 +47,10 @@ const WEAPON_TRIGGER_THRESHOLDS: Record<WeaponId, number> = {
 };
 
 const REACTION_FADE_DURATION_MS = 600;
+const REACTION_RETRY_DELAY_MS = 250;
+const MAX_REACTION_RETRIES = 3;
+const IMPACT_FLASH_DURATION_MS = 650;
+const MAX_IMPACT_FLASHES = 24;
 const IMPACT_PULSE_KEYFRAMES = `
 @keyframes impactPulseAnimation {
   0% {
@@ -104,7 +108,7 @@ function ReactionVideoOverlay({
                 src={src}
                 playsInline
                 muted
-                preload="metadata"
+                preload="auto"
                 onEnded={onEnded}
                 onError={onError}
             />
@@ -136,6 +140,7 @@ function ImpactFlashLayer({ flashes }: { flashes: ImpactFlash[] }) {
                                 'radial-gradient(circle, rgba(0,255,255,0.9) 0%, rgba(0,255,255,0.15) 55%, rgba(0,255,255,0) 90%)',
                             boxShadow: '0 0 20px rgba(0,255,255,0.8), 0 0 36px rgba(0,153,255,0.65)',
                             animation: 'impactPulseAnimation 450ms ease-out forwards',
+                            willChange: 'transform, opacity',
                         }}
                     />
                 </div>
@@ -206,16 +211,16 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     const reactionTimeoutRef = useRef<number | null>(null);
     const reactionFadeTimeoutRef = useRef<number | null>(null);
     const reactionOpacityRafRef = useRef<number | null>(null);
+    const reactionRetryTimeoutRef = useRef<number | null>(null);
     const hitsTrackerRef = useRef<{ byWeapon: Record<WeaponId, number> }>({
         byWeapon: { 1: 0, 2: 0, 3: 0 },
     });
     const maskSamplerRef = useRef<MaskSampler | null>(null);
     const impactIdRef = useRef(0);
     const impactQueueRef = useRef<ImpactFlash[]>([]);
-    const impactFlushTimerRef = useRef<number | null>(null);
+    const impactFlushFrameRef = useRef<number | null>(null);
     const isLowTier = performanceTier === 'low';
     const disableBackgroundVideo = false;
-    const disableReactionVideo = isLowTier;
 
     const resolveViewportLayout = useCallback(() => {
         if (layout?.viewport) {
@@ -343,8 +348,10 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 if (reactionTimeoutRef.current) window.clearTimeout(reactionTimeoutRef.current);
                 if (reactionFadeTimeoutRef.current) window.clearTimeout(reactionFadeTimeoutRef.current);
                 if (reactionOpacityRafRef.current) window.cancelAnimationFrame(reactionOpacityRafRef.current);
-                if (impactFlushTimerRef.current) window.clearTimeout(impactFlushTimerRef.current);
-                impactFlushTimerRef.current = null;
+                if (reactionRetryTimeoutRef.current) window.clearTimeout(reactionRetryTimeoutRef.current);
+                if (impactFlushFrameRef.current) window.cancelAnimationFrame(impactFlushFrameRef.current);
+                reactionRetryTimeoutRef.current = null;
+                impactFlushFrameRef.current = null;
                 impactQueueRef.current = [];
             };
         }
@@ -352,8 +359,10 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             if (reactionTimeoutRef.current) window.clearTimeout(reactionTimeoutRef.current);
             if (reactionFadeTimeoutRef.current) window.clearTimeout(reactionFadeTimeoutRef.current);
             if (reactionOpacityRafRef.current) window.cancelAnimationFrame(reactionOpacityRafRef.current);
-            if (impactFlushTimerRef.current) window.clearTimeout(impactFlushTimerRef.current);
-            impactFlushTimerRef.current = null;
+            if (reactionRetryTimeoutRef.current) window.clearTimeout(reactionRetryTimeoutRef.current);
+            if (impactFlushFrameRef.current) window.cancelAnimationFrame(impactFlushFrameRef.current);
+            reactionRetryTimeoutRef.current = null;
+            impactFlushFrameRef.current = null;
             impactQueueRef.current = [];
         };
     }, [disableBackgroundVideo, isLowTier, performanceTier]);
@@ -420,7 +429,12 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
 
     useEffect(() => {
         if (!enemyHit) {
+            setReactionVideoFailed(false);
             setReactionOpacity(0);
+            if (reactionRetryTimeoutRef.current) {
+                window.clearTimeout(reactionRetryTimeoutRef.current);
+                reactionRetryTimeoutRef.current = null;
+            }
             if (reactionOverlayVisible) {
                 if (reactionFadeTimeoutRef.current) {
                     window.clearTimeout(reactionFadeTimeoutRef.current);
@@ -471,6 +485,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
 
         const reactionVideo = reactionVideoRef.current;
         if (!reactionVideo) return;
+        setReactionVideoFailed(false);
 
         const clearTimer = () => {
             if (reactionTimeoutRef.current) {
@@ -489,47 +504,62 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             reactionTimeoutRef.current = window.setTimeout(() => setEnemyHit(false), duration);
         };
 
-        const attemptPlay = () => {
+        const clearRetryTimer = () => {
+            if (reactionRetryTimeoutRef.current) {
+                window.clearTimeout(reactionRetryTimeoutRef.current);
+                reactionRetryTimeoutRef.current = null;
+            }
+        };
+
+        const attemptPlay = (attempt = 0) => {
             reactionVideo.pause();
             reactionVideo.currentTime = 0;
+            reactionVideo.load();
             const promise = reactionVideo.play();
             if (promise && typeof promise.then === 'function') {
                 promise
                     .then(() => {
+                        clearRetryTimer();
                         scheduleAutoReset();
                     })
                     .catch(() => {
-                        reactionVideo.muted = true;
-                        reactionVideo
-                            .play()
-                            .then(() => scheduleAutoReset())
-                            .catch(() => {
-                                setReactionVideoFailed(true);
-                                clearTimer();
-                                setEnemyHit(false);
-                            });
+                        if (attempt >= MAX_REACTION_RETRIES) {
+                            setReactionVideoFailed(true);
+                            clearRetryTimer();
+                            clearTimer();
+                            setEnemyHit(false);
+                            return;
+                        }
+                        clearRetryTimer();
+                        reactionRetryTimeoutRef.current = window.setTimeout(() => {
+                            attemptPlay(attempt + 1);
+                        }, REACTION_RETRY_DELAY_MS);
                     });
             } else {
+                clearRetryTimer();
                 scheduleAutoReset();
             }
         };
 
-        if (reactionVideo.readyState >= 2) {
-            attemptPlay();
-            return () => clearTimer();
-        }
-
-        const handleLoaded = () => {
-            reactionVideo.removeEventListener('loadeddata', handleLoaded);
-            attemptPlay();
-        };
-
-        reactionVideo.addEventListener('loadeddata', handleLoaded);
+        attemptPlay();
         return () => {
-            reactionVideo.removeEventListener('loadeddata', handleLoaded);
+            clearRetryTimer();
             clearTimer();
         };
     }, [enemyHit]);
+
+    const flushQueuedImpacts = useCallback(() => {
+        impactFlushFrameRef.current = null;
+        const queued = impactQueueRef.current.splice(0);
+        if (!queued.length) return;
+
+        const now = Date.now();
+        setImpactFlashes((prev) => {
+            const kept = prev.filter((flash) => now - flash.at < IMPACT_FLASH_DURATION_MS);
+            const merged = [...kept, ...queued];
+            return merged.slice(-MAX_IMPACT_FLASHES);
+        });
+    }, []);
 
     const registerHit = useCallback(
         (event: EnemyLayerHit) => {
@@ -564,25 +594,13 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 });
             }
 
-            if (impactFlushTimerRef.current != null) {
+            if (impactFlushFrameRef.current != null) {
                 return;
             }
 
-            const flushDelayMs = isLowTier ? 120 : 50;
-            impactFlushTimerRef.current = window.setTimeout(() => {
-                impactFlushTimerRef.current = null;
-                const queued = impactQueueRef.current.splice(0);
-                if (!queued.length) return;
-
-                const now = Date.now();
-                setImpactFlashes((prev) => {
-                    const kept = prev.filter((flash) => now - flash.at < 500);
-                    const merged = [...kept, ...queued];
-                    return merged.slice(-12);
-                });
-            }, flushDelayMs);
+            impactFlushFrameRef.current = window.requestAnimationFrame(flushQueuedImpacts);
         },
-        [enemyHit, isLowTier, isPointInsideMask, mapPointToCoverContainer, onValidHit],
+        [enemyHit, flushQueuedImpacts, isPointInsideMask, mapPointToCoverContainer, onValidHit],
     );
 
     useImperativeHandle(
@@ -625,25 +643,27 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(91,33,182,0.18),rgba(0,0,0,0)_60%)]" />
                     </div>
                 )}
-                {!disableReactionVideo && (
-                    <ReactionVideoOverlay
-                        isVisible={reactionOverlayVisible && !reactionVideoFailed}
-                        videoRef={reactionVideoRef}
-                        onEnded={() => {
-                            if (reactionTimeoutRef.current) {
-                                window.clearTimeout(reactionTimeoutRef.current);
-                                reactionTimeoutRef.current = null;
-                            }
-                            setEnemyHit(false);
-                        }}
-                        onError={() => setReactionVideoFailed(true)}
-                        opacity={reactionOpacity}
-                        src={reactionSrc}
-                    />
-                )}
-                {(reactionVideoFailed || disableReactionVideo) && reactionOverlayVisible && (
-                    <div className="absolute inset-0 z-10 pointer-events-none bg-red-500/10" />
-                )}
+                <ReactionVideoOverlay
+                    isVisible={reactionOverlayVisible && !reactionVideoFailed}
+                    videoRef={reactionVideoRef}
+                    onEnded={() => {
+                        if (reactionTimeoutRef.current) {
+                            window.clearTimeout(reactionTimeoutRef.current);
+                            reactionTimeoutRef.current = null;
+                        }
+                        setEnemyHit(false);
+                    }}
+                    onError={() => {
+                        const video = reactionVideoRef.current;
+                        if (!video) return;
+                        video.load();
+                        video.play().catch(() => {
+                            /* retry path is handled by the enemyHit effect */
+                        });
+                    }}
+                    opacity={reactionOpacity}
+                    src={reactionSrc}
+                />
                 <ImpactFlashLayer flashes={impactFlashes} />
                 {weakZone?.active && weakZone.center && (() => {
                     if (!isPointInsideSilhouette(weakZone.center.x, weakZone.center.y)) return null;
