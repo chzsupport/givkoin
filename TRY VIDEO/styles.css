@@ -102,6 +102,47 @@ button:hover {
   filter: brightness(0) invert(1) drop-shadow(0 0 14px rgba(255,255,255,0.42)) drop-shadow(0 0 26px rgba(120,220,255,0.28));
 }
 
+.center-marker {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin-left: -14px;
+  margin-top: -14px;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  z-index: 30;
+}
+
+.center-marker::before,
+.center-marker::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 70, 70, 0.9);
+  box-shadow: 0 0 14px rgba(255, 70, 70, 0.55);
+}
+
+.center-marker::before {
+  width: 2px;
+  height: 28px;
+}
+
+.center-marker::after {
+  width: 28px;
+  height: 2px;
+}
+
+.center-marker-core {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff5d5d;
+  border: 2px solid #fff;
+  box-shadow: 0 0 16px rgba(255, 93, 93, 0.75);
+}
+
 .handle {
   position: absolute;
   width: 18px;

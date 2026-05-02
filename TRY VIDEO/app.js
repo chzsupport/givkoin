@@ -11,7 +11,9 @@ const INITIAL = {
 const stage = document.getElementById('stage');
 const overlay = document.getElementById('overlay');
 const resetBtn = document.getElementById('resetBtn');
+const centerBtn = document.getElementById('centerBtn');
 const copyBtn = document.getElementById('copyBtn');
+const centerMarker = document.getElementById('centerMarker');
 
 const fields = {
   left: document.getElementById('leftValue'),
@@ -22,10 +24,19 @@ const fields = {
   topPct: document.getElementById('topPercentValue'),
   widthPct: document.getElementById('widthPercentValue'),
   heightPct: document.getElementById('heightPercentValue'),
+  centerX: document.getElementById('centerXValue'),
+  centerY: document.getElementById('centerYValue'),
+  centerXPct: document.getElementById('centerXPercentValue'),
+  centerYPct: document.getElementById('centerYPercentValue'),
 };
 
 let state = { ...INITIAL };
+let centerState = {
+  x: INITIAL.left + (INITIAL.width / 2),
+  y: INITIAL.top + (INITIAL.height / 2),
+};
 let pointerState = null;
+let centerPointerState = null;
 let lastMoveLogAt = 0;
 
 function clamp(value, min, max) {
@@ -54,6 +65,11 @@ function setOverlayStyle() {
   overlay.style.top = `${screen.top}px`;
   overlay.style.width = `${screen.width}px`;
   overlay.style.height = `${screen.height}px`;
+  const rect = getStageRect();
+  const centerScreenX = (centerState.x / REFERENCE_WIDTH) * rect.width;
+  const centerScreenY = (centerState.y / REFERENCE_HEIGHT) * rect.height;
+  centerMarker.style.left = `${centerScreenX}px`;
+  centerMarker.style.top = `${centerScreenY}px`;
   fields.left.textContent = state.left.toFixed(2);
   fields.top.textContent = state.top.toFixed(2);
   fields.width.textContent = state.width.toFixed(2);
@@ -62,6 +78,10 @@ function setOverlayStyle() {
   fields.topPct.textContent = ((state.top / REFERENCE_HEIGHT) * 100).toFixed(3);
   fields.widthPct.textContent = ((state.width / REFERENCE_WIDTH) * 100).toFixed(3);
   fields.heightPct.textContent = ((state.height / REFERENCE_HEIGHT) * 100).toFixed(3);
+  fields.centerX.textContent = centerState.x.toFixed(2);
+  fields.centerY.textContent = centerState.y.toFixed(2);
+  fields.centerXPct.textContent = ((centerState.x / REFERENCE_WIDTH) * 100).toFixed(3);
+  fields.centerYPct.textContent = ((centerState.y / REFERENCE_HEIGHT) * 100).toFixed(3);
 }
 
 async function postLog(action, payload) {
@@ -91,6 +111,10 @@ function emitState(action) {
     topPercent: Number(((state.top / REFERENCE_HEIGHT) * 100).toFixed(6)),
     widthPercent: Number(((state.width / REFERENCE_WIDTH) * 100).toFixed(6)),
     heightPercent: Number(((state.height / REFERENCE_HEIGHT) * 100).toFixed(6)),
+    centerX: Number(centerState.x.toFixed(6)),
+    centerY: Number(centerState.y.toFixed(6)),
+    centerXPercent: Number(((centerState.x / REFERENCE_WIDTH) * 100).toFixed(6)),
+    centerYPercent: Number(((centerState.y / REFERENCE_HEIGHT) * 100).toFixed(6)),
     referenceWidth: REFERENCE_WIDTH,
     referenceHeight: REFERENCE_HEIGHT,
   };
@@ -186,6 +210,47 @@ function finishPointer(event) {
   pointerState = null;
 }
 
+function beginCenterPointer(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const stageRect = getStageRect();
+  centerPointerState = {
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startCenter: { ...centerState },
+    scaleX: REFERENCE_WIDTH / stageRect.width,
+    scaleY: REFERENCE_HEIGHT / stageRect.height,
+  };
+  centerMarker.setPointerCapture(event.pointerId);
+  emitState('center-marker-start');
+}
+
+function moveCenterPointer(event) {
+  if (!centerPointerState) return;
+  const dx = (event.clientX - centerPointerState.startClientX) * centerPointerState.scaleX;
+  const dy = (event.clientY - centerPointerState.startClientY) * centerPointerState.scaleY;
+  centerState.x = clamp(centerPointerState.startCenter.x + dx, -REFERENCE_WIDTH, REFERENCE_WIDTH * 2);
+  centerState.y = clamp(centerPointerState.startCenter.y + dy, -REFERENCE_HEIGHT, REFERENCE_HEIGHT * 2);
+  setOverlayStyle();
+
+  const now = performance.now();
+  if (now - lastMoveLogAt > 90) {
+    lastMoveLogAt = now;
+    emitState('center-marker-move');
+  }
+}
+
+function finishCenterPointer(event) {
+  if (!centerPointerState) return;
+  try {
+    centerMarker.releasePointerCapture(event.pointerId);
+  } catch (_error) {
+    // ignore
+  }
+  emitState('center-marker-end');
+  centerPointerState = null;
+}
+
 overlay.addEventListener('pointerdown', (event) => {
   const handle = event.target instanceof HTMLElement ? event.target.dataset.handle : null;
   beginPointer(event, handle ? 'resize' : 'move', handle);
@@ -194,11 +259,34 @@ overlay.addEventListener('pointerdown', (event) => {
 overlay.addEventListener('pointermove', onPointerMove);
 overlay.addEventListener('pointerup', finishPointer);
 overlay.addEventListener('pointercancel', finishPointer);
+centerMarker.addEventListener('pointerdown', beginCenterPointer);
+centerMarker.addEventListener('pointermove', moveCenterPointer);
+centerMarker.addEventListener('pointerup', finishCenterPointer);
+centerMarker.addEventListener('pointercancel', finishCenterPointer);
 
 resetBtn.addEventListener('click', () => {
   state = { ...INITIAL };
+  centerState = {
+    x: INITIAL.left + (INITIAL.width / 2),
+    y: INITIAL.top + (INITIAL.height / 2),
+  };
   setOverlayStyle();
   emitState('reset');
+});
+
+centerBtn.addEventListener('click', () => {
+  const silhouetteCenterX = state.left + (state.width / 2);
+  const silhouetteCenterY = state.top + (state.height / 2);
+  postLog('set-center-reference', {
+    markerX: Number(centerState.x.toFixed(6)),
+    markerY: Number(centerState.y.toFixed(6)),
+    markerXPercent: Number(((centerState.x / REFERENCE_WIDTH) * 100).toFixed(6)),
+    markerYPercent: Number(((centerState.y / REFERENCE_HEIGHT) * 100).toFixed(6)),
+    silhouetteCenterX: Number(silhouetteCenterX.toFixed(6)),
+    silhouetteCenterY: Number(silhouetteCenterY.toFixed(6)),
+    deltaX: Number((centerState.x - silhouetteCenterX).toFixed(6)),
+    deltaY: Number((centerState.y - silhouetteCenterY).toFixed(6)),
+  });
 });
 
 copyBtn.addEventListener('click', async () => {
@@ -211,6 +299,10 @@ copyBtn.addEventListener('click', async () => {
     topPercent: Number(((state.top / REFERENCE_HEIGHT) * 100).toFixed(6)),
     widthPercent: Number(((state.width / REFERENCE_WIDTH) * 100).toFixed(6)),
     heightPercent: Number(((state.height / REFERENCE_HEIGHT) * 100).toFixed(6)),
+    centerX: Number(centerState.x.toFixed(6)),
+    centerY: Number(centerState.y.toFixed(6)),
+    centerXPercent: Number(((centerState.x / REFERENCE_WIDTH) * 100).toFixed(6)),
+    centerYPercent: Number(((centerState.y / REFERENCE_HEIGHT) * 100).toFixed(6)),
   }, null, 2);
 
   try {
