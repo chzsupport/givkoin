@@ -591,7 +591,7 @@ export default function BattlePage() {
     const [battleEndsAtMs, setBattleEndsAtMs] = useState<number | null>(null);
     const [battleTimeLeftMs, setBattleTimeLeftMs] = useState<number>(0);
     const [weakZone, setWeakZone] = useState<BattleWeakZone | null>(null);
-    const [battleInjuries, setBattleInjuries] = useState<BattleInjury[]>([]);
+    const [, setBattleInjuries] = useState<BattleInjury[]>([]);
     const [baddies, setBaddies] = useState<BattleBaddieState[]>([]);
     const [domeBlinkAt, setDomeBlinkAt] = useState(0);
 
@@ -1597,18 +1597,6 @@ export default function BattlePage() {
         });
     }, [pruneShotPreviews]);
 
-    const battleDamageMultiplier = useMemo(() => {
-        const branchName = String(user?.treeBranch || '').trim();
-        if (!branchName) return 1;
-        const totalDebuffPercent = battleInjuries.reduce((acc, injury) => {
-            if (String(injury.branchName || '').trim() !== branchName) {
-                return acc;
-            }
-            return acc + (Number(injury.debuffPercent) || 0);
-        }, 0);
-        return Math.max(0, 1 - totalDebuffPercent / 100);
-    }, [battleInjuries, user?.treeBranch]);
-
     const damageBoostActive = useMemo(
         () => isBoostActiveForBattle(user?.shopBoosts?.battleDamage, battleId),
         [battleId, user?.shopBoosts?.battleDamage],
@@ -1771,7 +1759,7 @@ export default function BattlePage() {
         if (user?.nightShift?.isServing) {
             personalBaseDamage *= 2;
         }
-        personalBaseDamage *= battleDamageMultiplier * penaltyMultiplier;
+        personalBaseDamage *= penaltyMultiplier;
 
         let totalDamage = personalBaseDamage;
         if (inWeakZone) {
@@ -1781,8 +1769,8 @@ export default function BattlePage() {
             }
         }
 
-        return Math.max(0, Math.round(totalDamage));
-    }, [battleDamageMultiplier, damageBoostActive, ensureShotChargeState, user?.nightShift?.isServing, weakZone, weakZoneBoostActive]);
+        return Math.max(1, Math.round(totalDamage));
+    }, [damageBoostActive, ensureShotChargeState, user?.nightShift?.isServing, weakZone, weakZoneBoostActive]);
 
     useEffect(() => {
         const detectTier = () => {

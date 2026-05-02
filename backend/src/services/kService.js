@@ -19,6 +19,7 @@ const REFERRAL_BLESSING_PERCENT = 5;
 const GLOBAL_K_DEBUFF_CACHE_TTL_MS = Math.max(1000, Number(process.env.GLOBAL_K_DEBUFF_CACHE_TTL_MS) || 5 * 1000);
 const USER_K_MULTIPLIER_CACHE_TTL_MS = Math.max(1000, Number(process.env.USER_K_MULTIPLIER_CACHE_TTL_MS) || 5 * 1000);
 const CREDIT_K_MOOD_CACHE_TTL_MS = Math.max(1000, Number(process.env.CREDIT_K_MOOD_CACHE_TTL_MS) || 5 * 1000);
+const TREE_INJURY_REWARD_DEBUFF_PERCENT = 50;
 
 let globalCpDebuffCache = { expiresAt: 0, value: 1 };
 let globalCpDebuffInflight = null;
@@ -239,7 +240,7 @@ async function getUserKDebuffMultiplier(userId) {
       const now = new Date(nowMs);
       const penaltyActive = Boolean(data.debuffActiveUntil && new Date(data.debuffActiveUntil) > now);
       const penaltyPercent = penaltyActive ? (Number(data.debuffPercent) || 0) : 0;
-      const injuryPercent = await getUserInjuryDebuffPercent(data.treeBranch);
+      const injuryPercent = await getUserInjuryDebuffPercent();
       const value = toMultiplier(penaltyPercent) * toMultiplier(injuryPercent);
       const expiresAt = getRuntimeCacheExpiry(
         nowMs,
@@ -263,7 +264,7 @@ async function getUserKDebuffMultiplier(userId) {
   return promise;
 }
 
-let injuryDebuffCache = { at: 0, byBranch: null };
+let injuryDebuffCache = { at: 0, percent: null };
 const INJURY_DEBUFF_CACHE_TTL_MS = 30 * 1000;
 
 function mapDocRow(row) {
@@ -290,60 +291,59 @@ async function getTreeDoc() {
   return mapDocRow(data);
 }
 
-async function getCurrentInjuryDebuffByBranch() {
+async function getCurrentInjuryDebuffPercent() {
   const now = Date.now();
-  if (injuryDebuffCache.byBranch && now - injuryDebuffCache.at < INJURY_DEBUFF_CACHE_TTL_MS) {
-    return injuryDebuffCache.byBranch;
+  if (injuryDebuffCache.percent !== null && now - injuryDebuffCache.at < INJURY_DEBUFF_CACHE_TTL_MS) {
+    return injuryDebuffCache.percent;
   }
-  const byBranch = Object.create(null);
+  let percent = 0;
   try {
     const tree = await getTreeDoc();
     const injuries = Array.isArray(tree?.injuries) ? tree.injuries : [];
-    for (const inj of injuries) {
-      if (!inj?.branchName) continue;
+    const hasActiveInjury = injuries.some((inj) => {
       const healed = Number(inj?.healedPercent) || 0;
-      if (healed >= 100) continue;
-      const p = Number(inj?.debuffPercent) || 0;
-      if (!(p > 0)) continue;
-      const raw = String(inj.branchName);
-      const prev = Number(byBranch[raw]) || 0;
-      byBranch[raw] = Math.min(100, prev + p);
-    }
+      return healed < 100;
+    });
+    percent = hasActiveInjury ? TREE_INJURY_REWARD_DEBUFF_PERCENT : 0;
   } catch (e) {
     // ignore
   }
-  injuryDebuffCache = { at: now, byBranch };
-  return byBranch;
+  injuryDebuffCache = { at: now, percent };
+  return percent;
 }
 
-async function getUserInjuryDebuffPercent(treeBranch) {
-  if (!treeBranch) return 0;
-  const map = await getCurrentInjuryDebuffByBranch();
-  const byBranch = Number(map?.[String(treeBranch)]) || 0;
-  return byBranch;
+async function getUserInjuryDebuffPercent() {
+  return getCurrentInjuryDebuffPercent();
 }
 
 async function getUserRewardDebuffMultiplier(userId) {
   return getUserKDebuffMultiplier(userId);
 }
 
-async function getBattleDamageMultiplier(userId, { treeBranch = null } = {}) {
-  try {
-    const resolvedTreeBranch = treeBranch ?? getUserDataFromRow(await getUserRowById(userId))?.treeBranch;
-    const injuryPercent = await getUserInjuryDebuffPercent(resolvedTreeBranch);
-    return toMultiplier(injuryPercent);
-  } catch (e) {
-    return 1;
-  }
+async function getBattleDamageMultiplier() {
+  return 1;
+}
+
+function combineBaseAndBlessingMultipliers(baseMultiplier, blessingMultiplier) {
+  const base = Math.max(0, Number(baseMultiplier) || 0);
+  const blessing = Math.max(1, Number(blessingMultiplier) || 1);
+  return base + Math.max(0, blessing - 1);
+}
+
+async function getBaseRewardMultiplier(userId) {
+  const [mGlobal, mUser] = await Promise.all([
+    getGlobalKDebuffMultiplier(),
+    getUserRewardDebuffMultiplier(userId),
+  ]);
+  return mGlobal * mUser;
 }
 
 async function getTotalRewardMultiplier(userId) {
-  const [mGlobal, mUser, mBlessing] = await Promise.all([
-    getGlobalKDebuffMultiplier(),
-    getUserRewardDebuffMultiplier(userId),
+  const [baseMultiplier, blessingMultiplier] = await Promise.all([
+    getBaseRewardMultiplier(userId),
     getTreeBlessingRewardMultiplierForUser(userId),
   ]);
-  return mGlobal * mUser * mBlessing;
+  return combineBaseAndBlessingMultipliers(baseMultiplier, blessingMultiplier);
 }
 
 async function getActiveBattleWithGlobalDebuff() {
@@ -442,9 +442,9 @@ async function getCreditKMoodMultiplier(userId) {
   return promise;
 }
 
-async function creditK({ userId, amount, type = 'other', description, relatedEntity, skipDebuff = false }) {
+async function creditK({ userId, amount, type = 'other', description, relatedEntity, skipDebuff = false, skipBlessing = false }) {
   ensurePositive(amount);
-  const blessingPromise = getTreeBlessingRewardMultiplierForUser(userId);
+  const blessingPromise = skipBlessing ? Promise.resolve(1) : getTreeBlessingRewardMultiplierForUser(userId);
   const [mGlobal, mUser, mBlessing] = skipDebuff
     ? await Promise.all([Promise.resolve(1), Promise.resolve(1), blessingPromise])
     : await Promise.all([
@@ -452,7 +452,10 @@ async function creditK({ userId, amount, type = 'other', description, relatedEnt
       getUserKDebuffMultiplier(userId),
       blessingPromise,
     ]);
-  let debuffedAmountRaw = amount * mGlobal * mUser * mBlessing;
+  const rewardMultiplier = skipDebuff
+    ? mBlessing
+    : combineBaseAndBlessingMultipliers(mGlobal * mUser, mBlessing);
+  let debuffedAmountRaw = amount * rewardMultiplier;
   if (!(debuffedAmountRaw > 0)) return null;
 
   debuffedAmountRaw *= await getCreditKMoodMultiplier(userId);
@@ -733,23 +736,45 @@ async function awardChatRewardsForChat(chatId) {
   const shouldBoostA = Boolean(userAData?.shopBoosts?.chatK?.pending);
   const shouldBoostB = Boolean(userBData?.shopBoosts?.chatK?.pending);
 
-  const amountA = shouldBoostA ? round3(baseAmount * 1.25) : baseAmount;
-  const amountB = shouldBoostB ? round3(baseAmount * 1.25) : baseAmount;
+  const bonusA = shouldBoostA ? round3(baseAmount * 0.25) : 0;
+  const bonusB = shouldBoostB ? round3(baseAmount * 0.25) : 0;
 
   await creditK({
     userId: a,
-    amount: amountA,
+    amount: baseAmount,
     type: 'chat',
     description,
     relatedEntity: chatId,
   });
   await creditK({
     userId: b,
-    amount: amountB,
+    amount: baseAmount,
     type: 'chat',
     description,
     relatedEntity: chatId,
   });
+  if (bonusA > 0) {
+    await creditK({
+      userId: a,
+      amount: bonusA,
+      type: 'chat_boost',
+      description,
+      relatedEntity: chatId,
+      skipDebuff: true,
+      skipBlessing: true,
+    });
+  }
+  if (bonusB > 0) {
+    await creditK({
+      userId: b,
+      amount: bonusB,
+      type: 'chat_boost',
+      description,
+      relatedEntity: chatId,
+      skipDebuff: true,
+      skipBlessing: true,
+    });
+  }
 
   if (shouldBoostA) {
     const row = await getUserRowById(a);
@@ -809,7 +834,7 @@ async function awardReferralBlessingExternal({ receiverUserId, amount, sourceTyp
 }
 
 function __resetKServiceRuntimeState() {
-  injuryDebuffCache = { at: 0, byBranch: null };
+  injuryDebuffCache = { at: 0, percent: null };
   globalCpDebuffCache = { expiresAt: 0, value: 1 };
   globalCpDebuffInflight = null;
   userKMultiplierCache.clear();
@@ -831,6 +856,7 @@ module.exports = {
   awardChatRewardsForChat,
   awardReferralBlessingExternal,
   getUserRewardDebuffMultiplier,
+  getBaseRewardMultiplier,
   getTotalRewardMultiplier,
   getBattleDamageMultiplier,
   recordTransaction: createTransaction,

@@ -2,7 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { applyStarsDelta } = require('../utils/stars');
-const { recordTransaction } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
 const { applyTreeBlessingToReward, claimTreeBlessingForUser, getTreeBlessingStatusForUser } = require('../services/treeBlessingService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, upsertDoc } = require('../services/documentStore');
@@ -171,10 +171,12 @@ router.post('/gratitude/complete', auth, async (req, res) => {
     }
 
     const userData = getUserData(userRow);
+    const baseMultiplier = await getBaseRewardMultiplier(userId);
     const blessingReward = await applyTreeBlessingToReward({
       userId,
       sc: GRATITUDE_SC_REWARD,
       now,
+      baseMultiplier,
     });
     const awardedSc = blessingReward.sc;
     const nextSc = (Number(userData.sc) || 0) + awardedSc;
@@ -184,7 +186,6 @@ router.post('/gratitude/complete', auth, async (req, res) => {
     const starsResult = await applyStarsDelta({
       userId,
       delta: GRATITUDE_STARS_REWARD,
-      skipDebuff: true,
       type: 'gratitude_write',
       description: userLang === 'en' ? 'Gratitude' : 'Благодарность',
       relatedEntity: `${dayKey}:${index}`,

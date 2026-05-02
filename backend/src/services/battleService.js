@@ -130,6 +130,7 @@ const CURRENT_BATTLE_POINTER_KIND = 'current';
 const UPCOMING_BATTLE_POINTER_KIND = 'upcoming';
 
 const GLOBAL_DEBUFF_NO_ENTRY_PERCENT = 5;
+const TREE_INJURY_REWARD_DEBUFF_PERCENT = 50;
 
 const BATTLE_POLICY = Object.freeze({
   timerMode: 'dynamic_attendance',
@@ -1219,10 +1220,8 @@ function getWeakZoneForIndex(battle, zoneIndex, userId = null) {
   return null;
 }
 
-function computeLightDebuffMultiplier(injuries = []) {
-  if (!injuries.length) return 1;
-  const avgDebuff = injuries.reduce((acc, inj) => acc + (inj.debuffPercent || 0), 0) / injuries.length;
-  return Math.max(0, 1 - avgDebuff / 100);
+function computeLightDebuffMultiplier() {
+  return 1;
 }
 
 async function scheduleBattle({
@@ -1352,7 +1351,7 @@ async function startBattle(battleId, {
     patch.activeUsersCountSnapshot = battle.activeUsersCountSnapshot || 0;
   }
 
-  // Apply current Tree injuries to this battle (debuff to Light damage)
+  // Keep current Tree injuries in the battle snapshot for summary only.
   try {
     const tree = await getLatestModelDoc('Tree');
     const injuries = Array.isArray(tree?.injuries) ? tree.injuries : [];
@@ -1362,7 +1361,7 @@ async function startBattle(battleId, {
         branchName: inj.branchName,
         requiredRadiance: inj.requiredRadiance,
         healedRadiance: inj.healedRadiance,
-        debuffPercent: inj.debuffPercent || 0,
+        debuffPercent: TREE_INJURY_REWARD_DEBUFF_PERCENT,
       }));
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -1757,7 +1756,7 @@ async function finishBattle(
               Number(worldLivingUsersCount) || Number(activeUsersCount) || 1,
             );
             const requiredRadiance = Math.round(injurySize * effectiveUsers);
-            const debuffPercent = Math.max(1, Math.round(missingPercent));
+            const debuffPercent = TREE_INJURY_REWARD_DEBUFF_PERCENT;
 
             const pickedBranchName = await pickPriorityInjuryBranchName(
               { ...battle, attendance: finalAttendance, endsAt: patch.endsAt },
@@ -1794,7 +1793,7 @@ async function finishBattle(
                     branchName: inj.branchName,
                     requiredRadiance: inj.requiredRadiance,
                     healedRadiance: inj.healedRadiance,
-                    debuffPercent: inj.debuffPercent || 0,
+                    debuffPercent: TREE_INJURY_REWARD_DEBUFF_PERCENT,
                   }));
               }
             }

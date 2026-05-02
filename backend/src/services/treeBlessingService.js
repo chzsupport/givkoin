@@ -255,15 +255,19 @@ async function getTreeBlessingRewardMultiplierForUser(userId, { now = new Date()
   return promise;
 }
 
-async function applyTreeBlessingToReward({ userId, sc = 0, lumens = 0, now = new Date() }) {
+async function applyTreeBlessingToReward({ userId, sc = 0, lumens = 0, now = new Date(), baseMultiplier = 1 }) {
   const multiplier = await getTreeBlessingRewardMultiplierForUser(userId, { now });
   const safeSc = Math.max(0, Number(sc) || 0);
   const safeLumens = Math.max(0, Number(lumens) || 0);
+  const safeBaseMultiplier = Math.max(0, Number(baseMultiplier) || 0);
+  const blessingBonusMultiplier = Math.max(0, multiplier - 1);
+  const totalMultiplier = safeBaseMultiplier + blessingBonusMultiplier;
 
   return {
     multiplier,
-    sc: multiplier > 1 ? round3(safeSc * multiplier) : round3(safeSc),
-    lumens: multiplier > 1 ? Math.max(0, Math.floor(safeLumens * multiplier)) : Math.max(0, Math.floor(safeLumens)),
+    baseMultiplier: safeBaseMultiplier,
+    sc: round3(safeSc * totalMultiplier),
+    lumens: Math.max(0, Math.floor(safeLumens * totalMultiplier)),
   };
 }
 

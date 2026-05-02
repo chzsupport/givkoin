@@ -2,7 +2,7 @@ const { countActivities, listActivities, recordActivity } = require('../services
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getDocById, upsertDoc } = require('../services/documentStore');
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { recordTransaction } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 
@@ -369,10 +369,12 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
       const userRow = await getUserRowById(userId);
       if (userRow) {
         const userData = getUserData(userRow);
+        const baseMultiplier = await getBaseRewardMultiplier(userId);
         const blessingReward = await applyTreeBlessingToReward({
           userId,
           sc: prizeAmount,
           now,
+          baseMultiplier,
         });
         const awardedSc = blessingReward.sc;
         userSc = (Number(userData.sc) || 0) + awardedSc;

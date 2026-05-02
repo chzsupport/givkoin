@@ -1,9 +1,11 @@
 const { recordActivity } = require('../services/activityService');
 const { countActivities } = require('../services/activityService');
 const { applyStarsDelta } = require('../utils/stars');
-const { awardReferralBlessingExternal } = require('../services/scService');
-const { getTotalRewardMultiplier } = require('../services/scService');
-const { recordTransaction } = require('../services/scService');
+const {
+    awardReferralBlessingExternal,
+    getTotalRewardMultiplier,
+    recordTransaction,
+} = require('../services/scService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage } = require('../utils/requestLanguage');
@@ -303,10 +305,11 @@ exports.collectSolarCharge = async (req, res) => {
         const extraLm = charges > 0 ? 20 : 0;
         const lmAward = baseLmAward + extraLm;
 
-        const finalLmAward = keepPositiveReward(
-            Math.max(0, Math.floor(lmAward * rewardMultiplier)),
-            lmAward
+        const finalBaseLmAward = keepPositiveReward(
+            Math.max(0, Math.floor(baseLmAward * rewardMultiplier)),
+            baseLmAward
         );
+        const finalLmAward = finalBaseLmAward + extraLm;
         const finalScAward = keepPositiveReward(
             Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000),
             scAward

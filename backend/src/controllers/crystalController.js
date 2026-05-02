@@ -1,6 +1,6 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, upsertDoc, deleteDoc } = require('../services/documentStore');
-const { recordTransaction } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
 const { getNightShiftStatusForUser } = require('../services/nightShiftRuntimeService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
 const { normalizeSitePath } = require('../utils/sitePath');
@@ -365,12 +365,15 @@ async function applyCrystalCompletionReward(userId) {
     const userRow = await getUserRowById(userId);
     if (!userRow) return null;
     const userData = getUserData(userRow);
+    const baseMultiplier = await getBaseRewardMultiplier(userId);
     const blessingReward = await applyTreeBlessingToReward({
         userId,
         sc: 12,
         lumens: 12,
         now: new Date(),
+        baseMultiplier,
     });
+    const starsAward = Math.round(0.001 * baseMultiplier * 1000) / 1000;
     const nowIso = new Date().toISOString();
     const supabase = getSupabaseClient();
 
@@ -381,7 +384,7 @@ async function applyCrystalCompletionReward(userId) {
                 ...userData,
                 sc: (Number(userData.sc) || 0) + blessingReward.sc,
                 lumens: (Number(userData.lumens) || 0) + blessingReward.lumens,
-                stars: (Number(userData.stars) || 1) + 0.001,
+                stars: (Number(userData.stars) || 1) + starsAward,
             },
             updated_at: nowIso,
         })

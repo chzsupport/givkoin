@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { recordActivity } = require('./activityService');
 const { awardRadianceForActivity } = require('./activityRadianceService');
-const { recordTransaction } = require('./scService');
+const { getBaseRewardMultiplier, recordTransaction } = require('./scService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, mapDocRow, toIso, upsertDoc } = require('./documentStore');
 const { getActiveUsersCountSnapshot } = require('./battleService');
@@ -2036,16 +2036,19 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
         throw new Error('night_shift_settlement_user_not_found');
       }
       const userData = getUserData(userRow);
+      const baseMultiplier = await getBaseRewardMultiplier(userRow.id);
       const blessingReward = await applyTreeBlessingToReward({
         userId: userRow.id,
         sc: reward.sc,
         lumens: reward.lm,
         now,
+        baseMultiplier,
       });
       const finalReward = {
         ...reward,
         sc: blessingReward.sc,
         lm: blessingReward.lumens,
+        stars: Number(((Number(reward.stars) || 0) * baseMultiplier).toFixed(4)),
       };
       const currentNightShift = getNightShiftFromUserData(userData);
       const nextNightShift = {
