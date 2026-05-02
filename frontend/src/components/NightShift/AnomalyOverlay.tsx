@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Ghost, Shield, Sparkles, Sword } from 'lucide-react';
 import Link from 'next/link';
 import { useI18n } from '@/context/I18nContext';
+import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
 import {
     clearNightShiftRuntime,
     getCurrentNightShiftAnomaly,
@@ -26,6 +27,7 @@ import {
 
 export const AnomalyOverlay = () => {
     const pathname = usePathname();
+    const cleanPathname = normalizeSitePath(pathname || '/');
     const toast = useToast();
     const { isAuthenticated } = useAuth();
     const { localePath, t } = useI18n();
@@ -130,7 +132,7 @@ export const AnomalyOverlay = () => {
                 targetSector: current.anomaly.sectorId,
                 targetUrl: current.anomaly.sectorUrl,
             });
-            if (pathname.startsWith(current.anomaly.sectorUrl) && !cleared) {
+            if (pathStartsWith(cleanPathname, current.anomaly.sectorUrl) && !cleared) {
                 const timeout = setTimeout(() => setShowAnomaly(true), 500);
                 return () => clearTimeout(timeout);
             }
@@ -140,7 +142,7 @@ export const AnomalyOverlay = () => {
 
         setMission(null);
         setShowAnomaly(false);
-    }, [pathname, runtime, cleared]);
+    }, [cleanPathname, runtime, cleared]);
 
     useEffect(() => {
         if (!runtime || !isAuthenticated) return;
@@ -227,7 +229,7 @@ export const AnomalyOverlay = () => {
             if (!mission || !runtime) return;
 
             setExploding(true);
-            const nextRuntime = recordNightShiftAnomaly(runtime, mission.anomalyId, pathname || mission.targetUrl, Date.now());
+            const nextRuntime = recordNightShiftAnomaly(runtime, mission.anomalyId, cleanPathname || mission.targetUrl, Date.now());
             if (nextRuntime) {
                 writeNightShiftRuntime(nextRuntime);
                 setRuntime(nextRuntime);
@@ -248,7 +250,7 @@ export const AnomalyOverlay = () => {
         }
     };
 
-    const showRadarShortcut = Boolean(mission && pathname !== '/activity/night-shift');
+    const showRadarShortcut = Boolean(mission && cleanPathname !== '/activity/night-shift');
     if (!showAnomaly && !exploding && !showRadarShortcut) return null;
 
     // Random position

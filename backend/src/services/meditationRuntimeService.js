@@ -7,8 +7,6 @@ const SESSION_MODEL = 'CollectiveMeditationSessionSnapshot';
 const QUEUE_MODEL = 'CollectiveMeditationQueueEntry';
 const PARTICIPATION_MODEL = 'CollectiveMeditationParticipation';
 const INDIVIDUAL_SESSION_MODEL = 'IndividualMeditationSession';
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
 const SETTLEMENT_DELAY_MIN_MS = 60 * 1000;
 const SETTLEMENT_DELAY_MAX_MS = 3 * 60 * 1000;
 const GROUP_RADIANCE_SECONDS_STEP = 300;
@@ -49,21 +47,20 @@ function mapListedDoc(row) {
 }
 
 async function listModelDocsRaw(model, { limit = 5000 } = {}) {
-  const supabase = getSupabaseClient();
   const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 5000));
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,model,data,created_at,updated_at')
-    .eq('model', String(model))
-    .order('created_at', { ascending: false })
-    .limit(safeLimit);
-  if (error || !Array.isArray(data)) return [];
-  return data.map((row) => ({
-    id: String(row.id),
-    data: row.data && typeof row.data === 'object' ? row.data : {},
-    createdAt: row.created_at ? new Date(row.created_at) : null,
-    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
-  }));
+  const rows = await listDocsByModel(String(model), { limit: safeLimit });
+  return rows
+    .map((row) => ({
+      id: String(row?._id || ''),
+      data: row && typeof row === 'object' ? { ...row } : {},
+      createdAt: row?.createdAt ? new Date(row.createdAt) : null,
+      updatedAt: row?.updatedAt ? new Date(row.updatedAt) : null,
+    }))
+    .sort((left, right) => {
+      const leftTime = left.createdAt ? left.createdAt.getTime() : 0;
+      const rightTime = right.createdAt ? right.createdAt.getTime() : 0;
+      return rightTime - leftTime;
+    });
 }
 
 function buildSessionDocId(sessionId) {

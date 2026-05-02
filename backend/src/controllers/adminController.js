@@ -2594,34 +2594,8 @@ exports.getCrystalStats = async (req, res) => {
 exports.getCrystalLocations = async (req, res) => {
     try {
         const crystalCtrl = require('./crystalController');
-        const sessionStart = crystalCtrl.getCrystalSessionStart();
-        const supabase = getSupabaseClient();
-        
-        const { data: shardRows, error } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data,created_at,updated_at')
-            .eq('model', 'CrystalShard')
-            .limit(100);
-        
-        if (error) return res.status(500).json({ message: error.message });
-        
-        // Filter by sessionStart and sort by date desc
-        const shards = (shardRows || [])
-            .map(mapDocRow)
-            .filter((row) => {
-                const date = row.date ? new Date(row.date) : null;
-                return date && date >= sessionStart;
-            })
-            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        
-        let daily = shards[0];
-        
-        if (!daily) {
-            console.log(`[Admin] No shards found for session >= ${sessionStart.toISOString()}, generating...`);
-            daily = await crystalCtrl.generateDailyShards();
-        }
-
-        console.log(`[Admin] Returning ${daily?.locations?.length || 0} locations for session ${daily?.date?.toISOString?.() || daily?.date}`);
+        const daily = await crystalCtrl.generateDailyShards();
+        console.log(`[Admin] Returning ${daily?.locations?.length || 0} locations for session ${daily?.date}`);
         res.json({ locations: daily ? daily.locations : [] });
     } catch (error) {
         console.error('[Admin] getCrystalLocations error:', error);

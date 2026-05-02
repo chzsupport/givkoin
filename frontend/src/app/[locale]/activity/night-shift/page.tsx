@@ -27,6 +27,7 @@ import {
     writeNightShiftRuntime,
 } from '@/utils/nightShiftRuntime';
 import { getSiteLanguage, getSiteLanguageLocale } from '@/i18n/siteLanguage';
+import { normalizeSitePath } from '@/utils/sitePath';
 
 interface ShiftStats {
     totalTimeMs: number;
@@ -338,7 +339,8 @@ export default function NightShiftPage() {
     };
 
     const formatPageLabel = (pagePath: string) => {
-        const normalized = String(pagePath || '').trim();
+        const rawPath = String(pagePath || '').trim();
+        const normalized = rawPath ? normalizeSitePath(rawPath) : '';
         const labels: Record<string, string> = {
             '/tree': t('night_shift.page_label.tree'),
             '/bridges': t('night_shift.page_label.bridges'),

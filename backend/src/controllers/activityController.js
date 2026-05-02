@@ -1,6 +1,7 @@
 const { recordActivity } = require('../services/activityService');
 const { recordBehaviorEvent } = require('../services/behaviorEventService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { normalizeSitePath } = require('../utils/sitePath');
 
 const ALLOWED_BEHAVIOR_CATEGORIES = new Set(['navigation', 'battle', 'http', 'economy', 'system']);
 const LAST_SEEN_WRITE_TTL_MS = Math.max(
@@ -37,19 +38,28 @@ function trimString(value, maxLen = 512) {
   return String(value || '').slice(0, maxLen);
 }
 
+function normalizeTrackedPath(value, maxLen = 512) {
+  const raw = trimString(value, maxLen).trim();
+  if (!raw) return '';
+  return trimString(normalizeSitePath(raw), maxLen);
+}
+
 function sanitizeNavigationMeta(body = {}) {
   return {
-    path: trimString(body.path, 512),
+    path: normalizeTrackedPath(body.path, 512),
     referrer: trimString(body.referrer, 512),
-    previousPath: trimString(body.previousPath, 512),
+    previousPath: normalizeTrackedPath(body.previousPath, 512),
     navigationSource: trimString(body.navigationSource, 64),
     viaUiClick: Boolean(body.viaUiClick),
-    uiTargetPath: trimString(body.uiTargetPath, 512),
+    uiTargetPath: normalizeTrackedPath(body.uiTargetPath, 512),
     isDirectNavigation: Boolean(body.isDirectNavigation),
     chainExpected: Boolean(body.chainExpected),
     chainSatisfied: Boolean(body.chainSatisfied),
     skippedPaths: Array.isArray(body.skippedPaths)
-      ? body.skippedPaths.slice(0, 10).map((item) => trimString(item, 256))
+      ? body.skippedPaths
+        .slice(0, 10)
+        .map((item) => normalizeTrackedPath(item, 256))
+        .filter(Boolean)
       : [],
     navigationLatencyMs: Number.isFinite(Number(body.navigationLatencyMs))
       ? Math.max(0, Number(body.navigationLatencyMs))
@@ -112,7 +122,7 @@ async function recordBehavior(req, res, next) {
   try {
     const category = trimString(req.body?.category, 60);
     const eventType = trimString(req.body?.eventType, 120);
-    const path = trimString(req.body?.path || '', 512);
+    const path = normalizeTrackedPath(req.body?.path || '', 512);
     const battleId = trimString(req.body?.battleId || '', 120);
     const scoreHint = Number(req.body?.scoreHint);
 

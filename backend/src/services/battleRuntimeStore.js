@@ -70,6 +70,36 @@ function deleteRuntimeHotCacheRowsByPrefix(modelName, idPrefix) {
   }
 }
 
+function listRuntimeHotCacheRows(modelName, { idPrefix = '', limit = 5000, nowMs = Date.now() } = {}) {
+  const model = String(modelName || '').trim();
+  const prefix = String(idPrefix || '').trim();
+  if (!model) return [];
+
+  const keyPrefix = `${model}::`;
+  const out = [];
+
+  for (const [key, entry] of runtimeHotCache.entries()) {
+    if (!key.startsWith(keyPrefix)) continue;
+    if (Number.isFinite(entry.expiresAtMs) && entry.expiresAtMs <= nowMs) {
+      runtimeHotCache.delete(key);
+      continue;
+    }
+
+    const row = cloneRuntimeHotCacheRow(entry.row);
+    const rowId = normalizeIdPart(row?.id);
+    if (!row || !rowId) continue;
+    if (prefix && !rowId.startsWith(prefix)) continue;
+    out.push(row);
+  }
+
+  return out.slice(0, Math.max(1, Math.min(5000, Number(limit) || 5000)));
+}
+
+function warnRuntimeStore(action, error) {
+  const message = error?.message || String(error || 'unknown error');
+  console.warn(`[battleRuntimeStore] ${action}: ${message}`);
+}
+
 async function getDocument(modelName, id) {
   const model = String(modelName || '').trim();
   const docId = String(id || '').trim();
@@ -87,7 +117,10 @@ async function getDocument(modelName, id) {
     .eq('model', model)
     .eq('id', docId)
     .maybeSingle();
-  if (error) throw error;
+  if (error) {
+    warnRuntimeStore(`getDocument(${model}/${docId})`, error);
+    return null;
+  }
   if (!data) return null;
   const row = {
     id: String(data.id),
@@ -109,6 +142,20 @@ async function insertDocument(modelName, id, data, opts = {}) {
   const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
   const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
   const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
+  const existing = getRuntimeHotCacheRow(model, docId);
+  if (existing) {
+    const duplicateError = new Error(`[DB] Failed to insert "${model}/${docId}": duplicate cached runtime document`);
+    duplicateError.code = '23505';
+    throw duplicateError;
+  }
+
+  setRuntimeHotCacheRow(model, docId, {
+    id: docId,
+    data: data || {},
+    createdAt: new Date(createdAtIso),
+    updatedAt: new Date(updatedAtIso),
+    expiresAt: expiresAtIso ? new Date(expiresAtIso) : null,
+  });
 
   const supabase = getSupabaseClient();
   const { error } = await supabase
@@ -125,15 +172,11 @@ async function insertDocument(modelName, id, data, opts = {}) {
     const wrapped = new Error(`[DB] Failed to insert "${model}/${docId}": ${error.message}`);
     wrapped.code = error.code || '';
     wrapped.details = error;
-    throw wrapped;
+    if (isDuplicateInsertError(wrapped)) {
+      throw wrapped;
+    }
+    warnRuntimeStore(`insertDocument(${model}/${docId})`, wrapped);
   }
-  setRuntimeHotCacheRow(model, docId, {
-    id: docId,
-    data: data || {},
-    createdAt: new Date(createdAtIso),
-    updatedAt: new Date(updatedAtIso),
-    expiresAt: expiresAtIso ? new Date(expiresAtIso) : null,
-  });
 }
 
 async function upsertDocument(modelName, id, data, opts = {}) {
@@ -145,6 +188,14 @@ async function upsertDocument(modelName, id, data, opts = {}) {
   const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
   const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
   const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
+  const existing = getRuntimeHotCacheRow(model, docId);
+  setRuntimeHotCacheRow(model, docId, {
+    id: docId,
+    data: data || {},
+    createdAt: existing?.createdAt ? new Date(existing.createdAt) : new Date(createdAtIso),
+    updatedAt: new Date(updatedAtIso),
+    expiresAt: expiresAtIso ? new Date(expiresAtIso) : null,
+  });
 
   const supabase = getSupabaseClient();
   const { error } = await supabase
@@ -160,28 +211,25 @@ async function upsertDocument(modelName, id, data, opts = {}) {
       onConflict: 'model,id',
       ignoreDuplicates: false,
     });
-  if (error) throw error;
-  setRuntimeHotCacheRow(model, docId, {
-    id: docId,
-    data: data || {},
-    createdAt: new Date(createdAtIso),
-    updatedAt: new Date(updatedAtIso),
-    expiresAt: expiresAtIso ? new Date(expiresAtIso) : null,
-  });
+  if (error) {
+    warnRuntimeStore(`upsertDocument(${model}/${docId})`, error);
+  }
 }
 
 async function deleteDocument(modelName, id) {
   const model = String(modelName || '').trim();
   const docId = String(id || '').trim();
   if (!model || !docId) return;
+  deleteRuntimeHotCacheRow(model, docId);
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from(RUNTIME_TABLE)
     .delete()
     .eq('model', model)
     .eq('id', docId);
-  if (error) throw error;
-  deleteRuntimeHotCacheRow(model, docId);
+  if (error) {
+    warnRuntimeStore(`deleteDocument(${model}/${docId})`, error);
+  }
 }
 
 async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {}) {
@@ -192,6 +240,7 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
   const supabase = getSupabaseClient();
   const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 1000));
   let deletedTotal = 0;
+  deleteRuntimeHotCacheRowsByPrefix(model, prefix);
 
   while (true) {
     const { data, error } = await supabase
@@ -202,6 +251,9 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
       .limit(safeLimit);
 
     if (error || !Array.isArray(data) || !data.length) {
+      if (error) {
+        warnRuntimeStore(`deleteDocumentsByPrefix(${model}/${prefix})`, error);
+      }
       break;
     }
 
@@ -220,7 +272,8 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
       .in('id', ids);
 
     if (deleteError) {
-      throw deleteError;
+      warnRuntimeStore(`deleteDocumentsByPrefix(${model}/${prefix})`, deleteError);
+      break;
     }
 
     ids.forEach((id) => deleteRuntimeHotCacheRow(model, id));
@@ -230,8 +283,6 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
       break;
     }
   }
-
-  deleteRuntimeHotCacheRowsByPrefix(model, prefix);
   return deletedTotal;
 }
 
@@ -296,6 +347,23 @@ function isDuplicateInsertError(error) {
 
 function getExpiryMs(data) {
   return parseMs(data?.expiresAt);
+}
+
+function mergeRuntimePayloads(rows = [], { limit = 5000 } = {}) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    const payload = row?.data && typeof row.data === 'object' ? row.data : row;
+    if (!payload || typeof payload !== 'object') continue;
+    const rowId = normalizeIdPart(row?.id || payload._id || payload.id);
+    if (rowId && seen.has(rowId)) continue;
+    const expiresAtMs = getExpiryMs(payload);
+    if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
+    if (rowId) seen.add(rowId);
+    out.push(payload);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 async function loadActiveRuntimeData(modelName, id, nowMs = Date.now()) {
@@ -437,6 +505,9 @@ async function listFinalReportsByBattle({ battleId, limit = 5000 } = {}) {
       .range(from, from + pageSize - 1);
 
     if (error || !Array.isArray(data) || !data.length) {
+      if (error) {
+        warnRuntimeStore(`listFinalReportsByBattle(${safeBattleId})`, error);
+      }
       break;
     }
 
@@ -445,7 +516,7 @@ async function listFinalReportsByBattle({ battleId, limit = 5000 } = {}) {
       if (!payload) continue;
       const expiresAtMs = getExpiryMs(payload);
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
-      out.push(payload);
+      out.push({ id: String(row?.id || ''), data: payload });
       if (out.length >= limit) break;
     }
 
@@ -456,7 +527,14 @@ async function listFinalReportsByBattle({ battleId, limit = 5000 } = {}) {
     from += data.length;
   }
 
-  return out;
+  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.finalReport, {
+    idPrefix: `${safeBattleId}:`,
+    limit,
+  });
+  return mergeRuntimePayloads([
+    ...cached,
+    ...out,
+  ], { limit });
 }
 
 async function getFinalSettlement({ battleId }) {
@@ -515,6 +593,9 @@ async function listFinalSummariesByBattle({ battleId, limit = 5000 } = {}) {
       .range(from, from + pageSize - 1);
 
     if (error || !Array.isArray(data) || !data.length) {
+      if (error) {
+        warnRuntimeStore(`listFinalSummariesByBattle(${safeBattleId})`, error);
+      }
       break;
     }
 
@@ -523,7 +604,7 @@ async function listFinalSummariesByBattle({ battleId, limit = 5000 } = {}) {
       if (!payload) continue;
       const expiresAtMs = getExpiryMs(payload);
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
-      out.push(payload);
+      out.push({ id: String(row?.id || ''), data: payload });
       if (out.length >= limit) break;
     }
 
@@ -534,20 +615,31 @@ async function listFinalSummariesByBattle({ battleId, limit = 5000 } = {}) {
     from += data.length;
   }
 
-  return out;
+  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.finalSummary, {
+    idPrefix: `${safeBattleId}:`,
+    limit,
+  });
+  return mergeRuntimePayloads([
+    ...cached,
+    ...out,
+  ], { limit });
 }
 
 async function listDueFinalSettlements({ nowMs = Date.now(), limit = 200 } = {}) {
   const supabase = getSupabaseClient();
   const safeLimit = Math.max(1, Math.min(1000, Number(limit) || 200));
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from(RUNTIME_TABLE)
     .select('model,id,data,expires_at,created_at,updated_at')
     .eq('model', RUNTIME_MODELS.finalSettlement)
     .limit(safeLimit);
-  if (error || !Array.isArray(data)) return [];
+  if (error || !Array.isArray(rows)) {
+    if (error) {
+      warnRuntimeStore('listDueFinalSettlements', error);
+    }
+  }
 
-  return data
+  const dbRows = (Array.isArray(rows) ? rows : [])
     .map((row) => ({
       ...(row?.data || {}),
       _id: String(row?.id || ''),
@@ -561,6 +653,25 @@ async function listDueFinalSettlements({ nowMs = Date.now(), limit = 200 } = {})
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs) return false;
       return Number.isFinite(dueAtMs) && dueAtMs <= nowMs;
     });
+  const cachedRows = listRuntimeHotCacheRows(RUNTIME_MODELS.finalSettlement, { limit: safeLimit, nowMs })
+    .map((row) => ({
+      ...(row?.data || {}),
+      _id: String(row?.id || ''),
+      expiresAt: row?.expiresAt ? new Date(row.expiresAt) : null,
+      createdAt: row?.createdAt ? new Date(row.createdAt) : null,
+      updatedAt: row?.updatedAt ? new Date(row.updatedAt) : null,
+    }))
+    .filter((row) => {
+      const dueAtMs = parseMs(row?.dueAt);
+      const expiresAtMs = parseMs(row?.expiresAt);
+      if (Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs) return false;
+      return Number.isFinite(dueAtMs) && dueAtMs <= nowMs;
+    });
+
+  return mergeRuntimePayloads([
+    ...cachedRows.map((row) => ({ id: row._id, data: row })),
+    ...dbRows.map((row) => ({ id: row._id, data: row })),
+  ], { limit: safeLimit });
 }
 
 async function getBattlePointer(kind) {
@@ -911,6 +1022,9 @@ async function listAttendanceStatesByBattle({ battleId, limit = 5000 } = {}) {
       .range(from, from + pageSize - 1);
 
     if (error || !Array.isArray(data) || !data.length) {
+      if (error) {
+        warnRuntimeStore(`listAttendanceStatesByBattle(${safeBattleId})`, error);
+      }
       break;
     }
 
@@ -919,7 +1033,7 @@ async function listAttendanceStatesByBattle({ battleId, limit = 5000 } = {}) {
       if (!payload) continue;
       const expiresAtMs = getExpiryMs(payload);
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
-      out.push(payload);
+      out.push({ id: String(row?.id || ''), data: payload });
       if (out.length >= limit) break;
     }
 
@@ -930,10 +1044,28 @@ async function listAttendanceStatesByBattle({ battleId, limit = 5000 } = {}) {
     from += data.length;
   }
 
-  return out;
+  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.attendanceState, {
+    idPrefix: `${safeBattleId}:`,
+    limit,
+  });
+  return mergeRuntimePayloads([
+    ...cached,
+    ...out,
+  ], { limit });
 }
 
 async function cleanupModelByUpdatedBefore({ modelName, beforeMs, limit = CLEANUP_BATCH_LIMIT }) {
+  const safeModel = String(modelName || '').trim();
+  if (safeModel) {
+    for (const [key, entry] of runtimeHotCache.entries()) {
+      if (!key.startsWith(`${safeModel}::`)) continue;
+      const updatedAtMs = parseMs(entry?.row?.updatedAt || entry?.row?.data?.updatedAt);
+      if (Number.isFinite(updatedAtMs) && updatedAtMs < beforeMs) {
+        runtimeHotCache.delete(key);
+      }
+    }
+  }
+
   const client = getSupabaseClient();
   const beforeIso = toIsoString(beforeMs);
 
@@ -966,6 +1098,8 @@ async function cleanupModelByUpdatedBefore({ modelName, beforeMs, limit = CLEANU
   if (deleteError) {
     return 0;
   }
+
+  ids.forEach((id) => deleteRuntimeHotCacheRow(modelName, id));
 
   return ids.length;
 }

@@ -1,10 +1,11 @@
+const crypto = require('crypto');
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { getDocById, listDocsByModel, upsertDoc, deleteDoc } = require('../services/documentStore');
+const { getDocById, listDocsByModel, upsertDoc } = require('../services/documentStore');
 const { recordTransaction } = require('../services/scService');
 const { getNightShiftStatusForUser } = require('../services/nightShiftRuntimeService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
+const { normalizeSitePath } = require('../utils/sitePath');
 
-const CRYSTAL_MODEL = 'CrystalShard';
 const PROGRESS_MODEL = 'UserCrystalProgress';
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const CRYSTAL_DAILY_CACHE_TTL_MS = Math.max(1000, Number(process.env.CRYSTAL_DAILY_CACHE_TTL_MS) || 10 * 1000);
@@ -40,7 +41,16 @@ const TARGET_PAGES = [
 function normalizePath(path) {
     const raw = String(path || '').trim();
     if (!raw) return '';
-    return raw.split('?')[0] || '';
+    return normalizeSitePath(raw);
+}
+
+function getDailyMechanicsSalt() {
+    return String(
+        process.env.DAILY_MECHANICS_SALT
+        || process.env.APP_SECRET
+        || process.env.JWT_SECRET
+        || 'givkoin-daily-salt'
+    ).trim();
 }
 
 function toIsoDayKey(sessionStart) {
@@ -167,30 +177,6 @@ function setCachedCrystalDaily(sessionKey, daily, sessionStart, nowMs = Date.now
     return daily;
 }
 
-async function getDailyShardDoc(sessionStart) {
-    const direct = await getDocById(buildDailyDocId(sessionStart));
-    if (direct) return direct;
-
-    const sessionIso = toIsoDayKey(sessionStart);
-    const legacy = await listDocsByModel(CRYSTAL_MODEL, { limit: 2000 });
-    return legacy.find((row) => String(row.date || '') === sessionIso) || null;
-}
-
-async function listCrystalShards(filter = {}) {
-    const rows = await listDocsByModel(CRYSTAL_MODEL, { limit: 2000 });
-    return rows.filter((row) => {
-        for (const [key, value] of Object.entries(filter)) {
-            if (row?.[key] !== value) return false;
-        }
-        return true;
-    });
-}
-
-async function deleteCrystalShard(shardId) {
-    if (!shardId) return;
-    await deleteDoc(shardId);
-}
-
 async function findCrystalProgress(userId, sessionStart) {
     const direct = await getDocById(buildProgressDocId(userId, sessionStart));
     if (direct) return mapProgressRow(direct, userId, sessionStart);
@@ -315,12 +301,25 @@ async function findOrCreateCrystalProgress(userId, sessionStart) {
 }
 
 function buildDailyLocations(sessionKey) {
-    const shuffled = [...TARGET_PAGES].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, TOTAL_SHARDS).map((page, index) => ({
+    const salt = getDailyMechanicsSalt();
+    const ranked = TARGET_PAGES
+        .map((page) => {
+            const hash = crypto
+                .createHash('sha256')
+                .update(`${salt}:crystal:${sessionKey}:${normalizePath(page.url)}`)
+                .digest('hex');
+            return {
+                ...page,
+                hash,
+            };
+        })
+        .sort((left, right) => left.hash.localeCompare(right.hash));
+
+    return ranked.slice(0, TOTAL_SHARDS).map((page, index) => ({
         shardId: `shard:${sessionKey}:${index}`,
         shardIndex: index,
         pageName: page.name,
-        url: page.url,
+        url: normalizePath(page.url),
         side: index < TOTAL_SHARDS / 2 ? 'left' : 'right',
     }));
 }
@@ -373,8 +372,8 @@ async function updateUserDataById(userId, patch) {
     return data || null;
 }
 
-async function generateDailyShards(force = false) {
-    const sessionStart = getCrystalSessionStart(new Date());
+async function generateDailyShards(force = false, date = new Date()) {
+    const sessionStart = getCrystalSessionStart(date);
     const sessionKey = getCrystalSessionKey(sessionStart);
     const nowMs = Date.now();
 
@@ -387,23 +386,14 @@ async function generateDailyShards(force = false) {
 
     const promise = (async () => {
         const sessionIso = toIsoDayKey(sessionStart);
-        if (force) {
-            const rows = await listCrystalShards({ date: sessionIso });
-            await Promise.all(rows.map((row) => deleteCrystalShard(row._id)));
-        } else {
-            const existing = await getDailyShardDoc(sessionStart);
-            if (existing) return setCachedCrystalDaily(sessionKey, existing, sessionStart, nowMs);
-        }
-
-        const daily = await upsertDoc({
-            id: buildDailyDocId(sessionStart),
-            model: CRYSTAL_MODEL,
-            data: {
-                date: sessionIso,
-                sessionKey,
-                locations: buildDailyLocations(sessionKey),
-            },
-        });
+        const daily = {
+            _id: buildDailyDocId(sessionStart),
+            date: sessionIso,
+            sessionKey,
+            locations: buildDailyLocations(sessionKey),
+            createdAt: sessionIso,
+            updatedAt: new Date(nowMs).toISOString(),
+        };
 
         return setCachedCrystalDaily(sessionKey, daily, sessionStart, nowMs);
     })().finally(() => {
@@ -782,8 +772,7 @@ async function finalizeCrystalReview(progress, sessionStart) {
         return progress;
     }
 
-    const daily = await getDailyShardDoc(sessionStart);
-    if (!daily) return progress;
+    const daily = await generateDailyShards(false, sessionStart);
 
     const review = buildCrystalFinalReport(daily, progress.reportedEntries, progress.reportedCount);
     return upsertCrystalProgress(progress.userId, sessionStart, {

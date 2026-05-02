@@ -6,6 +6,7 @@ const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, mapDocRow, toIso, upsertDoc } = require('./documentStore');
 const { getActiveUsersCountSnapshot } = require('./battleService');
 const { applyTreeBlessingToReward } = require('./treeBlessingService');
+const { normalizeSitePath, pathStartsWith } = require('../utils/sitePath');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const SESSION_MODEL = 'NightShiftRuntimeSession';
@@ -162,9 +163,10 @@ function normalizeResolvedAnomalies(value) {
     const anomalyId = String(row.anomalyId || '').trim();
     if (!anomalyId || seen.has(anomalyId)) continue;
     seen.add(anomalyId);
+    const rawPagePath = String(row.pagePath || '').trim();
     next.push({
       anomalyId,
-      pagePath: String(row.pagePath || '').trim(),
+      pagePath: rawPagePath ? normalizeSitePath(rawPagePath) : '',
       clearedAt: row.clearedAt ? String(row.clearedAt) : null,
     });
   }
@@ -190,7 +192,7 @@ function normalizeSuspiciousWindows(value) {
               ? {
                 anomalyId: String(detail.anomalyId || '').trim(),
                 reason: String(detail.reason || '').trim(),
-                pagePath: String(detail.pagePath || '').trim(),
+                pagePath: detail.pagePath ? normalizeSitePath(String(detail.pagePath || '').trim()) : '',
               }
               : null))
             .filter(Boolean)
@@ -205,7 +207,7 @@ function normalizeSuspiciousWindows(value) {
 function buildPageHitsFromResolved(resolvedRows = []) {
   const next = {};
   for (const row of normalizeResolvedAnomalies(resolvedRows)) {
-    const pagePath = String(row.pagePath || '').trim();
+    const pagePath = row.pagePath ? normalizeSitePath(String(row.pagePath || '').trim()) : '';
     if (!pagePath) continue;
     next[pagePath] = (Number(next[pagePath]) || 0) + 1;
   }
@@ -296,7 +298,7 @@ function validateHeartbeatWindow(windowPlan, resolvedRows, claimedCount) {
       continue;
     }
 
-    if (row.pagePath && !String(row.pagePath).startsWith(String(expected.sectorUrl || ''))) {
+    if (row.pagePath && !pathStartsWith(row.pagePath, String(expected.sectorUrl || ''))) {
       invalid.push({ anomalyId: row.anomalyId, reason: 'wrong_page', pagePath: row.pagePath });
       continue;
     }
@@ -312,7 +314,7 @@ function validateHeartbeatWindow(windowPlan, resolvedRows, claimedCount) {
 
     accepted.push({
       anomalyId: row.anomalyId,
-      pagePath: row.pagePath || String(expected.sectorUrl || ''),
+      pagePath: row.pagePath || normalizeSitePath(String(expected.sectorUrl || '')),
       clearedAt: row.clearedAt || expected.spawnAt,
     });
   }
@@ -593,7 +595,9 @@ function normalizePageHits(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const next = {};
   for (const [pagePath, rawCount] of Object.entries(value)) {
-    const key = String(pagePath || '').trim();
+    const rawPath = String(pagePath || '').trim();
+    if (!rawPath) continue;
+    const key = normalizeSitePath(rawPath);
     if (!key) continue;
     const count = Math.max(0, Math.floor(Number(rawCount) || 0));
     if (!count) continue;

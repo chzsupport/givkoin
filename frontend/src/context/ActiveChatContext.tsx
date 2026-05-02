@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { apiGet } from '@/utils/api';
+import { useI18n } from '@/context/I18nContext';
+import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
 
 interface ActiveChat {
     _id: string;
@@ -62,6 +64,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     const [hasChecked, setHasChecked] = useState(false);
     const router = useRouter();
     const pathname = usePathname();
+    const { localePath } = useI18n();
+    const cleanPathname = normalizeSitePath(pathname || '/');
     const lastPathRef = useRef(pathname);
     const lastCheckAtRef = useRef(0);
     const inFlightCheckRef = useRef<Promise<void> | null>(null);
@@ -132,8 +136,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         if (pathname !== lastPathRef.current) {
             lastPathRef.current = pathname;
 
-            const activeChatPath = activeChat ? `/chat/${activeChat._id}` : null;
-            if (activeChatPath && pathname === activeChatPath) {
+            const activeChatPath = activeChat ? normalizeSitePath(`/chat/${activeChat._id}`) : null;
+            if (activeChatPath && cleanPathname === activeChatPath) {
                 return;
             }
 
@@ -142,7 +146,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
                 void runCheckActiveChat(false);
             }
         }
-    }, [pathname, hasChecked, activeChat, runCheckActiveChat]);
+    }, [pathname, cleanPathname, hasChecked, activeChat, runCheckActiveChat]);
 
     // Перенаправление на активный чат при попытке навигации
     useEffect(() => {
@@ -150,19 +154,19 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         if (!activeChat) return;
 
         const chatPath = `/chat/${activeChat._id}`;
-        const isOnChatPage = pathname.startsWith('/chat/');
-        const isOnLandingOrAuth = pathname === '/' || pathname === '/login' || pathname === '/register' ||
-            pathname === '/forgot-password' || pathname === '/reset-password' ||
-            pathname.startsWith('/confirm');
+        const isOnChatPage = pathStartsWith(cleanPathname, '/chat');
+        const isOnLandingOrAuth = cleanPathname === '/' || cleanPathname === '/login' || cleanPathname === '/register' ||
+            cleanPathname === '/forgot-password' || cleanPathname === '/reset-password' ||
+            pathStartsWith(cleanPathname, '/confirm');
 
         // Не перенаправляем с landing/auth страниц
         if (isOnLandingOrAuth) return;
 
         // Если есть активный чат и мы не на странице чата - перенаправляем
         if (!isOnChatPage) {
-            router.replace(chatPath);
+            router.replace(localePath(chatPath));
         }
-    }, [activeChat, pathname, hasChecked, isLoading, router]);
+    }, [activeChat, cleanPathname, hasChecked, isLoading, router, localePath]);
 
     return (
         <ActiveChatContext.Provider value={{ activeChat, isLoading, checkActiveChat, clearActiveChat, setActiveChatData }}>

@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const { awardFortuneSc, spendSc } = require('../services/scService');
 const { applyStarsDelta } = require('../utils/stars');
-const { getSetting, setSetting } = require('../utils/settings');
 const { createNotification } = require('./notificationController');
 const { broadcastNotificationByPresence } = require('../services/notificationService');
 const { recordActivity } = require('../services/activityService');
@@ -130,7 +129,6 @@ async function createTransaction(doc) {
     return { ...doc, _id: id };
 }
 
-const LOTTERY_DAILY_SETTING_KEY = 'lottery_daily';
 const LOTTERY_TICKET_LENGTH = 7;
 const LOTTERY_MIN_NUMBER = 1;
 const LOTTERY_MAX_NUMBER = 49;
@@ -293,13 +291,29 @@ function formatDrawTimeLabel(lotteryConfig = null) {
     return `${pad2(Number.isFinite(hour) ? hour : 23)}:${pad2(Number.isFinite(minute) ? minute : 59)}`;
 }
 
-function generateLotteryNumbers() {
-    const pool = Array.from({ length: LOTTERY_MAX_NUMBER }, (_, index) => index + LOTTERY_MIN_NUMBER);
-    for (let i = pool.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, LOTTERY_TICKET_LENGTH);
+function getDailyMechanicsSalt() {
+    return String(
+        process.env.DAILY_MECHANICS_SALT
+        || process.env.APP_SECRET
+        || process.env.JWT_SECRET
+        || 'givkoin-daily-salt'
+    ).trim();
+}
+
+function generateDeterministicLotteryNumbers(dayKey) {
+    const salt = getDailyMechanicsSalt();
+    const ranked = Array.from({ length: LOTTERY_MAX_NUMBER }, (_, index) => index + LOTTERY_MIN_NUMBER)
+        .map((value) => ({
+            value,
+            hash: crypto
+                .createHash('sha256')
+                .update(`${salt}:lottery:${dayKey}:${value}`)
+                .digest('hex'),
+        }))
+        .sort((left, right) => left.hash.localeCompare(right.hash))
+        .slice(0, LOTTERY_TICKET_LENGTH)
+        .map((item) => item.value);
+    return ranked;
 }
 
 function formatLotteryNumbers(numbers = []) {
@@ -353,27 +367,7 @@ async function getDailyLotteryNumbers(date = new Date()) {
     }
 
     const loadPromise = (async () => {
-        const stored = await getSetting(LOTTERY_DAILY_SETTING_KEY);
-        if (stored && stored.dateKey === dayKey) {
-            if (Array.isArray(stored.winningNumbers) && stored.winningNumbers.length === LOTTERY_TICKET_LENGTH) {
-                return setCachedDailyLotteryNumbers(dayKey, stored.winningNumbers, date, nowMs);
-            }
-            if (typeof stored.winningNumber === 'string') {
-                const parsed = normalizeTicketNumbers(stored.winningNumber);
-                if (parsed) return setCachedDailyLotteryNumbers(dayKey, parsed, date, nowMs);
-            }
-        }
-
-        const winningNumbers = generateLotteryNumbers();
-        await setSetting(
-            LOTTERY_DAILY_SETTING_KEY,
-            {
-                dateKey: dayKey,
-                winningNumbers,
-                winningNumber: formatLotteryNumbers(winningNumbers)
-            },
-            'Daily lottery winning numbers'
-        );
+        const winningNumbers = generateDeterministicLotteryNumbers(dayKey);
         return setCachedDailyLotteryNumbers(dayKey, winningNumbers, date, nowMs);
     })();
 

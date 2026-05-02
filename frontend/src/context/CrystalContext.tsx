@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import { usePathname } from 'next/navigation';
 import { API_URL } from '@/utils/api';
 import { useI18n } from '@/context/I18nContext';
+import { normalizeSitePath } from '@/utils/sitePath';
 
 interface CrystalLocation {
     shardId: string;
@@ -73,11 +74,12 @@ function readLocalProgress(userId: string, sessionKey: string): LocalCrystalProg
                     const row = entry as Record<string, unknown>;
                     const shardId = String(row.shardId || '').trim();
                     const shardIndex = Number(row.shardIndex);
+                    const rawPagePath = String(row.pagePath || '').trim();
                     if (!shardId || !Number.isFinite(shardIndex)) return null;
                     return {
                         shardId,
                         shardIndex,
-                        pagePath: String(row.pagePath || ''),
+                        pagePath: rawPagePath ? normalizeSitePath(rawPagePath) : '',
                         collectedAt: String(row.collectedAt || ''),
                     };
                 })
@@ -108,6 +110,7 @@ export const CrystalProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const { user } = useAuth();
     const { t } = useI18n();
     const pathname = usePathname();
+    const cleanPathname = normalizeSitePath(pathname || '/');
 
     const [collectedShards, setCollectedShards] = useState<number[]>([]);
     const [collectedShardIds, setCollectedShardIds] = useState<string[]>([]);
@@ -131,7 +134,12 @@ export const CrystalProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
             const data = await res.json();
             const nextSessionKey = String(data.sessionKey || '');
-            const nextLocations = Array.isArray(data.locations) ? data.locations : [];
+            const nextLocations = Array.isArray(data.locations)
+                ? data.locations.map((location: CrystalLocation) => ({
+                    ...location,
+                    url: normalizeSitePath(location.url),
+                }))
+                : [];
             const userId = String(user.id);
 
             setSessionKey(nextSessionKey);
@@ -194,10 +202,10 @@ export const CrystalProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         const shard = locations.find((location) => (
-            location.url === pathname && !collectedShardIds.includes(location.shardId)
+            normalizeSitePath(location.url) === cleanPathname && !collectedShardIds.includes(location.shardId)
         ));
         setCurrentPageShard(shard || null);
-    }, [pathname, locations, collectedShardIds, user, collectionDisabled, rewardGranted]);
+    }, [cleanPathname, locations, collectedShardIds, user, collectionDisabled, rewardGranted]);
 
     const submitCompletion = useCallback(async (entries: LocalCrystalEntry[]) => {
         if (!user || !sessionKey || isSubmittingCompletion || entries.length < 12 || !pendingServerSync) return;
@@ -270,7 +278,7 @@ export const CrystalProvider: React.FC<{ children: React.ReactNode }> = ({ child
             {
                 shardId: location.shardId,
                 shardIndex: location.shardIndex,
-                pagePath: pathname,
+                pagePath: cleanPathname,
                 collectedAt: new Date().toISOString(),
             },
         ];

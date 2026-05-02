@@ -1,3 +1,5 @@
+import { normalizeSitePath } from '@/utils/sitePath';
+
 export type NightShiftWindowAnomaly = {
     id: string;
     sectorId: string;
@@ -53,8 +55,9 @@ function normalizePageHits(value: unknown) {
 
     const next: Record<string, number> = {};
     for (const [pagePath, rawCount] of Object.entries(value)) {
-        const key = String(pagePath || '').trim();
-        if (!key) continue;
+        const rawPath = String(pagePath || '').trim();
+        if (!rawPath) continue;
+        const key = normalizeSitePath(rawPath);
         const count = Math.max(0, Math.floor(Number(rawCount) || 0));
         if (!count) continue;
         next[key] = count;
@@ -81,7 +84,8 @@ function normalizeWindowAnomaly(value: unknown): NightShiftWindowAnomaly | null 
     const id = String(row.id || '').trim();
     const sectorId = String(row.sectorId || '').trim();
     const sectorName = String(row.sectorName || '').trim();
-    const sectorUrl = String(row.sectorUrl || '').trim();
+    const rawSectorUrl = String(row.sectorUrl || '').trim();
+    const sectorUrl = rawSectorUrl ? normalizeSitePath(rawSectorUrl) : '';
     const spawnAt = row.spawnAt ? String(row.spawnAt) : '';
     if (!id || !sectorId || !sectorName || !sectorUrl || !spawnAt) return null;
     if (Number.isNaN(new Date(spawnAt).getTime())) return null;
@@ -99,7 +103,8 @@ function normalizeResolvedAnomaly(value: unknown): NightShiftResolvedAnomaly | n
     if (!value || typeof value !== 'object') return null;
     const row = value as Partial<NightShiftResolvedAnomaly>;
     const anomalyId = String(row.anomalyId || '').trim();
-    const pagePath = String(row.pagePath || '').trim();
+    const rawPagePath = String(row.pagePath || '').trim();
+    const pagePath = rawPagePath ? normalizeSitePath(rawPagePath) : '';
     const clearedAt = row.clearedAt ? String(row.clearedAt) : '';
     if (!anomalyId || !pagePath || !clearedAt) return null;
     if (Number.isNaN(new Date(clearedAt).getTime())) return null;
@@ -340,7 +345,8 @@ export function recordNightShiftAnomaly(
     if (!normalized) return null;
 
     const safeAnomalyId = String(anomalyId || '').trim();
-    const safePagePath = String(pagePath || '').trim();
+    const rawPagePath = String(pagePath || '').trim();
+    const safePagePath = rawPagePath ? normalizeSitePath(rawPagePath) : '';
     if (!safeAnomalyId || !safePagePath) return normalized;
 
     let changed = false;

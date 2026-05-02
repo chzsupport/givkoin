@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useI18n } from '@/context/I18nContext';
+import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
 
 const tabs = [
   { href: '/cabinet', labelKey: 'cabinet.overview', emoji: '🏠' },
@@ -15,34 +16,17 @@ const tabs = [
   { href: '/cabinet/settings', labelKey: 'cabinet.settings', emoji: '⚙️' },
 ];
 
-function normalizeLocalePath(pathname: string) {
-  const raw = String(pathname || '/').trim() || '/';
-  let normalized = raw;
-
-  if (normalized === '/en' || normalized === '/ru') {
-    normalized = '/';
-  } else if (normalized.startsWith('/en/') || normalized.startsWith('/ru/')) {
-    normalized = normalized.slice(3) || '/';
-  }
-
-  if (normalized.length > 1 && normalized.endsWith('/')) {
-    normalized = normalized.slice(0, -1);
-  }
-
-  return normalized;
-}
-
 export function CabinetNav({ className = '' }: { className?: string }) {
   const pathname = usePathname();
   const { localePath, t } = useI18n();
-  const cleanPathname = normalizeLocalePath(pathname || '/');
+  const cleanPathname = normalizeSitePath(pathname || '/');
 
   return (
     <nav className={`flex flex-wrap justify-center gap-2 ${className}`}>
       {tabs.map((tab) => {
         const active = tab.href === '/cabinet'
           ? cleanPathname === tab.href
-          : cleanPathname === tab.href || cleanPathname.startsWith(`${tab.href}/`);
+          : pathStartsWith(cleanPathname, tab.href);
         return (
           <Link
             key={tab.href}

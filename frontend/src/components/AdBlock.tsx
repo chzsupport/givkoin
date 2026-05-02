@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { apiGet, apiPost } from '@/utils/api';
 import { useI18n } from '@/context/I18nContext';
+import { normalizeSitePath } from '@/utils/sitePath';
 
 interface AdBlockProps {
   page?: string;      // Deprecated but kept for compatibility
@@ -95,7 +96,9 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
     if (creatives.length === 0) return;
     const currentCreative = creatives[currentIndex];
     if (!currentCreative) return;
-    const resolvedPage = (page || pathname || 'global').trim() || 'global';
+    const resolvedPage = (page || '').trim()
+      || (pathname ? normalizeSitePath(pathname) : 'global')
+      || 'global';
     const resolvedPlacement = (placement || 'rotation').trim() || 'rotation';
 
     const recordImpression = async () => {

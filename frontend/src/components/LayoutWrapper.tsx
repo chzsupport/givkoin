@@ -12,6 +12,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { useBackendStatus } from '@/context/BackendStatusContext';
 import { apiPost, apiPostKeepalive } from '@/utils/api';
 import { useI18n } from '@/context/I18nContext';
+import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
 
 import { useCrystal } from '@/context/CrystalContext';
 import { CrystalShard } from '@/components/CrystalShard';
@@ -36,8 +37,6 @@ const AnomalyOverlay = dynamic(
     { ssr: false }
 );
 
-const LOCALE_PREFIX_RE = /^\/(en|ru)(\/|$)/;
-
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -47,15 +46,11 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const { t, localePath } = useI18n();
     const { currentPageShard } = useCrystal();
 
-    const stripLocalePrefix = useCallback((path: string) => {
-        return String(path || '').replace(LOCALE_PREFIX_RE, '/') || '/';
-    }, []);
-
     const isOpenRoute = (path: string) => {
-        const clean = stripLocalePrefix(path);
+        const clean = normalizeSitePath(path);
         if (clean === '/') return true;
         if (clean === '/login' || clean === '/register' || clean === '/forgot-password' || clean === '/reset-password') return true;
-        if (clean.startsWith('/confirm')) return true;
+        if (pathStartsWith(clean, '/confirm')) return true;
         if (clean === '/about' || clean === '/rules' || clean === '/feedback' || clean === '/roadmap') return true;
         return false;
     };
@@ -72,7 +67,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const adblockCheckingRef = useRef(false);
 
     const normalizeTrackedPath = useCallback((path: string) => {
-        const clean = String(path || '').split('?')[0].trim();
+        const clean = normalizeSitePath(path).trim();
         if (!clean) return '/';
         return clean.slice(0, 120);
     }, []);
@@ -139,7 +134,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     }, []);
 
     const pageHasAds = useCallback((path: string) => {
-        const clean = stripLocalePrefix(path);
+        const clean = normalizeSitePath(path);
         const exactPaths = new Set([
             '/about',
             '/rules',
@@ -167,10 +162,10 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
 
         if (exactPaths.has(clean)) return true;
 
-        if (clean.startsWith('/chat/')) return true;
+        if (pathStartsWith(clean, '/chat')) return true;
 
         return false;
-    }, [stripLocalePrefix]);
+    }, []);
 
     const runAdblockCheck = useCallback(async () => {
         if (adblockCheckingRef.current) return;
@@ -355,19 +350,20 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
 
         const now = Date.now();
         const last = lastPageViewRef.current;
-        if (last && last.path === pathname && now - last.at < 10_000) return;
+        const normalizedPathname = normalizeTrackedPath(pathname);
+        if (last && last.path === normalizedPathname && now - last.at < 10_000) return;
 
         const previousPath = recentPathsRef.current.length
             ? recentPathsRef.current[recentPathsRef.current.length - 1]
             : '';
-        const navigationMeta = classifyNavigation(pathname, previousPath);
-        lastPageViewRef.current = { path: pathname, at: now };
+        const navigationMeta = classifyNavigation(normalizedPathname, previousPath);
+        lastPageViewRef.current = { path: normalizedPathname, at: now };
         apiPost('/activity/page-view', {
-            path: pathname,
+            path: normalizedPathname,
             ...navigationMeta,
         }).catch(() => { });
 
-        recentPathsRef.current = [...recentPathsRef.current, normalizeTrackedPath(pathname)].slice(-8);
+        recentPathsRef.current = [...recentPathsRef.current, normalizedPathname].slice(-8);
         if (navigationMeta.viaUiClick) {
             lastNavigationIntentRef.current = null;
         }
@@ -507,7 +503,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     }, [clearAdblockTimers, pageHasAds, pathname, runAdblockCheck, scanForAdSlots]);
 
     // Страницы без глобального Header/Footer
-    const cleanPathname = stripLocalePrefix(pathname);
+    const cleanPathname = normalizeSitePath(pathname || '/');
     const excludedPaths = ['/', '/battle', '/evil-root'];
 
     // Публичные страницы (без авторизации)
@@ -521,7 +517,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
         router.replace(localePath('/login'));
     }, [isAuthLoading, isAuthenticated, pathname, router, localePath, isAuthPage]);
 
-    const shouldShowHeaderFooter = !excludedPaths.includes(cleanPathname) && !cleanPathname.startsWith('/chat');
+    const shouldShowHeaderFooter = !excludedPaths.includes(cleanPathname) && !pathStartsWith(cleanPathname, '/chat');
 
     if (!backendStatusLoading && !backendAvailable) {
         return (
@@ -554,7 +550,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     }
 
     // Если идёт проверка активного чата и мы не на странице авторизации/чата - показываем спиннер
-    if ((isLoading || isAuthLoading) && !isAuthPage && !pathname.startsWith('/chat')) {
+    if ((isLoading || isAuthLoading) && !isAuthPage && !pathStartsWith(cleanPathname, '/chat')) {
         return (
             <>
                 <LanguageSwitcher floating />
