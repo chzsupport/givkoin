@@ -707,6 +707,7 @@ export default function BattlePage() {
     const inFlightDamageBatchesRef = useRef<InFlightDamageBatch[]>([]);
     const shotPreviewRef = useRef<Map<string, ShotPreview>>(new Map());
     const battleJoinedRef = useRef(false);
+    const battleSeenActiveThisVisitRef = useRef(false);
     const joinRequestedAtRef = useRef<string | null>(null);
     const battleJoinedAtIsoRef = useRef<string | null>(null);
     const heartbeatFailCountRef = useRef(0);
@@ -1072,7 +1073,15 @@ export default function BattlePage() {
             }
             syncUserBattleEconomy(nextSummary, id);
             setBattleSummary(nextSummary);
-            setSummaryLoadAtMs(null);
+            if (nextSummary.detailsPending) {
+                const retryAfterMs = Math.max(
+                    500,
+                    Math.floor(Number(nextSummary.detailsRetryAfterMs) || 1500),
+                );
+                setSummaryLoadAtMs(Date.now() + retryAfterMs);
+            } else {
+                setSummaryLoadAtMs(null);
+            }
             clearBattleProgress(id);
             return true;
         } catch (e: unknown) {
@@ -1089,8 +1098,9 @@ export default function BattlePage() {
 
     const redirectToTree = useCallback(() => {
         if (typeof window === 'undefined') return;
+        clearBattleProgress(lastBattleIdRef.current || battleId);
         window.location.replace(localePath('/tree'));
-    }, [localePath]);
+    }, [battleId, clearBattleProgress, localePath]);
 
     useEffect(() => {
         if (!socket) return;
@@ -1182,6 +1192,7 @@ export default function BattlePage() {
             const nextPersonalState = normalizeBattlePersonalState(data.personalState);
 
             if (data.ok) {
+                battleSeenActiveThisVisitRef.current = true;
                 const joinedAtIso = joinRequestedAtRef.current;
                 joinRequestedAtRef.current = null;
                 battleJoinedAtIsoRef.current = typeof data.joinedAt === 'string' && data.joinedAt
@@ -1836,6 +1847,7 @@ export default function BattlePage() {
             const joinedAtIso = typeof battle.joinedAt === 'string' && battle.joinedAt.trim() ? battle.joinedAt : null;
             const nextPersonalState = normalizeBattlePersonalState(battle.personalState);
             if (status === 'active' && battleIdValue) {
+                battleSeenActiveThisVisitRef.current = true;
                 const previousBattleId = lastBattleIdRef.current;
                 const isNewBattle = previousBattleId !== battleIdValue;
                 const storedBattleProgress = readBattleProgress(battleIdValue);
@@ -1907,6 +1919,12 @@ export default function BattlePage() {
                 }
                 setAttendanceCount(Number(battle.attendanceCount) || 0);
             } else if (status === 'final_window' && battleIdValue) {
+                const canStayOnBattlePage = battleSeenActiveThisVisitRef.current || battleJoinedRef.current || summaryVisible;
+                if (!canStayOnBattlePage) {
+                    clearBattleProgress(battleIdValue);
+                    redirectToTree();
+                    return;
+                }
                 const injuries = Array.isArray(battle.injuries)
                     ? battle.injuries
                         .map((injury) => {
@@ -1963,7 +1981,8 @@ export default function BattlePage() {
                 lastBattleSyncWindowKeyRef.current = null;
                 resetBattleDamageTracking(confirmedUserDamageRef.current);
                 const lastId = lastBattleIdRef.current;
-                if (lastId && summaryRequestedRef.current !== lastId) {
+                const canStayOnBattlePage = battleSeenActiveThisVisitRef.current || battleJoinedRef.current || summaryVisible;
+                if (lastId && summaryRequestedRef.current !== lastId && canStayOnBattlePage) {
                     summaryRequestedRef.current = lastId;
                     setSummaryVisible(true);
                     await loadBattleSummary(lastId);
@@ -1974,7 +1993,7 @@ export default function BattlePage() {
         } catch (e) {
             console.error('Failed to fetch battle:', e);
         }
-    }, [applyBattlePersonalState, applyServerNow, applyStoredBattleProgress, battleJoinedAtMs, joinBattle, loadBattleSummary, readBattleProgress, redirectToTree, resetBattleDamageTracking]);
+    }, [applyBattlePersonalState, applyServerNow, applyStoredBattleProgress, battleJoinedAtMs, clearBattleProgress, joinBattle, loadBattleSummary, readBattleProgress, redirectToTree, resetBattleDamageTracking, summaryVisible]);
 
     useEffect(() => {
         if (!isBrowserOnline || summaryVisible) return;
@@ -2022,7 +2041,7 @@ export default function BattlePage() {
         if (!battleId || summaryLoadAtMs == null || !summaryVisible) {
             return;
         }
-        if (battleSummary) {
+        if (battleSummary && !battleSummary.detailsPending) {
             return;
         }
 
