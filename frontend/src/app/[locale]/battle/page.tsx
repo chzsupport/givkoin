@@ -2462,12 +2462,11 @@ export default function BattlePage() {
 
     const handleVisualHit = useCallback((event: EnemyHitEvent) => {
         if (!isBattleActive || battleTimeLeftMs <= 0) return;
-        registerDamageHit(event);
         enemyLayerRef.current?.registerHit({
             ...event,
             id: hitIdRef.current++,
         });
-    }, [battleTimeLeftMs, isBattleActive, registerDamageHit]);
+    }, [battleTimeLeftMs, isBattleActive]);
 
     const handleSummaryModalPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
         if (!summaryVisible || !battleSummary?.battleId) return;
@@ -2752,6 +2751,7 @@ export default function BattlePage() {
                         layout={battleLayout}
                         performanceTier={performanceTier}
                         weakZone={weakZone}
+                        onValidHit={handleHit}
                     />
 
                     {/* Middle Layer: Tree (Optional, but looks cool) */}
@@ -2773,7 +2773,6 @@ export default function BattlePage() {
                     {/* Top Layer: Cockpit & Weapons */}
                     <div className="absolute inset-0 z-20 pointer-events-auto">
                         <GameScene
-                            onHit={handleHit}
                             onVisualHit={handleVisualHit}
                             checkHit={checkHit}
                             onImpact={handleImpact}
