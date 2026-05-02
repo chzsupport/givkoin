@@ -33,6 +33,7 @@ mongo_data/
 .venv/
 backend/public/uploads/
 /leaf-train/
+/TRY VIDEO/
 
 # OS / Editor
 .DS_Store
