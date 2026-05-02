@@ -694,6 +694,7 @@ export default function BattlePage() {
     // UI shows confirmed server damage plus locally predicted hits that are still waiting for reconciliation.
     const confirmedUserDamageRef = useRef(0);
     const pendingUserDamageRef = useRef(0);
+    const accountedHitKeysRef = useRef<Map<string, number>>(new Map());
     const predictedLumensRef = useRef(0);
     const comboCountRef = useRef(0);
     const comboSeriesDamageRef = useRef(0);
@@ -1483,6 +1484,30 @@ export default function BattlePage() {
         syncDisplayedUserDamage();
     }, [syncDisplayedUserDamage]);
 
+    const pruneAccountedHitKeys = useCallback(() => {
+        const now = Date.now();
+        for (const [key, createdAt] of accountedHitKeysRef.current.entries()) {
+            if (now - createdAt > 15000) {
+                accountedHitKeysRef.current.delete(key);
+            }
+        }
+    }, []);
+
+    const consumeAccountedHitKey = useCallback((event: EnemyHitEvent) => {
+        if (!event.shotId) {
+            return false;
+        }
+        pruneAccountedHitKeys();
+        const safeX = Number.isFinite(Number(event.worldPoint?.x)) ? Number(event.worldPoint.x).toFixed(5) : '0';
+        const safeY = Number.isFinite(Number(event.worldPoint?.y)) ? Number(event.worldPoint.y).toFixed(5) : '0';
+        const key = `${String(event.shotId)}:${Math.floor(Number(event.weaponId) || 0)}:${safeX}:${safeY}`;
+        if (accountedHitKeysRef.current.has(key)) {
+            return false;
+        }
+        accountedHitKeysRef.current.set(key, Date.now());
+        return true;
+    }, [pruneAccountedHitKeys]);
+
     const resetBattleDamageTracking = useCallback((nextConfirmedDamage = 0) => {
         if (battleJoinRetryTimerRef.current != null) {
             window.clearTimeout(battleJoinRetryTimerRef.current);
@@ -1491,6 +1516,7 @@ export default function BattlePage() {
         joinRequestedAtRef.current = null;
         clearInFlightDamageBatches();
         shotPreviewRef.current.clear();
+        accountedHitKeysRef.current.clear();
         reportAccRef.current = createEmptyBattleMinuteReport(reportAccRef.current.intervalSeconds || BATTLE_REPORT_INTERVAL_SECONDS);
         pendingBattleReportRef.current = null;
         finalReportSentRef.current = false;
@@ -2389,12 +2415,16 @@ export default function BattlePage() {
         return;
     }, [getBaddieWorldPoint, persistBattleProgress]);
 
-    const handleHit = useCallback((event: EnemyHitEvent) => {
+    const registerDamageHit = useCallback((event: EnemyHitEvent) => {
         if (!battleId || !isBattleActive || battleTimeLeftMs <= 0) {
             return;
         }
 
         if (!event.shotId) {
+            return;
+        }
+
+        if (!consumeAccountedHitKey(event)) {
             return;
         }
 
@@ -2424,15 +2454,20 @@ export default function BattlePage() {
             : 0;
         void shotPreview;
         void battleElapsedAtHitMs;
-    }, [addPendingUserDamage, battleId, battleStartsAtMs, battleTimeLeftMs, getPredictedHitDamage, isBattleActive, persistBattleProgress, weakZone]);
+    }, [addPendingUserDamage, battleId, battleStartsAtMs, battleTimeLeftMs, consumeAccountedHitKey, getPredictedHitDamage, isBattleActive, persistBattleProgress, weakZone]);
+
+    const handleHit = useCallback((event: EnemyHitEvent) => {
+        registerDamageHit(event);
+    }, [registerDamageHit]);
 
     const handleVisualHit = useCallback((event: EnemyHitEvent) => {
         if (!isBattleActive || battleTimeLeftMs <= 0) return;
+        registerDamageHit(event);
         enemyLayerRef.current?.registerHit({
             ...event,
             id: hitIdRef.current++,
         });
-    }, [battleTimeLeftMs, isBattleActive]);
+    }, [battleTimeLeftMs, isBattleActive, registerDamageHit]);
 
     const handleSummaryModalPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
         if (!summaryVisible || !battleSummary?.battleId) return;
