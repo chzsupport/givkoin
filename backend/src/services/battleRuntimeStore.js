@@ -32,67 +32,23 @@ function parseRuntimeHotCacheExpiryMs(row) {
 }
 
 function getRuntimeHotCacheRow(modelName, id, nowMs = Date.now()) {
-  const key = buildRuntimeHotCacheKey(modelName, id);
-  if (!key) return null;
-  const cached = runtimeHotCache.get(key);
-  if (!cached) return null;
-  if (Number.isFinite(cached.expiresAtMs) && cached.expiresAtMs <= nowMs) {
-    runtimeHotCache.delete(key);
-    return null;
-  }
-  return cloneRuntimeHotCacheRow(cached.row);
+  return null;
 }
 
 function setRuntimeHotCacheRow(modelName, id, row) {
-  const key = buildRuntimeHotCacheKey(modelName, id);
-  if (!key || !row) return;
-  runtimeHotCache.set(key, {
-    row: cloneRuntimeHotCacheRow(row),
-    expiresAtMs: parseRuntimeHotCacheExpiryMs(row),
-  });
+  return null;
 }
 
 function deleteRuntimeHotCacheRow(modelName, id) {
-  const key = buildRuntimeHotCacheKey(modelName, id);
-  if (!key) return;
-  runtimeHotCache.delete(key);
+  return null;
 }
 
 function deleteRuntimeHotCacheRowsByPrefix(modelName, idPrefix) {
-  const model = String(modelName || '').trim();
-  const prefix = String(idPrefix || '').trim();
-  if (!model || !prefix) return;
-  const keyPrefix = `${model}::${prefix}`;
-  for (const key of Array.from(runtimeHotCache.keys())) {
-    if (key.startsWith(keyPrefix)) {
-      runtimeHotCache.delete(key);
-    }
-  }
+  return null;
 }
 
 function listRuntimeHotCacheRows(modelName, { idPrefix = '', limit = 5000, nowMs = Date.now() } = {}) {
-  const model = String(modelName || '').trim();
-  const prefix = String(idPrefix || '').trim();
-  if (!model) return [];
-
-  const keyPrefix = `${model}::`;
-  const out = [];
-
-  for (const [key, entry] of runtimeHotCache.entries()) {
-    if (!key.startsWith(keyPrefix)) continue;
-    if (Number.isFinite(entry.expiresAtMs) && entry.expiresAtMs <= nowMs) {
-      runtimeHotCache.delete(key);
-      continue;
-    }
-
-    const row = cloneRuntimeHotCacheRow(entry.row);
-    const rowId = normalizeIdPart(row?.id);
-    if (!row || !rowId) continue;
-    if (prefix && !rowId.startsWith(prefix)) continue;
-    out.push(row);
-  }
-
-  return out.slice(0, Math.max(1, Math.min(5000, Number(limit) || 5000)));
+  return [];
 }
 
 function warnRuntimeStore(action, error) {
@@ -105,11 +61,6 @@ async function getDocument(modelName, id) {
   const docId = String(id || '').trim();
   if (!model || !docId) return null;
 
-  const cached = getRuntimeHotCacheRow(model, docId);
-  if (cached) {
-    return cached;
-  }
-
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from(RUNTIME_TABLE)
@@ -117,10 +68,7 @@ async function getDocument(modelName, id) {
     .eq('model', model)
     .eq('id', docId)
     .maybeSingle();
-  if (error) {
-    warnRuntimeStore(`getDocument(${model}/${docId})`, error);
-    return null;
-  }
+  if (error) throw error;
   if (!data) return null;
   const row = {
     id: String(data.id),
@@ -129,7 +77,6 @@ async function getDocument(modelName, id) {
     updatedAt: data.updated_at ? new Date(data.updated_at) : null,
     expiresAt: data.expires_at ? new Date(data.expires_at) : null,
   };
-  setRuntimeHotCacheRow(model, docId, row);
   return row;
 }
 
@@ -142,20 +89,6 @@ async function insertDocument(modelName, id, data, opts = {}) {
   const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
   const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
   const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
-  const existing = getRuntimeHotCacheRow(model, docId);
-  if (existing) {
-    const duplicateError = new Error(`[DB] Failed to insert "${model}/${docId}": duplicate cached runtime document`);
-    duplicateError.code = '23505';
-    throw duplicateError;
-  }
-
-  setRuntimeHotCacheRow(model, docId, {
-    id: docId,
-    data: data || {},
-    createdAt: new Date(createdAtIso),
-    updatedAt: new Date(updatedAtIso),
-    expiresAt: expiresAtIso ? new Date(expiresAtIso) : null,
-  });
 
   const supabase = getSupabaseClient();
   const { error } = await supabase
@@ -172,10 +105,7 @@ async function insertDocument(modelName, id, data, opts = {}) {
     const wrapped = new Error(`[DB] Failed to insert "${model}/${docId}": ${error.message}`);
     wrapped.code = error.code || '';
     wrapped.details = error;
-    if (isDuplicateInsertError(wrapped)) {
-      throw wrapped;
-    }
-    warnRuntimeStore(`insertDocument(${model}/${docId})`, wrapped);
+    throw wrapped;
   }
 }
 
@@ -188,14 +118,6 @@ async function upsertDocument(modelName, id, data, opts = {}) {
   const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
   const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
   const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
-  const existing = getRuntimeHotCacheRow(model, docId);
-  setRuntimeHotCacheRow(model, docId, {
-    id: docId,
-    data: data || {},
-    createdAt: existing?.createdAt ? new Date(existing.createdAt) : new Date(createdAtIso),
-    updatedAt: new Date(updatedAtIso),
-    expiresAt: expiresAtIso ? new Date(expiresAtIso) : null,
-  });
 
   const supabase = getSupabaseClient();
   const { error } = await supabase
@@ -211,25 +133,20 @@ async function upsertDocument(modelName, id, data, opts = {}) {
       onConflict: 'model,id',
       ignoreDuplicates: false,
     });
-  if (error) {
-    warnRuntimeStore(`upsertDocument(${model}/${docId})`, error);
-  }
+  if (error) throw error;
 }
 
 async function deleteDocument(modelName, id) {
   const model = String(modelName || '').trim();
   const docId = String(id || '').trim();
   if (!model || !docId) return;
-  deleteRuntimeHotCacheRow(model, docId);
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from(RUNTIME_TABLE)
     .delete()
     .eq('model', model)
     .eq('id', docId);
-  if (error) {
-    warnRuntimeStore(`deleteDocument(${model}/${docId})`, error);
-  }
+  if (error) throw error;
 }
 
 async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {}) {
@@ -240,7 +157,6 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
   const supabase = getSupabaseClient();
   const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 1000));
   let deletedTotal = 0;
-  deleteRuntimeHotCacheRowsByPrefix(model, prefix);
 
   while (true) {
     const { data, error } = await supabase
@@ -251,9 +167,6 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
       .limit(safeLimit);
 
     if (error || !Array.isArray(data) || !data.length) {
-      if (error) {
-        warnRuntimeStore(`deleteDocumentsByPrefix(${model}/${prefix})`, error);
-      }
       break;
     }
 
@@ -271,12 +184,7 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
       .eq('model', model)
       .in('id', ids);
 
-    if (deleteError) {
-      warnRuntimeStore(`deleteDocumentsByPrefix(${model}/${prefix})`, deleteError);
-      break;
-    }
-
-    ids.forEach((id) => deleteRuntimeHotCacheRow(model, id));
+    if (deleteError) throw deleteError;
     deletedTotal += ids.length;
 
     if (ids.length < safeLimit) {
