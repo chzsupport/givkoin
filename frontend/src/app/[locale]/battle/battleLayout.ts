@@ -4,7 +4,7 @@ import { ENEMY_OUTLINE, ENEMY_OUTLINE_HEIGHT, ENEMY_OUTLINE_WIDTH } from './enem
 
 export const BATTLE_REFERENCE_WIDTH = 1400;
 export const BATTLE_REFERENCE_HEIGHT = 900;
-export const BATTLE_VIDEO_ASPECT_RATIO = 16 / 9;
+export const BATTLE_VIDEO_ASPECT_RATIO = BATTLE_REFERENCE_WIDTH / BATTLE_REFERENCE_HEIGHT;
 
 const VIDEO_FRAME_SILHOUETTE_LEFT_PX = 530.574557;
 const VIDEO_FRAME_SILHOUETTE_TOP_PX = 78.310053;
@@ -96,10 +96,10 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
 export function getBattleSilhouetteLayout(
   viewport: BattleViewportLayout,
 ): BattleSilhouetteLayout {
-  const leftPx = viewport.frameLeft;
-  const topPx = viewport.frameTop;
-  const widthPx = viewport.frameWidth;
-  const heightPx = viewport.frameHeight;
+  const leftPx = viewport.frameLeft + (VIDEO_FRAME_SILHOUETTE_LEFT_RATIO * viewport.frameWidth);
+  const topPx = viewport.frameTop + (VIDEO_FRAME_SILHOUETTE_TOP_RATIO * viewport.frameHeight);
+  const widthPx = VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO * viewport.frameWidth;
+  const heightPx = VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO * viewport.frameHeight;
   const centerOffsetX = (VIDEO_FRAME_SILHOUETTE_LEFT_RATIO + (VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO / 2) - 0.5) * viewport.frameWidth;
   const centerOffsetY = (VIDEO_FRAME_SILHOUETTE_TOP_RATIO + (VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO / 2) - 0.5) * viewport.frameHeight;
 
@@ -108,8 +108,8 @@ export function getBattleSilhouetteLayout(
     heightPx,
     leftPx,
     topPx,
-    scaleX: 1,
-    scaleY: 1,
+    scaleX: VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO,
+    scaleY: VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO,
     centerOffsetX,
     centerOffsetY,
   };

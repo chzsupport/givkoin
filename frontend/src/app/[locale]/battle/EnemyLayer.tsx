@@ -191,7 +191,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     onValidHit,
     backgroundSrc = '/relax.mp4',
     reactionSrc = '/atack.mp4',
-    silhouetteSrc = '/qwer1-frame.svg',
+    silhouetteSrc = '/qwer1.svg',
     layout,
     performanceTier = 'high',
     pointerEvents = 'none',
@@ -261,8 +261,8 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
 
         const viewport = resolveViewportLayout();
         const silhouette = layout?.silhouette ?? getBattleSilhouetteLayout(viewport);
-        const pointPxX = silhouette.leftPx + (videoPoint.nx * silhouette.widthPx);
-        const pointPxY = silhouette.topPx + (videoPoint.topBasedY * silhouette.heightPx);
+        const pointPxX = viewport.frameLeft + (videoPoint.nx * viewport.frameWidth);
+        const pointPxY = viewport.frameTop + (videoPoint.topBasedY * viewport.frameHeight);
         const localX = (pointPxX - silhouette.leftPx) / silhouette.widthPx;
         const localYFromTop = (pointPxY - silhouette.topPx) / silhouette.heightPx;
 
@@ -617,7 +617,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             className={`absolute inset-0 overflow-hidden ${className}`}
             style={{ pointerEvents, ...style }}
         >
-            {/* Shared 16:9 frame for both the video and the silhouette */}
+            {/* Shared battle frame for both the video and the silhouette */}
             <div
                 className="absolute overflow-hidden"
                 style={{
@@ -631,7 +631,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 {!disableBackgroundVideo && (
                     <video
                         ref={videoRef}
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-cover"
                         src={backgroundSrc}
                         playsInline
                         muted
