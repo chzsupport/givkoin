@@ -17,6 +17,9 @@ const VIDEO_FRAME_SILHOUETTE_TOP_RATIO = VIDEO_FRAME_SILHOUETTE_TOP_PX / BATTLE_
 const VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO = VIDEO_FRAME_SILHOUETTE_WIDTH_PX / BATTLE_REFERENCE_WIDTH;
 const VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO = VIDEO_FRAME_SILHOUETTE_HEIGHT_PX / BATTLE_REFERENCE_HEIGHT;
 const VIDEO_FRAME_CENTER_X_RATIO = VIDEO_FRAME_CENTER_X_PX / BATTLE_REFERENCE_WIDTH;
+const BATTLE_HIT_AREA_ASPECT_RATIO = ENEMY_OUTLINE_WIDTH / ENEMY_OUTLINE_HEIGHT;
+const BATTLE_HIT_AREA_WIDTH_RATIO = Math.min(1, BATTLE_HIT_AREA_ASPECT_RATIO / BATTLE_VIDEO_ASPECT_RATIO);
+const BATTLE_HIT_AREA_LEFT_RATIO = (1 - BATTLE_HIT_AREA_WIDTH_RATIO) / 2;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -57,6 +60,13 @@ export type BattleSilhouetteLayout = {
   scaleY: number;
   centerOffsetX: number;
   centerOffsetY: number;
+};
+
+export type BattleHitAreaLayout = {
+  leftPx: number;
+  topPx: number;
+  widthPx: number;
+  heightPx: number;
 };
 
 export type BattleSceneLayout = {
@@ -116,6 +126,17 @@ export function getBattleSilhouetteLayout(
     scaleY: VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO,
     centerOffsetX,
     centerOffsetY,
+  };
+}
+
+export function getBattleHitAreaLayout(
+  viewport: BattleViewportLayout,
+): BattleHitAreaLayout {
+  return {
+    leftPx: viewport.frameWidth * BATTLE_HIT_AREA_LEFT_RATIO,
+    topPx: 0,
+    widthPx: viewport.frameWidth * BATTLE_HIT_AREA_WIDTH_RATIO,
+    heightPx: viewport.frameHeight,
   };
 }
 

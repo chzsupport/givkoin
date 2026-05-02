@@ -18,6 +18,7 @@ import {
 } from './enemyZones';
 import {
     BATTLE_VIDEO_ASPECT_RATIO,
+    getBattleHitAreaLayout,
     getBattleSilhouetteLayout,
     getBattleViewportLayout,
     type BattleSceneLayout,
@@ -242,8 +243,11 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
             return { nx, ny, topBasedY: 1 - ny };
         }
 
-        const frameX = ((nx * viewport.width) - viewport.frameLeft) / viewport.frameWidth;
-        const frameTopBasedY = (((1 - ny) * viewport.height) - viewport.frameTop) / viewport.frameHeight;
+        const hitArea = getBattleHitAreaLayout(viewport);
+        const pointPxX = viewport.frameLeft + hitArea.leftPx + (nx * hitArea.widthPx);
+        const pointPxY = viewport.frameTop + hitArea.topPx + ((1 - ny) * hitArea.heightPx);
+        const frameX = (pointPxX - viewport.frameLeft) / viewport.frameWidth;
+        const frameTopBasedY = (pointPxY - viewport.frameTop) / viewport.frameHeight;
 
         if (!Number.isFinite(frameX) || !Number.isFinite(frameTopBasedY)) return null;
         if (frameX < 0 || frameX > 1 || frameTopBasedY < 0 || frameTopBasedY > 1) return null;
@@ -601,7 +605,6 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     );
 
     const viewportLayout = resolveViewportLayout();
-    const silhouetteLayout = layout?.silhouette ?? getBattleSilhouetteLayout(viewportLayout);
 
     useImperativeHandle(
         ref,
@@ -666,30 +669,6 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                     opacity={reactionOpacity}
                     src={reactionSrc}
                 />
-                <div
-                    className="absolute z-14 pointer-events-none"
-                    style={{
-                        left: `${silhouetteLayout.leftPx - viewportLayout.frameLeft}px`,
-                        top: `${silhouetteLayout.topPx - viewportLayout.frameTop}px`,
-                        width: `${silhouetteLayout.widthPx}px`,
-                        height: `${silhouetteLayout.heightPx}px`,
-                        opacity: 0.72,
-                        mixBlendMode: 'screen',
-                    }}
-                >
-                    <img
-                        src={silhouetteSrc}
-                        alt=""
-                        aria-hidden="true"
-                        className="w-full h-full select-none"
-                        draggable={false}
-                        style={{
-                            objectFit: 'fill',
-                            filter:
-                                'brightness(0) invert(1) drop-shadow(0 0 14px rgba(255,255,255,0.42)) drop-shadow(0 0 26px rgba(120,220,255,0.28))',
-                        }}
-                    />
-                </div>
                 <ImpactFlashLayer flashes={impactFlashes} />
                 {weakZone?.active && weakZone.center && (() => {
                     if (!isPointInsideSilhouette(weakZone.center.x, weakZone.center.y)) return null;
