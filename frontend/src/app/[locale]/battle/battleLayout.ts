@@ -68,7 +68,6 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
   const safeWidth = Math.max(1, Math.round(Number(width) || BATTLE_REFERENCE_WIDTH));
   const safeHeight = Math.max(1, Math.round(Number(height) || BATTLE_REFERENCE_HEIGHT));
   const aspectRatio = safeWidth / safeHeight;
-  const isPortrait = safeHeight > safeWidth;
   const coverScale = Math.max(
     safeWidth / BATTLE_REFERENCE_WIDTH,
     safeHeight / BATTLE_REFERENCE_HEIGHT,
@@ -79,7 +78,7 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
   const minFrameLeft = safeWidth - frameWidth;
   const maxFrameLeft = 0;
   const frameLeft = Math.max(minFrameLeft, Math.min(maxFrameLeft, unclampedFrameLeft));
-  const frameTop = isPortrait ? 0 : (safeHeight - frameHeight) / 2;
+  const frameTop = 0;
 
   return {
     width: safeWidth,

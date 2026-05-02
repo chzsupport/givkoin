@@ -108,6 +108,13 @@ function getFruitWindow(date) {
     return { start, end };
 }
 
+function keepPositiveReward(scaledReward, fallbackReward) {
+    const safeScaled = Number(scaledReward) || 0;
+    const safeFallback = Number(fallbackReward) || 0;
+    if (safeScaled > 0) return safeScaled;
+    return safeFallback > 0 ? safeFallback : 0;
+}
+
 exports.getTreeStatus = async (req, res) => {
     try {
         let tree = await getTreeDoc();
@@ -318,8 +325,12 @@ exports.collectFruit = async (req, res) => {
 
         if (roll === 0) {
             rewardType = 'sc';
-            reward = Math.floor(Math.random() * 41) + 10; // 10-50 K
-            const finalSc = Math.max(0, Math.round(reward * rewardMultiplier * 1000) / 1000);
+            const baseReward = Math.floor(Math.random() * 41) + 10; // 10-50 K
+            reward = baseReward;
+            const finalSc = keepPositiveReward(
+                Math.max(0, Math.round(baseReward * rewardMultiplier * 1000) / 1000),
+                baseReward
+            );
             reward = finalSc;
             nextSc += finalSc;
             await recordTransaction({
@@ -352,8 +363,12 @@ exports.collectFruit = async (req, res) => {
             if (resStars?.stars != null) nextStars = resStars.stars;
         } else {
             rewardType = 'lumens';
-            reward = Math.floor(Math.random() * 41) + 10; // 10-50 Lm
-            const finalLm = Math.max(0, Math.floor(reward * rewardMultiplier));
+            const baseReward = Math.floor(Math.random() * 41) + 10; // 10-50 Lm
+            reward = baseReward;
+            const finalLm = keepPositiveReward(
+                Math.max(0, Math.floor(baseReward * rewardMultiplier)),
+                baseReward
+            );
             reward = finalLm;
             nextLumens = (Number(nextLumens) || 0) + finalLm;
         }

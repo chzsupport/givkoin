@@ -669,8 +669,8 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 <div
                     className="absolute z-14 pointer-events-none"
                     style={{
-                        left: `${silhouetteLayout.leftPx}px`,
-                        top: `${silhouetteLayout.topPx}px`,
+                        left: `${silhouetteLayout.leftPx - viewportLayout.frameLeft}px`,
+                        top: `${silhouetteLayout.topPx - viewportLayout.frameTop}px`,
                         width: `${silhouetteLayout.widthPx}px`,
                         height: `${silhouetteLayout.heightPx}px`,
                         opacity: 0.72,

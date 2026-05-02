@@ -16,9 +16,20 @@ const tabs = [
 ];
 
 function normalizeLocalePath(pathname: string) {
-  if (pathname === '/en') return '/';
-  if (pathname.startsWith('/en/')) return pathname.slice(3);
-  return pathname;
+  const raw = String(pathname || '/').trim() || '/';
+  let normalized = raw;
+
+  if (normalized === '/en' || normalized === '/ru') {
+    normalized = '/';
+  } else if (normalized.startsWith('/en/') || normalized.startsWith('/ru/')) {
+    normalized = normalized.slice(3) || '/';
+  }
+
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+
+  return normalized;
 }
 
 export function CabinetNav({ className = '' }: { className?: string }) {
@@ -29,7 +40,9 @@ export function CabinetNav({ className = '' }: { className?: string }) {
   return (
     <nav className={`flex flex-wrap justify-center gap-2 ${className}`}>
       {tabs.map((tab) => {
-        const active = cleanPathname === tab.href;
+        const active = tab.href === '/cabinet'
+          ? cleanPathname === tab.href
+          : cleanPathname === tab.href || cleanPathname.startsWith(`${tab.href}/`);
         return (
           <Link
             key={tab.href}

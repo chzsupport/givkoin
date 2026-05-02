@@ -31,6 +31,11 @@ const ROULETTE_SECTORS = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
+const ROULETTE_LOADING_SPIN_DURATION = 0.4;
+const ROULETTE_SETTLE_DURATION_MS = 1600;
+const ROULETTE_SETTLE_DURATION_SEC = ROULETTE_SETTLE_DURATION_MS / 1000;
+const ROULETTE_RESULT_TURNS = 2;
+
 const WheelComponent = ({
     size,
     isSpinning,
@@ -58,7 +63,7 @@ const WheelComponent = ({
                 className="w-full h-full rounded-full border-[5px] border-yellow-600/50 shadow-2xl relative overflow-hidden bg-[#1a1a2e]"
                 animate={{ rotate: rotation }}
                 transition={spinMode === 'loading'
-                    ? { duration: 0.55, ease: 'linear', repeat: Infinity }
+                    ? { duration: ROULETTE_LOADING_SPIN_DURATION, ease: 'linear', repeat: Infinity }
                     : { duration: spinDuration, ease: [0.15, 0.25, 0.25, 1] }}
                 onUpdate={(latest) => {
                     const nextRotate = latest.rotate;
@@ -148,7 +153,7 @@ export default function RoulettePage() {
     const [isSpinning, setIsSpinning] = useState(false);
     const [spinMode, setSpinMode] = useState<'idle' | 'loading' | 'settling'>('idle');
     const [rotation, setRotation] = useState(0);
-    const [spinDuration, setSpinDuration] = useState(4);
+    const [spinDuration, setSpinDuration] = useState(ROULETTE_SETTLE_DURATION_SEC);
     const [winResult, setWinResult] = useState<{ label: string; type: string; value: number | string } | null>(null);
     const [history, setHistory] = useState<{ label: string; id: number }[]>([]);
     const [spinCounter, setSpinCounter] = useState(1);
@@ -355,22 +360,22 @@ export default function RoulettePage() {
                     : 0;
 
             const safeWinningIndex = Number.isFinite(winningIndex) ? winningIndex : 0;
-            const randomOffset = (Math.random() - 0.5) * (sectorAngle - 4);
+            const randomOffset = (Math.random() - 0.5) * Math.min(10, sectorAngle * 0.35);
             const targetAngle = (360 - (safeWinningIndex * sectorAngle + sectorAngle / 2) + randomOffset);
             const currentAngle = ((rotationRef.current % 360) + 360) % 360;
             let angleDiff = targetAngle - currentAngle;
             if (angleDiff < 0) angleDiff += 360;
-            const targetRotation = rotationRef.current + (360 * 3) + angleDiff;
+            const targetRotation = rotationRef.current + (360 * ROULETTE_RESULT_TURNS) + angleDiff;
 
             rotationRef.current = targetRotation;
             setSpinMode('settling');
-            setSpinDuration(2.4);
+            setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
             setRotation(targetRotation);
 
             spinFinishTimeoutRef.current = setTimeout(async () => {
                 setIsSpinning(false);
                 setSpinMode('idle');
-                setSpinDuration(4);
+                setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
                 setWinResult({ label: resultLabel, type: resultType, value: resultValue });
                 setSpinsLeft(remainingSpins);
                 spinFinishTimeoutRef.current = null;
@@ -398,13 +403,13 @@ export default function RoulettePage() {
                 await refreshUser();
                 await fetchGlobalStats();
                 await fetchUserStats();
-            }, 2400);
+            }, ROULETTE_SETTLE_DURATION_MS);
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';
             toast.error(t('common.error'), message || t('fortune.spin_error'));
             setIsSpinning(false);
             setSpinMode('idle');
-            setSpinDuration(4);
+            setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
         }
     };
 

@@ -68,12 +68,32 @@ type SolarShareResponse = {
 type CollectFruitResponse = {
   rewardType: 'sc' | 'stars' | 'lumens';
   reward: number;
+  user?: {
+    sc?: number;
+    stars?: number;
+    lumens?: number;
+  };
 };
 
 type HealTreeResponse = {
   ok: boolean;
   lumens: number;
   starsAward: number;
+  user?: {
+    sc?: number;
+    stars?: number;
+    lumens?: number;
+  };
+};
+
+type SolarCollectResponse = {
+  lmAward?: number;
+  scAward?: number;
+  user?: {
+    sc?: number;
+    stars?: number;
+    lumens?: number;
+  };
 };
 
 function getErrorMessage(e: unknown) {
@@ -81,7 +101,7 @@ function getErrorMessage(e: unknown) {
 }
 
 export default function TreePage() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, updateUser } = useAuth();
   const toast = useToast();
   const router = useRouter();
   const { t, localePath } = useI18n();
@@ -114,6 +134,17 @@ export default function TreePage() {
       delay: number;
     }>
   >([]);
+
+  const syncUserResources = useCallback((nextUser?: { sc?: number; stars?: number; lumens?: number } | null) => {
+    if (!user || !nextUser) return;
+
+    updateUser({
+      ...user,
+      sc: typeof nextUser.sc === 'number' ? nextUser.sc : user.sc,
+      stars: typeof nextUser.stars === 'number' ? nextUser.stars : user.stars,
+      lumens: typeof nextUser.lumens === 'number' ? nextUser.lumens : user.lumens,
+    } as Parameters<typeof updateUser>[0]);
+  }, [updateUser, user]);
 
   const spawnRadianceBurst = (lumens: number) => {
     const startX = window.innerWidth / 2;
@@ -261,7 +292,7 @@ export default function TreePage() {
       setShareDailyLimit(typeof data?.shareDailyLimit === 'number' ? data.shareDailyLimit : null);
 
       toast.success(t('tree.light_sent'), `−${data.amountLm} Lm, +${data.scAward} K, +${data.starsAward} ⭐`);
-      refreshUser();
+      await refreshUser();
       setIsShareOpen(false);
     } catch (e: unknown) {
       toast.error(t('common.error'), getErrorMessage(e) || t('tree.failed_send_light'));
@@ -284,7 +315,8 @@ export default function TreePage() {
         toast.success(t('tree.fruit_collected'), `${reward} K`);
       }
       setIsFruitAvailable(false);
-      refreshUser();
+      syncUserResources(data?.user);
+      await refreshUser();
       // Reload tree data to update fruit availability status
       await loadTreeStatus();
     } catch (e: unknown) {
@@ -406,8 +438,8 @@ export default function TreePage() {
 
       if (solarStatus === 'taking') {
         setSolarDeadlineAt(null);
-        apiPost<{ lmAward?: number; scAward?: number }>('/tree/solar/collect', {})
-          .then((data) => {
+        apiPost<SolarCollectResponse>('/tree/solar/collect', {})
+          .then(async (data) => {
             const lumens = data?.lmAward ?? 100;
             const sc = data?.scAward ?? 10;
             toast.success(t('landing.energy'), `+${lumens} Lm, +${sc} K`);
@@ -415,7 +447,8 @@ export default function TreePage() {
             setSolarStatus('charging');
             setSolarDeadlineAt(nextDeadlineAt);
             setSolarTimeLeft(3600);
-            refreshUser();
+            syncUserResources(data?.user);
+            await refreshUser();
           })
           .catch((e) => {
             console.error('Collect failed:', e);
@@ -437,7 +470,7 @@ export default function TreePage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [solarStatus, solarDeadlineAt, refreshUser, toast, t]);
+  }, [solarStatus, solarDeadlineAt, refreshUser, syncUserResources, toast, t]);
 
   // Interruption Handling (Reset if tab closed/hidden/panel closed)
   useEffect(() => {
@@ -1083,6 +1116,7 @@ export default function TreePage() {
                         toast.success(t('tree.healing'), t('common.thank_you') + '!');
                       }
                       spawnRadianceBurst(lumens);
+                      syncUserResources(data?.user);
                       await refreshUser();
                       await loadTreeData();
                       setIsHealOpen(false);

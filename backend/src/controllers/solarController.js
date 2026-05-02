@@ -39,6 +39,13 @@ function mapSolarChargeRow(row) {
     };
 }
 
+function keepPositiveReward(scaledReward, fallbackReward) {
+    const safeScaled = Number(scaledReward) || 0;
+    const safeFallback = Number(fallbackReward) || 0;
+    if (safeScaled > 0) return safeScaled;
+    return safeFallback > 0 ? safeFallback : 0;
+}
+
 async function getSolarChargeRowByUserId(userId) {
     const id = toId(userId);
     if (!id) return null;
@@ -296,8 +303,14 @@ exports.collectSolarCharge = async (req, res) => {
         const extraLm = charges > 0 ? 20 : 0;
         const lmAward = baseLmAward + extraLm;
 
-        const finalLmAward = Math.max(0, Math.floor(lmAward * rewardMultiplier));
-        const finalScAward = Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000);
+        const finalLmAward = keepPositiveReward(
+            Math.max(0, Math.floor(lmAward * rewardMultiplier)),
+            lmAward
+        );
+        const finalScAward = keepPositiveReward(
+            Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000),
+            scAward
+        );
 
         const nextLumens = (Number(userData.lumens) || 0) + finalLmAward;
         const nextSc = (Number(userData.sc) || 0) + finalScAward;
@@ -482,7 +495,10 @@ exports.shareSolarLumens = async (req, res) => {
 
         const scAward = 5;
 
-        const finalScAward = Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000);
+        const finalScAward = keepPositiveReward(
+            Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000),
+            scAward
+        );
         const starsAward = Math.round((Math.random() * (0.01 - 0.001) + 0.001) * 1000) / 1000;
 
         const nextSenderLumens = (Number(senderData.lumens) || 0) - amountLm;
