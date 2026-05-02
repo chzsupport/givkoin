@@ -326,16 +326,17 @@ export function BattleSummaryOverlay({
     const animatedBattleIdsRef = useRef<Set<string>>(new Set());
     const animationStartedKeyRef = useRef<string | null>(null);
 
-    const readySummary = summary?.isComplete ? summary : null;
-    const summaryReady = Boolean(readySummary);
-    const introText = readySummary?.introText || t('battle_summary.intro_pending');
+    const displaySummary = summary || null;
+    const hasSummary = Boolean(displaySummary);
+    const summaryComplete = Boolean(displaySummary?.isComplete);
+    const introText = displaySummary?.introText || t('battle_summary.intro_pending');
     const introMarker = t('battle_summary.tree_accepts_blow_marker');
     const formattedIntroText = useMemo(() => formatIntroText(introText, introMarker), [introMarker, introText]);
-    const animationKey = readySummary?.battleId || '__battle-summary-pending__';
-    const orderedLines = useMemo(() => getOrderedLines(readySummary), [readySummary]);
-    const finalTreeNote = useMemo(() => getFinalTreeNote(readySummary, Boolean(loading), t), [loading, readySummary, t]);
-    const animationAlreadyPlayed = animatedBattleIdsRef.current.has(animationKey);
-    const instantReveal = summaryReady && (!playAnimation || animationAlreadyPlayed);
+    const animationKey = displaySummary?.battleId || '__battle-summary-pending__';
+    const orderedLines = useMemo(() => getOrderedLines(displaySummary), [displaySummary]);
+    const finalTreeNote = useMemo(() => getFinalTreeNote(displaySummary, Boolean(loading), t), [loading, displaySummary, t]);
+    const animationAlreadyPlayed = summaryComplete && animatedBattleIdsRef.current.has(animationKey);
+    const instantReveal = summaryComplete && (!playAnimation || animationAlreadyPlayed);
     const earlyLines = useMemo(
         () => orderedLines.filter((line) => !['total_dark_damage', 'total_light_damage'].includes(line.key)),
         [orderedLines],
@@ -344,13 +345,13 @@ export function BattleSummaryOverlay({
         () => orderedLines.filter((line) => ['total_dark_damage', 'total_light_damage'].includes(line.key)),
         [orderedLines],
     );
-    const hasResultStep = Boolean(readySummary?.result);
+    const hasResultStep = Boolean(displaySummary?.result);
     const hasFinalTreeNoteStep = Boolean(finalTreeNote);
     const totalRevealSteps = earlyLines.length
         + (hasResultStep ? 1 : 0)
         + endingLines.length
         + (hasFinalTreeNoteStep ? 1 : 0);
-    const revealComplete = instantReveal || (introChars >= formattedIntroText.length && revealStep >= totalRevealSteps);
+    const revealComplete = summaryComplete && (instantReveal || (introChars >= formattedIntroText.length && revealStep >= totalRevealSteps));
     const canCloseSummary = revealComplete;
     const visibleEarlyLineCount = Math.min(earlyLines.length, revealStep);
     const stepsAfterEarlyLines = Math.max(0, revealStep - earlyLines.length);
@@ -361,7 +362,7 @@ export function BattleSummaryOverlay({
     const showFinalTreeNote = hasFinalTreeNoteStep && stepsAfterEndingLines > 0;
 
     useEffect(() => {
-        if (!isOpen || !summaryReady) {
+        if (!isOpen) {
             animationStartedKeyRef.current = null;
             setIntroChars(0);
             setRevealStep(0);
@@ -392,17 +393,19 @@ export function BattleSummaryOverlay({
         return () => {
             window.clearTimeout(introTimer);
         };
-    }, [animationKey, formattedIntroText.length, instantReveal, introChars, isOpen, summaryReady, totalRevealSteps]);
+    }, [animationKey, formattedIntroText.length, instantReveal, introChars, isOpen, totalRevealSteps]);
 
     useEffect(() => {
-        if (!isOpen || !summaryReady) return;
+        if (!isOpen || !hasSummary) return;
         if (instantReveal) {
             setRevealStep(totalRevealSteps);
             return;
         }
         if (introChars < formattedIntroText.length) return;
         if (revealStep >= totalRevealSteps) {
-            animatedBattleIdsRef.current.add(animationKey);
+            if (summaryComplete) {
+                animatedBattleIdsRef.current.add(animationKey);
+            }
             return;
         }
 
@@ -413,7 +416,7 @@ export function BattleSummaryOverlay({
         return () => {
             window.clearTimeout(timer);
         };
-    }, [animationKey, formattedIntroText.length, instantReveal, introChars, isOpen, revealStep, summaryReady, totalRevealSteps]);
+    }, [animationKey, formattedIntroText.length, hasSummary, instantReveal, introChars, isOpen, revealStep, summaryComplete, totalRevealSteps]);
 
     const handleClose = () => {
         if (!canCloseSummary) return;
@@ -485,20 +488,14 @@ export function BattleSummaryOverlay({
                                         transition={{ layout: { duration: 0.45, ease: 'easeOut' } }}
                                         className="mt-6 rounded-[28px] border border-[#9a7543]/40 bg-[linear-gradient(180deg,rgba(96,66,34,0.95)_0%,rgba(70,46,22,0.97)_100%)] px-4 py-5 shadow-[0_18px_44px_rgba(0,0,0,0.26)] md:px-6"
                                     >
-                                        {!summaryReady ? (
-                                            <div className="text-lg leading-relaxed text-[#e6c98a]">
-                                                {t('battle_summary.full_pending')}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center text-[1.1rem] leading-relaxed text-[#f0d38d] md:text-[1.3rem]">
-                                                <span className={`whitespace-pre-line ${parchmentSerif.className}`}>
-                                                    {formattedIntroText.slice(0, introChars)}
-                                                </span>
-                                                {introChars < formattedIntroText.length ? (
-                                                    <span className="ml-1 inline-block h-[1.05em] w-[2px] animate-pulse bg-[#c79d4a] align-[-0.16em]" />
-                                                ) : null}
-                                            </div>
-                                        )}
+                                        <div className="text-center text-[1.1rem] leading-relaxed text-[#f0d38d] md:text-[1.3rem]">
+                                            <span className={`whitespace-pre-line ${parchmentSerif.className}`}>
+                                                {formattedIntroText.slice(0, introChars)}
+                                            </span>
+                                            {introChars < formattedIntroText.length ? (
+                                                <span className="ml-1 inline-block h-[1.05em] w-[2px] animate-pulse bg-[#c79d4a] align-[-0.16em]" />
+                                            ) : null}
+                                        </div>
                                     </motion.div>
 
                                     <motion.div
@@ -519,9 +516,9 @@ export function BattleSummaryOverlay({
                                         ))}
                                     </motion.div>
 
-                                    {showResultWord && readySummary?.result ? (
+                                    {showResultWord && displaySummary?.result ? (
                                         <div className="mt-7">
-                                            <ResultWord result={readySummary?.result || null} t={t} />
+                                            <ResultWord result={displaySummary?.result || null} t={t} />
                                         </div>
                                     ) : null}
 
@@ -557,7 +554,7 @@ export function BattleSummaryOverlay({
                                         </motion.div>
                                     ) : null}
 
-                                    {(!summaryReady || loading) && (
+                                    {(!summaryComplete || loading) && (
                                         <div className="mt-5 text-center text-sm italic text-[#d7b77a] md:text-base">
                                             {t('battle_summary.pending_note')}
                                         </div>

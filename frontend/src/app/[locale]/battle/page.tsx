@@ -684,7 +684,7 @@ export default function BattlePage() {
     const battleSyncSlotRef = useRef(0);
     const battleSyncSlotCountRef = useRef(60);
     const battleSyncIntervalSecondsRef = useRef(BATTLE_REPORT_INTERVAL_SECONDS);
-    const battleFinalReportAcceptSecondsRef = useRef(60);
+    const battleFinalReportAcceptSecondsRef = useRef(30);
     const battleFinalReportRetryIntervalMsRef = useRef(FINAL_REPORT_RETRY_INTERVAL_MS);
     const battleFinalReportWindowCapacityRef = useRef(2000);
     const summaryLoadTimerRef = useRef<number | null>(null);
@@ -1087,6 +1087,7 @@ export default function BattlePage() {
             return true;
         } catch (e: unknown) {
             console.error('Failed to fetch battle summary:', e);
+            setSummaryLoadAtMs(Date.now() + 1000);
             if (!options?.silent) {
                 const message = e instanceof Error ? e.message : '';
                 toast.error(t('common.error'), message || t('battle.failed_get_result'));
@@ -1119,7 +1120,15 @@ export default function BattlePage() {
                 return nextSummary;
             });
             summaryRequestedRef.current = payloadBattleId;
-            setSummaryLoadAtMs(null);
+            if (payload?.detailsPending || payload?.isComplete === false) {
+                const retryAfterMs = Math.max(
+                    500,
+                    Math.floor(Number(payload.detailsRetryAfterMs) || 1500),
+                );
+                setSummaryLoadAtMs(Date.now() + retryAfterMs);
+            } else {
+                setSummaryLoadAtMs(null);
+            }
             clearBattleProgress(payloadBattleId);
         };
 
@@ -1211,7 +1220,7 @@ export default function BattlePage() {
                 battleSyncSlotRef.current = Math.max(0, Math.floor(Number(data.syncSlot) || 0));
                 battleSyncSlotCountRef.current = Math.max(1, Math.floor(Number(data.syncSlotCount) || 60));
                 battleSyncIntervalSecondsRef.current = Math.max(1, Math.floor(Number(data.syncIntervalSeconds) || BATTLE_REPORT_INTERVAL_SECONDS));
-                battleFinalReportAcceptSecondsRef.current = Math.max(0, Math.floor(Number(data.finalReportAcceptSeconds) || 60));
+                battleFinalReportAcceptSecondsRef.current = Math.max(0, Math.floor(Number(data.finalReportAcceptSeconds) || 30));
                 battleFinalReportRetryIntervalMsRef.current = Math.max(250, Math.floor(Number(data.finalReportRetryIntervalMs) || FINAL_REPORT_RETRY_INTERVAL_MS));
                 battleFinalReportWindowCapacityRef.current = Math.max(1, Math.floor(Number(data.finalReportWindowCapacity) || 2000));
                 const durationMs = Math.max(0, Math.floor(Number(data.durationSeconds) || 0) * 1000);
@@ -1332,7 +1341,7 @@ export default function BattlePage() {
         if (!isBrowserOnline) return;
 
         const reportWindowEndMs = battleEndsAtMs
-            ? battleEndsAtMs + (Math.max(0, Math.floor(Number(battleFinalReportAcceptSecondsRef.current) || 60)) * 1000)
+            ? battleEndsAtMs + (Math.max(0, Math.floor(Number(battleFinalReportAcceptSecondsRef.current) || 30)) * 1000)
             : null;
         const nowByServer = Date.now() + serverOffsetMsRef.current;
         if (!battleEndsAtMs || nowByServer < battleEndsAtMs) return;
@@ -1963,7 +1972,7 @@ export default function BattlePage() {
                 setBattleStartsAtMs(null);
                 setBattleEndsAtMs(endedAtMs);
                 setBattleTimeLeftMs(0);
-                battleFinalReportAcceptSecondsRef.current = Math.max(0, Math.floor(Number(battle.finalReportAcceptSeconds) || battleFinalReportAcceptSecondsRef.current || 60));
+                battleFinalReportAcceptSecondsRef.current = Math.max(0, Math.floor(Number(battle.finalReportAcceptSeconds) || battleFinalReportAcceptSecondsRef.current || 30));
                 battleFinalReportRetryIntervalMsRef.current = Math.max(250, Math.floor(Number(battle.finalReportRetryIntervalMs) || battleFinalReportRetryIntervalMsRef.current || FINAL_REPORT_RETRY_INTERVAL_MS));
                 battleFinalReportWindowCapacityRef.current = Math.max(1, Math.floor(Number(battle.finalReportWindowCapacity) || battleFinalReportWindowCapacityRef.current || 2000));
                 setSummaryVisible(true);
