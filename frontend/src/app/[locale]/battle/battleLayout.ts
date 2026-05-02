@@ -15,6 +15,7 @@ const VIDEO_FRAME_SILHOUETTE_LEFT_RATIO = VIDEO_FRAME_SILHOUETTE_LEFT_PX / BATTL
 const VIDEO_FRAME_SILHOUETTE_TOP_RATIO = VIDEO_FRAME_SILHOUETTE_TOP_PX / BATTLE_REFERENCE_HEIGHT;
 const VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO = VIDEO_FRAME_SILHOUETTE_WIDTH_PX / BATTLE_REFERENCE_WIDTH;
 const VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO = VIDEO_FRAME_SILHOUETTE_HEIGHT_PX / BATTLE_REFERENCE_HEIGHT;
+const PORTRAIT_SILHOUETTE_SIDE_PADDING_PX = 5;
 export type BattleViewportLayout = {
   width: number;
   height: number;
@@ -66,17 +67,23 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
   const safeWidth = Math.max(1, Math.round(Number(width) || BATTLE_REFERENCE_WIDTH));
   const safeHeight = Math.max(1, Math.round(Number(height) || BATTLE_REFERENCE_HEIGHT));
   const aspectRatio = safeWidth / safeHeight;
+  const isPortrait = safeHeight > safeWidth;
 
-  const frameWidth =
-    aspectRatio > BATTLE_VIDEO_ASPECT_RATIO
-      ? safeHeight * BATTLE_VIDEO_ASPECT_RATIO
-      : safeWidth;
-  const frameHeight =
-    aspectRatio > BATTLE_VIDEO_ASPECT_RATIO
-      ? safeHeight
-      : safeWidth / BATTLE_VIDEO_ASPECT_RATIO;
-  const frameLeft = (safeWidth - frameWidth) / 2;
-  const frameTop = (safeHeight - frameHeight) / 2;
+  const frameWidth = isPortrait
+    ? Math.max(
+      safeWidth,
+      (safeWidth - (PORTRAIT_SILHOUETTE_SIDE_PADDING_PX * 2)) / VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO,
+    )
+    : (
+      aspectRatio > BATTLE_VIDEO_ASPECT_RATIO
+        ? safeHeight * BATTLE_VIDEO_ASPECT_RATIO
+        : safeWidth
+    );
+  const frameHeight = frameWidth / BATTLE_VIDEO_ASPECT_RATIO;
+  const frameLeft = isPortrait
+    ? PORTRAIT_SILHOUETTE_SIDE_PADDING_PX - (VIDEO_FRAME_SILHOUETTE_LEFT_RATIO * frameWidth)
+    : (safeWidth - frameWidth) / 2;
+  const frameTop = isPortrait ? 0 : (safeHeight - frameHeight) / 2;
 
   return {
     width: safeWidth,
@@ -86,7 +93,7 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
     frameHeight,
     frameLeft,
     frameTop,
-    scale: Math.min(safeWidth, safeHeight) / BATTLE_REFERENCE_HEIGHT,
+    scale: Math.min(frameWidth, frameHeight) / BATTLE_REFERENCE_HEIGHT,
   };
 }
 
