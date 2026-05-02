@@ -2,21 +2,26 @@
 
 import { ENEMY_OUTLINE, ENEMY_OUTLINE_HEIGHT, ENEMY_OUTLINE_WIDTH } from './enemyZones';
 
-export const BATTLE_REFERENCE_WIDTH = 1400;
-export const BATTLE_REFERENCE_HEIGHT = 900;
+export const BATTLE_REFERENCE_WIDTH = 2088;
+export const BATTLE_REFERENCE_HEIGHT = 1080;
 export const BATTLE_VIDEO_ASPECT_RATIO = BATTLE_REFERENCE_WIDTH / BATTLE_REFERENCE_HEIGHT;
 
-const VIDEO_FRAME_SILHOUETTE_LEFT_PX = 530.574557;
-const VIDEO_FRAME_SILHOUETTE_TOP_PX = 78.310053;
-const VIDEO_FRAME_SILHOUETTE_WIDTH_PX = 364.548866;
-const VIDEO_FRAME_SILHOUETTE_HEIGHT_PX = 420.322061;
-const VIDEO_FRAME_CENTER_X_PX = 702.73;
+const VIDEO_FRAME_SILHOUETTE_LEFT_PX = 806.235478;
+const VIDEO_FRAME_SILHOUETTE_TOP_PX = 100.377759;
+const VIDEO_FRAME_SILHOUETTE_WIDTH_PX = 505.541821;
+const VIDEO_FRAME_SILHOUETTE_HEIGHT_PX = 512.017959;
+const VIDEO_FRAME_CENTER_X_PX = 1059.006389;
 
 const VIDEO_FRAME_SILHOUETTE_LEFT_RATIO = VIDEO_FRAME_SILHOUETTE_LEFT_PX / BATTLE_REFERENCE_WIDTH;
 const VIDEO_FRAME_SILHOUETTE_TOP_RATIO = VIDEO_FRAME_SILHOUETTE_TOP_PX / BATTLE_REFERENCE_HEIGHT;
 const VIDEO_FRAME_SILHOUETTE_WIDTH_RATIO = VIDEO_FRAME_SILHOUETTE_WIDTH_PX / BATTLE_REFERENCE_WIDTH;
 const VIDEO_FRAME_SILHOUETTE_HEIGHT_RATIO = VIDEO_FRAME_SILHOUETTE_HEIGHT_PX / BATTLE_REFERENCE_HEIGHT;
 const VIDEO_FRAME_CENTER_X_RATIO = VIDEO_FRAME_CENTER_X_PX / BATTLE_REFERENCE_WIDTH;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
 export type BattleViewportLayout = {
   width: number;
   height: number;
@@ -68,17 +73,17 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
   const safeWidth = Math.max(1, Math.round(Number(width) || BATTLE_REFERENCE_WIDTH));
   const safeHeight = Math.max(1, Math.round(Number(height) || BATTLE_REFERENCE_HEIGHT));
   const aspectRatio = safeWidth / safeHeight;
-  const coverScale = Math.max(
-    safeWidth / BATTLE_REFERENCE_WIDTH,
-    safeHeight / BATTLE_REFERENCE_HEIGHT,
-  );
-  const frameWidth = BATTLE_REFERENCE_WIDTH * coverScale;
-  const frameHeight = BATTLE_REFERENCE_HEIGHT * coverScale;
-  const unclampedFrameLeft = (safeWidth / 2) - (VIDEO_FRAME_CENTER_X_RATIO * frameWidth);
-  const minFrameLeft = safeWidth - frameWidth;
-  const maxFrameLeft = 0;
-  const frameLeft = Math.max(minFrameLeft, Math.min(maxFrameLeft, unclampedFrameLeft));
+  let frameWidth = safeWidth;
+  let frameHeight = frameWidth / BATTLE_VIDEO_ASPECT_RATIO;
+  let frameLeft = 0;
   const frameTop = 0;
+  if (aspectRatio < BATTLE_VIDEO_ASPECT_RATIO) {
+    frameHeight = safeHeight;
+    frameWidth = frameHeight * BATTLE_VIDEO_ASPECT_RATIO;
+    const unclampedFrameLeft = (safeWidth / 2) - (VIDEO_FRAME_CENTER_X_RATIO * frameWidth);
+    frameLeft = clamp(unclampedFrameLeft, safeWidth - frameWidth, 0);
+  }
+  const scale = frameWidth / BATTLE_REFERENCE_WIDTH;
 
   return {
     width: safeWidth,
@@ -88,7 +93,7 @@ export function getBattleViewportLayout(width?: number, height?: number): Battle
     frameHeight,
     frameLeft,
     frameTop,
-    scale: coverScale,
+    scale,
   };
 }
 

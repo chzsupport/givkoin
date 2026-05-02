@@ -631,7 +631,7 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
                 {!disableBackgroundVideo && (
                     <video
                         ref={videoRef}
-                        className="w-full h-full object-cover"
+                        className="block w-full h-full"
                         src={backgroundSrc}
                         playsInline
                         muted
