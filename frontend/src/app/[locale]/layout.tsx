@@ -4,6 +4,7 @@ import {NextIntlClientProvider} from 'next-intl';
 import {getMessages} from 'next-intl/server';
 
 import {LayoutWrapper} from '@/components/LayoutWrapper';
+import {ActiveBattleProvider} from '@/context/ActiveBattleContext';
 import {ActiveChatProvider} from '@/context/ActiveChatContext';
 import {AuthProvider} from '@/context/AuthContext';
 import {BackendStatusProvider} from '@/context/BackendStatusContext';
@@ -92,13 +93,15 @@ export default async function LocaleLayout({
       <AuthProvider>
         <BackendStatusProvider>
           <I18nProvider>
-            <ActiveChatProvider>
-              <CrystalProvider>
-                <SocketProvider>
-                  <LayoutWrapper>{children}</LayoutWrapper>
-                </SocketProvider>
-              </CrystalProvider>
-            </ActiveChatProvider>
+            <ActiveBattleProvider>
+              <ActiveChatProvider>
+                <CrystalProvider>
+                  <SocketProvider>
+                    <LayoutWrapper>{children}</LayoutWrapper>
+                  </SocketProvider>
+                </CrystalProvider>
+              </ActiveChatProvider>
+            </ActiveBattleProvider>
           </I18nProvider>
         </BackendStatusProvider>
       </AuthProvider>

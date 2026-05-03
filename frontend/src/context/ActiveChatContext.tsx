@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { apiGet } from '@/utils/api';
 import { useI18n } from '@/context/I18nContext';
 import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
+import { readActiveBattleLock } from '@/utils/activeBattleLock';
 
 interface ActiveChat {
     _id: string;
@@ -152,6 +153,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!hasChecked || isLoading) return;
         if (!activeChat) return;
+        if (readActiveBattleLock()) return;
 
         const chatPath = `/chat/${activeChat._id}`;
         const isOnChatPage = pathStartsWith(cleanPathname, '/chat');

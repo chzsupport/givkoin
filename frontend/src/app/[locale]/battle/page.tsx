@@ -17,6 +17,7 @@ import { useSocketContext } from '@/context/SocketContext';
 import { useToast } from '@/context/ToastContext';
 import { BattleSummaryOverlay } from '@/components/battle/BattleSummaryOverlay';
 import { parseBattleSummaryPayload, type BattleSummary, type BattleSummaryPayload } from '@/lib/battleSummary';
+import { clearActiveBattleLock, publishActiveBattleLock } from '@/utils/activeBattleLock';
 import {
     getBattleAttachedWorldPoint,
     BATTLE_REFERENCE_HEIGHT,
@@ -664,6 +665,7 @@ export default function BattlePage() {
     const pendingBattleReportRef = useRef<PendingBattleReportChunk | null>(null);
     const nextBattleReportSequenceRef = useRef(1);
     const lastBattleIdRef = useRef<string | null>(null);
+    const activeBattleLockRef = useRef<{ battleId: string; userId: string } | null>(null);
     const lastBattleSyncWindowKeyRef = useRef<string | null>(null);
     const summaryRequestedRef = useRef<string | null>(null);
     const sparkCollectingRef = useRef(false);
@@ -1855,6 +1857,32 @@ export default function BattlePage() {
     }, []);
 
     useEffect(() => {
+        const userId = String(user?._id || user?.id || '').trim();
+
+        if (isBattleActive && battleId && !summaryVisible && userId) {
+            publishActiveBattleLock({
+                battleId,
+                userId,
+                battleEndsAtMs,
+            });
+            activeBattleLockRef.current = { battleId, userId };
+            return;
+        }
+
+        const previous = activeBattleLockRef.current;
+        const lockBattleId = previous?.battleId || battleId || lastBattleIdRef.current;
+        const lockUserId = previous?.userId || userId;
+
+        if (lockBattleId && lockUserId) {
+            clearActiveBattleLock({
+                battleId: lockBattleId,
+                userId: lockUserId,
+            });
+        }
+        activeBattleLockRef.current = null;
+    }, [battleEndsAtMs, battleId, isBattleActive, summaryVisible, user?._id, user?.id]);
+
+    useEffect(() => {
         const html = document.documentElement;
         const body = document.body;
         const prevHtmlOverflow = html.style.overflow;
@@ -1878,6 +1906,7 @@ export default function BattlePage() {
             const d = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {};
             const status = typeof d.status === 'string' ? d.status : '';
             const battle = typeof d.battle === 'object' && d.battle !== null ? (d.battle as Record<string, unknown>) : {};
+            const currentUserId = String(user?._id || user?.id || '').trim();
             applyServerNow(battle.serverNowMs);
             const battleIdValue = typeof battle._id === 'string' ? battle._id : '';
             const joinedAtIso = typeof battle.joinedAt === 'string' && battle.joinedAt.trim() ? battle.joinedAt : null;
@@ -1955,6 +1984,9 @@ export default function BattlePage() {
                 }
                 setAttendanceCount(Number(battle.attendanceCount) || 0);
             } else if (status === 'final_window' && battleIdValue) {
+                if (currentUserId) {
+                    clearActiveBattleLock({ battleId: battleIdValue, userId: currentUserId });
+                }
                 const canStayOnBattlePage = battleSeenActiveThisVisitRef.current || battleJoinedRef.current || summaryVisible;
                 if (!canStayOnBattlePage) {
                     clearBattleProgress(battleIdValue);
@@ -2000,6 +2032,9 @@ export default function BattlePage() {
                 setBattleJoinedAtMs(null);
                 void loadBattleSummary(battleIdValue, { silent: true });
             } else {
+                if (currentUserId) {
+                    clearActiveBattleLock({ userId: currentUserId });
+                }
                 setIsBattleActive(false);
                 setBattleScenario(null);
                 setBattleInjuries([]);
@@ -2029,7 +2064,7 @@ export default function BattlePage() {
         } catch (e) {
             console.error('Failed to fetch battle:', e);
         }
-    }, [applyBattlePersonalState, applyServerNow, applyStoredBattleProgress, battleJoinedAtMs, clearBattleProgress, joinBattle, loadBattleSummary, readBattleProgress, redirectToTree, resetBattleDamageTracking, summaryVisible]);
+    }, [applyBattlePersonalState, applyServerNow, applyStoredBattleProgress, battleJoinedAtMs, clearBattleProgress, joinBattle, loadBattleSummary, readBattleProgress, redirectToTree, resetBattleDamageTracking, summaryVisible, user?._id, user?.id]);
 
     useEffect(() => {
         if (!isBrowserOnline || summaryVisible) return;
