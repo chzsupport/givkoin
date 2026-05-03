@@ -128,7 +128,7 @@ export default function CabinetReferralsPage() {
             <button
               type="button"
               onClick={() => setBoostModalOpen(true)}
-              className="rounded-2xl border border-sky-300/30 bg-gradient-to-r from-sky-500 via-rose-500 to-yellow-300 px-6 py-3 text-sm font-black uppercase tracking-[0.28em] text-slate-950 shadow-[0_0_28px_rgba(250,204,21,0.25)] transition hover:brightness-110"
+              className="flex h-12 items-center rounded-2xl border border-white/12 bg-white/[0.07] px-5 text-sm font-black uppercase tracking-[0.22em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_28px_rgba(0,0,0,0.22)] backdrop-blur-md transition hover:border-sky-200/35 hover:bg-sky-200/[0.10]"
             >
               {t('referrals.manual_boost_button')}
             </button>
