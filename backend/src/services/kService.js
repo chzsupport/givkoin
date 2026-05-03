@@ -844,6 +844,10 @@ function __resetKServiceRuntimeState() {
   __resetTreeBlessingRuntimeState();
 }
 
+function __resetInjuryDebuffCache() {
+  injuryDebuffCache = { at: 0, percent: null };
+}
+
 module.exports = {
   creditK,
   debitK,
@@ -861,5 +865,6 @@ module.exports = {
   getBattleDamageMultiplier,
   recordTransaction: createTransaction,
   __resetKServiceRuntimeState,
+  __resetInjuryDebuffCache,
 };
 

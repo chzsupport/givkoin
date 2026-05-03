@@ -72,6 +72,24 @@ async function saveTree(tree) {
     .eq('id', String(id));
 }
 
+function resetInjuryRuntimeCaches() {
+  try {
+    require('./scService').__resetInjuryDebuffCache?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    require('./kService').__resetInjuryDebuffCache?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    require('./branchAllocationService').__resetInjuredBranchesCache?.();
+  } catch (e) {
+    // ignore
+  }
+}
+
 function normalizeInjury(injury) {
   const required = injury.requiredRadiance && injury.requiredRadiance > 0 ? injury.requiredRadiance : injury.severityPercent * 1000;
   if (!injury.requiredRadiance || injury.requiredRadiance <= 0) {
@@ -98,14 +116,20 @@ function applyRadianceToInjuries(tree, amount) {
     const portion = Math.min(need, remaining);
     injury.healedRadiance = (injury.healedRadiance || 0) + portion;
     injury.healedPercent = Math.min(100, (injury.healedRadiance / required) * 100);
+    if (injury.healedRadiance >= required) {
+      injury.healedRadiance = required;
+      injury.healedPercent = 100;
+      injury.debuffPercent = 0;
+    }
     remaining -= portion;
   }
 
-  const healedAll = tree.injuries.every((injury) => {
+  tree.injuries = tree.injuries.filter((injury) => {
     const required = normalizeInjury(injury);
-    return (injury.healedRadiance || 0) >= required;
+    return (injury.healedRadiance || 0) < required;
   });
-  if (healedAll) {
+
+  if (tree.injuries.length === 0) {
     tree.lastHealedAt = new Date().toISOString();
   }
 
@@ -115,10 +139,15 @@ function applyRadianceToInjuries(tree, amount) {
 async function addRadiance(amount, { source = 'sc', meta } = {}) {
   ensurePositive(amount);
   const tree = await getTree();
+  const injuriesBefore = Array.isArray(tree.injuries) ? tree.injuries.length : 0;
   const leftover = applyRadianceToInjuries(tree, amount);
-  const toPool = Math.max(0, amount - (amount - leftover));
+  const injuriesAfter = Array.isArray(tree.injuries) ? tree.injuries.length : 0;
+  const toPool = Math.max(0, leftover);
   tree.radianceTotal = (tree.radianceTotal || 0) + toPool;
   await saveTree(tree);
+  if (injuriesAfter !== injuriesBefore) {
+    resetInjuryRuntimeCaches();
+  }
   return { tree, consumed: amount - leftover, addedToPool: toPool, source, meta };
 }
 

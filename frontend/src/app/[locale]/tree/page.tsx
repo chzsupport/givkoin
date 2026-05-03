@@ -100,6 +100,56 @@ function getErrorMessage(e: unknown) {
   return e instanceof Error ? e.message : 'Unknown error';
 }
 
+const LUMEN_TO_RADIANCE = 4;
+
+function getRequiredRadiance(injury: Injury) {
+  const required = Number(injury.requiredRadiance);
+  if (Number.isFinite(required) && required > 0) return required;
+  return Math.max(0, (Number(injury.severityPercent) || 0) * 1000);
+}
+
+function getHealedRadiance(injury: Injury, required: number) {
+  const healed = Number(injury.healedRadiance);
+  if (Number.isFinite(healed) && healed >= 0) return healed;
+  const percent = Math.max(0, Number(injury.healedPercent) || 0);
+  return required > 0 ? (required * percent) / 100 : 0;
+}
+
+function applyOptimisticHealing(injuries: Injury[], lumens: number) {
+  let remainingRadiance = Math.max(0, lumens * LUMEN_TO_RADIANCE);
+
+  return injuries
+    .map((injury) => {
+      const required = getRequiredRadiance(injury);
+      if (required <= 0) return injury;
+
+      const healed = Math.min(required, getHealedRadiance(injury, required));
+      const need = Math.max(0, required - healed);
+      if (need <= 0 || remainingRadiance <= 0) return injury;
+
+      const portion = Math.min(need, remainingRadiance);
+      remainingRadiance -= portion;
+
+      const nextHealed = Math.min(required, healed + portion);
+      const nextPercent = Math.min(100, (nextHealed / required) * 100);
+
+      return {
+        ...injury,
+        requiredRadiance: required,
+        healedRadiance: nextHealed,
+        healedPercent: nextPercent,
+        debuffPercent: nextPercent >= 100 ? 0 : injury.debuffPercent,
+      };
+    })
+    .filter((injury) => {
+      const required = getRequiredRadiance(injury);
+      if (required <= 0) return true;
+      const healed = getHealedRadiance(injury, required);
+      const percent = required > 0 ? (healed / required) * 100 : (Number(injury.healedPercent) || 0);
+      return percent < 100;
+    });
+}
+
 export default function TreePage() {
   const { user, refreshUser, updateUser } = useAuth();
   const toast = useToast();
@@ -497,6 +547,63 @@ export default function TreePage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [solarStatus, isRightPanelOpen, activePanel]);
+
+  const handleHealTree = () => {
+    if (isHealing) return;
+
+    const lumens = Number(healLumens);
+    if (!Number.isFinite(lumens) || lumens <= 0) {
+      toast.error(t('common.error'), t('tree.enter_lm_amount'));
+      return;
+    }
+
+    if (!user) {
+      toast.error(t('common.error'), t('errors.user_not_found'));
+      return;
+    }
+
+    const availableLumens = Math.max(0, Number(user.lumens) || 0);
+    if (lumens > availableLumens) {
+      toast.error(t('common.error'), t('tree.not_enough_lumens'));
+      return;
+    }
+
+    setIsHealing(true);
+    setIsHealOpen(false);
+    spawnRadianceBurst(lumens);
+    setInjuries((current) => applyOptimisticHealing(current, lumens));
+    updateUser({
+      ...user,
+      lumens: Math.max(0, availableLumens - lumens),
+    } as Parameters<typeof updateUser>[0]);
+    toast.success(t('tree.healing'), `${t('common.thank_you')}! −${lumens.toLocaleString()} Lm`);
+
+    void (async () => {
+      try {
+        const data = await apiPost<HealTreeResponse>('/tree/heal', { lumens });
+        if (data?.user) {
+          syncUserResources(data.user);
+        } else {
+          void refreshUser().catch((e) => {
+            console.error('Failed to refresh user after healing:', e);
+          });
+        }
+        void loadTreeStatus().catch((e) => {
+          console.error('Failed to refresh tree status after healing:', e);
+        });
+      } catch (e: unknown) {
+        toast.error(t('common.error'), getErrorMessage(e) || t('tree.failed_heal'));
+        void refreshUser().catch((refreshError) => {
+          console.error('Failed to restore user after healing error:', refreshError);
+        });
+        void loadTreeStatus().catch((treeError) => {
+          console.error('Failed to restore tree status after healing error:', treeError);
+        });
+      } finally {
+        setIsHealing(false);
+      }
+    })();
+  };
 
   // Socket events for search
   const socket = useSocket(user?._id);
@@ -1075,7 +1182,6 @@ export default function TreePage() {
                 <button
                   onClick={() => setIsHealOpen(false)}
                   className="text-white/50 hover:text-white text-xl"
-                  disabled={isHealing}
                 >
                   ✕
                 </button>
@@ -1101,31 +1207,7 @@ export default function TreePage() {
                 </div>
 
                 <button
-                  onClick={async () => {
-                    const lumens = Number(healLumens);
-                    if (!Number.isFinite(lumens) || lumens <= 0) {
-                      toast.error(t('common.error'), t('tree.enter_lm_amount'));
-                      return;
-                    }
-                    setIsHealing(true);
-                    try {
-                      const data = await apiPost<HealTreeResponse>('/tree/heal', { lumens });
-                      if (data?.starsAward) {
-                        toast.success(t('tree.healing'), `${t('common.thank_you')}! +${data.starsAward} ⭐`);
-                      } else {
-                        toast.success(t('tree.healing'), t('common.thank_you') + '!');
-                      }
-                      spawnRadianceBurst(lumens);
-                      syncUserResources(data?.user);
-                      await refreshUser();
-                      await loadTreeData();
-                      setIsHealOpen(false);
-                    } catch (e: unknown) {
-                      toast.error(t('common.error'), getErrorMessage(e) || t('tree.failed_heal'));
-                    } finally {
-                      setIsHealing(false);
-                    }
-                  }}
+                  onClick={handleHealTree}
                   disabled={isHealing}
                   className="w-full py-3 font-bold rounded-xl border transition-all uppercase tracking-[0.2em] text-tiny bg-emerald-600 text-white border-emerald-400 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
                 >

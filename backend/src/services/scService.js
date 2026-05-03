@@ -863,6 +863,10 @@ function __resetScServiceRuntimeState() {
   __resetTreeBlessingRuntimeState();
 }
 
+function __resetInjuryDebuffCache() {
+  injuryDebuffCache = { at: 0, percent: null };
+}
+
 module.exports = {
   creditSc,
   debitSc,
@@ -880,5 +884,6 @@ module.exports = {
   getBattleDamageMultiplier,
   recordTransaction: createTransaction,
   __resetScServiceRuntimeState,
+  __resetInjuryDebuffCache,
 };
 

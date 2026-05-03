@@ -243,10 +243,15 @@ async function assignBranchForNewUser({ birthDate }) {
   return { treeCluster: cluster, treeBranch: String(updated.branchId) };
 }
 
+function __resetInjuredBranchesCache() {
+  injuredBranchesCache = { at: 0, set: null };
+}
+
 module.exports = {
   CLUSTERS,
   computeTreeClusterByBirthDate,
   computeBranchCapacityByClusterSize,
   ensureInitialBranchesForAllClusters,
   assignBranchForNewUser,
+  __resetInjuredBranchesCache,
 };
