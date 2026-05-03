@@ -1,6 +1,7 @@
 const { spendSc } = require('../services/scService');
 const { SHOP_ITEMS, listLocalizedShopItems, localizeShopItem } = require('../config/shopCatalog');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage, pickRequestLanguage } = require('../utils/requestLanguage');
 
@@ -86,6 +87,19 @@ exports.buyItem = async (req, res) => {
       dedupeKey: `shop_buy_item:${warehouseItem._id}:${userId}`,
     }).catch(() => { });
 
+    const boostOffer = await createAdBoostOffer({
+      userId,
+      type: 'shop_random_item',
+      contextKey: `shop:${warehouseItem._id}`,
+      page: 'shop',
+      title: pickRequestLanguage(req, 'Получить случайный предмет', 'Get a random item'),
+      description: pickRequestLanguage(req, 'Досмотрите видео, чтобы получить один случайный предмет из магазина.', 'Watch the video to receive one random shop item.'),
+      reward: {
+        kind: 'shop_random_item',
+        purchasedItemKey: item.key,
+      },
+    }).catch(() => null);
+
     return res.json({
       ok: true,
       user: { sc: updatedUser.sc, lumens: updatedUser.lumens, stars: updatedUser.stars },
@@ -94,6 +108,7 @@ exports.buyItem = async (req, res) => {
         title: localizedItem.title,
         description: localizedItem.description,
       },
+      boostOffer,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || pickRequestLanguage(req, 'Ошибка сервера', 'Server error') });

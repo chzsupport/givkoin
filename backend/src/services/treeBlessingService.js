@@ -116,6 +116,9 @@ function getTreeBlessingStateFromData(data, now = new Date()) {
   const activeUntilMs = activeUntilRaw ? new Date(activeUntilRaw).getTime() : 0;
   const isActive = Number.isFinite(activeUntilMs) && activeUntilMs > nowMs;
   const activeUntil = isActive ? new Date(activeUntilMs).toISOString() : null;
+  const rewardPercent = isActive
+    ? Math.max(TREE_BLESSING_PERCENT, Number(shopBoosts.practiceTreeBlessingPercent) || TREE_BLESSING_PERCENT)
+    : TREE_BLESSING_PERCENT;
   const remainingUses = Math.max(0, TREE_BLESSING_DAILY_LIMIT - usesToday);
   const canClaim = !isActive && remainingUses > 0;
   const reason = isActive ? 'active' : (remainingUses <= 0 ? 'daily_limit' : 'available');
@@ -128,6 +131,8 @@ function getTreeBlessingStateFromData(data, now = new Date()) {
     remainingUses,
     isActive,
     activeUntil,
+    rewardPercent,
+    rewardMultiplier: 1 + rewardPercent / 100,
     nextAvailableAt: activeUntil,
     canClaim,
     reason,
@@ -138,7 +143,7 @@ function buildTreeBlessingStatusPayload(state, now = new Date()) {
   const nowDate = now instanceof Date ? now : new Date(now);
   return {
     serverNow: nowDate.getTime(),
-    rewardPercent: TREE_BLESSING_PERCENT,
+    rewardPercent: state.rewardPercent || TREE_BLESSING_PERCENT,
     durationHours: TREE_BLESSING_DURATION_HOURS,
     waitSeconds: 30,
     dailyLimit: TREE_BLESSING_DAILY_LIMIT,
@@ -195,6 +200,8 @@ async function claimTreeBlessingForUser(userId, { now = new Date() } = {}) {
   const nextShopBoosts = {
     ...state.shopBoosts,
     practiceTreeBlessingUntil: nextActiveUntil,
+    practiceTreeBlessingPercent: TREE_BLESSING_PERCENT,
+    practiceTreeBlessingAdBoosted: false,
   };
   const nextPracticeBlessings = {
     ...state.practiceBlessings,
@@ -237,7 +244,7 @@ async function getTreeBlessingRewardMultiplierForUser(userId, { now = new Date()
 
     const row = await getUserRowById(userId);
     const state = getTreeBlessingStateFromData(getUserData(row), nowDate);
-    const multiplier = state.isActive ? TREE_BLESSING_MULTIPLIER : 1;
+    const multiplier = state.isActive ? (Number(state.rewardMultiplier) || TREE_BLESSING_MULTIPLIER) : 1;
     const expiresAt = state.isActive && state.activeUntil
       ? Math.min(new Date(state.activeUntil).getTime(), nowMs + TREE_BLESSING_CACHE_TTL_MS)
       : nowMs + TREE_BLESSING_CACHE_TTL_MS;

@@ -5513,123 +5513,69 @@ function EntitiesSection() {
   );
 }
 
-const SITE_ADS_CONFIG = [
-  {
-    id: 'news',
-    name: 'Новости',
-    placements: [
-      { id: 'news_sidebar_right', name: 'Боковая панель (ПК)', type: 'landscape', layout: 'end' },
-      { id: 'news_inline', name: 'В ленте (Мобильные)', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'galaxy',
-    name: 'Желания',
-    placements: [
-      { id: 'galaxy_sidebar_left', name: 'Левая панель (ПК)', type: 'landscape', layout: 'start' },
-      { id: 'galaxy_sidebar_right', name: 'Правая панель (ПК)', type: 'landscape', layout: 'end' },
-      { id: 'galaxy_header', name: 'Шапка (Мобильные)', type: 'mobile', layout: 'header' }
-    ]
-  },
-  {
-    id: 'fortune',
-    name: 'Фортуна',
-    placements: [
-      { id: 'fortune_sidebar_left', name: 'Левая панель (ПК)', type: 'landscape', layout: 'start' },
-      { id: 'fortune_sidebar_right', name: 'Правая панель (ПК)', type: 'landscape', layout: 'end' },
-      { id: 'fortune_header', name: 'Шапка (Мобильные)', type: 'mobile', layout: 'header' }
-    ]
-  },
-  {
-    id: 'fortune/roulette',
-    name: 'Рулетка',
-    placements: [
-      { id: 'roulette_sidebar', name: 'Боковая панель', type: 'landscape', layout: 'end' },
-      { id: 'roulette_inline', name: 'В контенте', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'fortune/lottery',
-    name: 'Лотерея',
-    placements: [
-      { id: 'lottery_sidebar', name: 'Боковая панель', type: 'landscape', layout: 'end' },
-      { id: 'lottery_inline', name: 'В контенте', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'bridges',
-    name: 'Мосты',
-    placements: [
-      { id: 'bridges_sidebar_left', name: 'Левая панель (ПК)', type: 'landscape', layout: 'start' },
-      { id: 'bridges_sidebar_right', name: 'Правая панель (ПК)', type: 'landscape', layout: 'end' },
-      { id: 'bridges_header', name: 'Шапка (Мобильные)', type: 'mobile', layout: 'header' }
-    ]
-  },
-  {
-    id: 'chronicle',
-    name: 'Летопись',
-    placements: [
-      { id: 'chronicle_sidebar_left', name: 'Левая панель (ПК)', type: 'landscape', layout: 'start' },
-      { id: 'chronicle_sidebar_right', name: 'Правая панель (ПК)', type: 'landscape', layout: 'end' },
-      { id: 'chronicle_header', name: 'Шапка (Мобильные)', type: 'mobile', layout: 'header' },
-      { id: 'chronicle_between_story_stats', name: 'Между историей и статами', type: 'mobile', layout: 'center' },
-      { id: 'chronicle_between_stats_history', name: 'Между статами и историей', type: 'mobile', layout: 'center' },
-      { id: 'chronicle_between_history_hall', name: 'Между историей и залом славы', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'entity',
-    name: 'Сущность (Панель)',
-    placements: [
-      { id: 'entity_sidebar', name: 'Баннер в панели', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'chat',
-    name: 'Чат (Поиск)',
-    placements: [
-      { id: 'chat_sidebar', name: 'Баннер в панели', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'solar',
-    name: 'Энергия (Панель)',
-    placements: [
-      { id: 'solar_sidebar', name: 'Баннер в панели', type: 'mobile', layout: 'center' }
-    ]
-  },
-  {
-    id: 'entity/profile',
-    name: 'Профиль Сущности',
-    placements: [
-      { id: 'profile_sidebar', name: 'Боковая панель', type: 'landscape', layout: 'end' }
-    ]
-  }
+const AD_TARGET_OPTIONS = [
+  { id: 'all', name: 'Все страницы' },
+  { id: 'about', name: 'О нас' },
+  { id: 'rules', name: 'Правила' },
+  { id: 'roadmap', name: 'Дорожная карта' },
+  { id: 'feedback', name: 'Обратная связь' },
+  { id: 'fortune', name: 'Фортуна' },
+  { id: 'fortune/roulette', name: 'Рулетка' },
+  { id: 'fortune/lottery', name: 'Лотерея' },
+  { id: 'shop', name: 'Магазин' },
+  { id: 'night_shift', name: 'Ночная смена' },
+  { id: 'practice', name: 'Практика' },
+  { id: 'practice_gratitude', name: 'Благодарность' },
+  { id: 'practice_meditation', name: 'Медитации' },
+  { id: 'activity_collect', name: 'Сбор осколков' },
+  { id: 'activity_achievements', name: 'Достижения' },
+  { id: 'activity_attendance', name: 'Посещаемость' },
+  { id: 'news', name: 'Новости' },
+  { id: 'chronicle', name: 'Летопись' },
+  { id: 'chat', name: 'Чат' },
+  { id: 'galaxy', name: 'Галактика желаний' },
+  { id: 'bridges', name: 'Мосты' },
+  { id: 'battle', name: 'Бой' },
+  { id: 'entity/profile', name: 'Профиль сущности' },
+  { id: 'entity', name: 'Панели Древа: сущность' },
+  { id: 'solar', name: 'Панели Древа: энергия' },
 ];
-
-const adPages = {
-  'all': 'Все страницы',
-  ...Object.fromEntries(SITE_ADS_CONFIG.map(p => [p.id, p.name]))
-};
-
-// Derive unique placements for filter dropdown
-const uniquePlacements = Array.from(new Set(
-  SITE_ADS_CONFIG.flatMap(p => p.placements.map(pl => pl.id))
-));
-
-const adPlacements = {
-  'all': 'Все места',
-  ...Object.fromEntries(uniquePlacements.map(id => [id, id])) // Fallback name as ID
-};
 
 function AdsSection() {
   const [stats, setStats] = useState<any>(null);
   const [creatives, setCreatives] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreativeModal, setShowCreativeModal] = useState(false);
-  const [creativeForm, setCreativeForm] = useState<any>({ name: '', type: 'image', content: '', link: '', duration: 10, active: true, priority: 0 });
-  const [uploading, setUploading] = useState(false);
+  const emptyCreativeForm = { name: '', type: 'banner', content: '', duration: 10, active: true, priority: 0, targetPages: ['all'] };
+  const [creativeForm, setCreativeForm] = useState<any>(emptyCreativeForm);
   const [editingCreative, setEditingCreative] = useState<any>(null);
+
+  const getCreativeTypeLabel = (creative: any) => {
+    const kind = String(creative?.kind || creative?.type || '').toLowerCase();
+    if (kind === 'vast') return 'VAST';
+    if (kind === 'banner' || kind === 'html') return 'Баннер';
+    return 'Старый формат';
+  };
+
+  const getTargetLabel = (id: string) => AD_TARGET_OPTIONS.find((target) => target.id === id)?.name || id;
+
+  const resetCreativeForm = () => {
+    setEditingCreative(null);
+    setCreativeForm(emptyCreativeForm);
+  };
+
+  const toggleTargetPage = (pageId: string) => {
+    const current = Array.isArray(creativeForm.targetPages) ? creativeForm.targetPages : ['all'];
+    if (pageId === 'all') {
+      setCreativeForm({ ...creativeForm, targetPages: ['all'] });
+      return;
+    }
+    const withoutAll = current.filter((id: string) => id !== 'all');
+    const next = withoutAll.includes(pageId)
+      ? withoutAll.filter((id: string) => id !== pageId)
+      : [...withoutAll, pageId];
+    setCreativeForm({ ...creativeForm, targetPages: next.length ? next : ['all'] });
+  };
 
   const formatDuration = (seconds: number) => {
     const total = Math.max(0, Math.round(Number(seconds) || 0));
@@ -5681,14 +5627,19 @@ function AdsSection() {
 
   const handleSaveCreative = async () => {
     try {
+      const payload = {
+        ...creativeForm,
+        kind: creativeForm.type,
+        targetPages: Array.isArray(creativeForm.targetPages) && creativeForm.targetPages.length ? creativeForm.targetPages : ['all'],
+        targetPlacements: ['all'],
+      };
       if (editingCreative) {
-        await api.patch(`/ads/creatives/${editingCreative._id}`, creativeForm);
+        await api.patch(`/ads/creatives/${editingCreative._id}`, payload);
       } else {
-        await api.post('/ads/creatives', creativeForm);
+        await api.post('/ads/creatives', payload);
       }
       setShowCreativeModal(false);
-      setEditingCreative(null);
-      setCreativeForm({ name: '', type: 'image', content: '', link: '', duration: 10, active: true, priority: 0 });
+      resetCreativeForm();
       loadData();
     } catch (e: any) {
       console.error(e);
@@ -5698,7 +5649,13 @@ function AdsSection() {
 
   const handleEdit = (creative: any) => {
     setEditingCreative(creative);
-    setCreativeForm(creative);
+    const kind = String(creative.kind || creative.type || '').toLowerCase();
+    setCreativeForm({
+      ...emptyCreativeForm,
+      ...creative,
+      type: kind === 'vast' ? 'vast' : 'banner',
+      targetPages: Array.isArray(creative.targetPages) && creative.targetPages.length ? creative.targetPages : ['all'],
+    });
     setShowCreativeModal(true);
   };
 
@@ -5919,7 +5876,7 @@ function AdsSection() {
       {/* Creatives Management */}
       <Card title="Креативы" subtitle="Управление рекламными материалами">
         <div className="mb-4 flex justify-end">
-          <button onClick={() => setShowCreativeModal(true)} className="btn-primary flex items-center gap-2">
+          <button onClick={() => { resetCreativeForm(); setShowCreativeModal(true); }} className="btn-primary flex items-center gap-2">
             <Plus size={16} /> Добавить креатив
           </button>
         </div>
@@ -5929,6 +5886,7 @@ function AdsSection() {
               <tr className="border-b border-white/10 text-xs uppercase text-slate-400">
                 <th className="pb-3 font-medium">Название</th>
                 <th className="pb-3 font-medium">Тип</th>
+                <th className="pb-3 font-medium">Страницы</th>
                 <th className="pb-3 font-medium">Длительность</th>
                 <th className="pb-3 font-medium">Показов</th>
                 <th className="pb-3 font-medium">Статус</th>
@@ -5939,7 +5897,10 @@ function AdsSection() {
               {creatives.map((creative: any) => (
                 <tr key={creative._id} className="text-sm">
                   <td className="py-3 text-white">{creative.name}</td>
-                  <td className="py-3 text-slate-300">{creative.type}</td>
+                  <td className="py-3 text-slate-300">{getCreativeTypeLabel(creative)}</td>
+                  <td className="py-3 text-slate-300">
+                    {(Array.isArray(creative.targetPages) ? creative.targetPages : ['all']).map(getTargetLabel).join(', ')}
+                  </td>
                   <td className="py-3 text-slate-300">
                     {creative.duration || 10} сек.
                   </td>
@@ -5974,7 +5935,7 @@ function AdsSection() {
                 </tr>
               ))}
               {creatives.length === 0 && (
-                <tr><td colSpan={6} className="py-8 text-center text-slate-500">Нет креативов</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-slate-500">Нет креативов</td></tr>
               )}
             </tbody>
           </table>
@@ -6016,81 +5977,38 @@ function AdsSection() {
                     value={creativeForm.type}
                     onChange={(e) => setCreativeForm({ ...creativeForm, type: e.target.value })}
                   >
-                    <option value="image">Изображение</option>
-                    <option value="video">Видео</option>
-                    <option value="html">HTML</option>
+                    <option value="banner">Баннер</option>
+                    <option value="vast">VAST</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-slate-300">URL контента</label>
-                  {creativeForm.type === 'html' ? (
-                    <textarea
-                      className="input-field mt-1 min-h-[150px] font-mono text-sm"
-                      value={creativeForm.content}
-                      onChange={(e) => setCreativeForm({ ...creativeForm, content: e.target.value })}
-                      placeholder="<div...>Ваш HTML код...</div>"
-                    />
-                  ) : (
-                    <div>
-                      <input
-                        type="file"
-                        className="hidden"
-                        id="creative-file-upload"
-                        onChange={async (e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            const file = e.target.files[0];
-                            const formData = new FormData();
-                            formData.append('file', file);
-                            setUploading(true);
-                            try {
-                              const res = await api.post('/api/upload', formData, {
-                                headers: {
-                                  'Content-Type': 'multipart/form-data',
-                                },
-                              });
-                              // Prepend the backend URL if it's not a full URL
-                              const contentUrl = res.data.url.startsWith('http') ? res.data.url : `${api.defaults.baseURL}${res.data.url}`;
-                              setCreativeForm({ ...creativeForm, content: contentUrl });
-                            } catch (err) {
-                              console.error(err);
-                              alert('Ошибка загрузки файла');
-                            } finally {
-                              setUploading(false);
-                            }
-                          }
-                        }}
-                      />
-                      <div className="flex items-center gap-2 mt-1">
-                        <input
-                          className="input-field flex-1"
-                          value={creativeForm.content}
-                          onChange={(e) => setCreativeForm({ ...creativeForm, content: e.target.value })}
-                          placeholder="URL или загрузите файл"
-                        />
-                        <label htmlFor="creative-file-upload" className="btn-secondary cursor-pointer">
-                          {uploading ? 'Загрузка...' : 'Выбрать'}
-                        </label>
-                      </div>
-                      {creativeForm.content && (creativeForm.type === 'image' || creativeForm.type === 'video') && (
-                        <div className="mt-2 p-2 border border-white/10 rounded-lg bg-black/20">
-                          {creativeForm.type === 'image' ? (
-                            <img src={creativeForm.content} className="max-h-32 rounded" />
-                          ) : (
-                            <video src={creativeForm.content} className="max-h-32 rounded" controls />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <label className="text-sm font-medium text-slate-300">
+                    {creativeForm.type === 'vast' ? 'VAST ссылка DAO.ad' : 'Код баннера'}
+                  </label>
+                  <textarea
+                    className="input-field mt-1 min-h-[150px] font-mono text-sm"
+                    value={creativeForm.content}
+                    onChange={(e) => setCreativeForm({ ...creativeForm, content: e.target.value })}
+                    placeholder={creativeForm.type === 'vast' ? 'https://... VAST link DAO.ad' : '<script...> или <div...>'}
+                  />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-slate-300">Ссылка при клике</label>
-                  <input
-                    className="input-field mt-1"
-                    value={creativeForm.link}
-                    onChange={(e) => setCreativeForm({ ...creativeForm, link: e.target.value })}
-                    placeholder="https://..."
-                  />
+                  <label className="text-sm font-medium text-slate-300">Где показывать</label>
+                  <div className="mt-2 grid max-h-52 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2">
+                    {AD_TARGET_OPTIONS.map((target) => {
+                      const selected = Array.isArray(creativeForm.targetPages) && creativeForm.targetPages.includes(target.id);
+                      return (
+                        <label key={target.id} className="flex items-center gap-2 text-sm text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleTargetPage(target.id)}
+                          />
+                          <span>{target.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-slate-300">Приоритет</label>
@@ -6114,7 +6032,7 @@ function AdsSection() {
                 </div>
 
                 <div className="flex gap-3 pt-4">
-                  <button onClick={() => { setShowCreativeModal(false); setEditingCreative(null); }} className="btn-secondary flex-1">Отмена</button>
+                  <button onClick={() => { setShowCreativeModal(false); resetCreativeForm(); }} className="btn-secondary flex-1">Отмена</button>
                   <button onClick={handleSaveCreative} className="btn-primary flex-1">{editingCreative ? 'Сохранить' : 'Создать'}</button>
                 </div>
               </div>

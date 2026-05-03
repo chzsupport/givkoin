@@ -27,12 +27,20 @@ interface User {
     lumens: number;
     treeBranch?: string;
     shopBoosts?: {
-        battleDamage?: { pending?: boolean; battleId?: string; activatedAt?: string };
-        battleLumensDiscount?: { pending?: boolean; battleId?: string; activatedAt?: string };
-        weakZoneDamage?: { pending?: boolean; battleId?: string; activatedAt?: string };
-        chatSc?: { pending?: boolean; chatId?: string; activatedAt?: string };
+        battleDamage?: { pending?: boolean; battleId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
+        battleLumensDiscount?: { pending?: boolean; battleId?: string; activatedAt?: string; discountPercent?: number; adBoosted?: boolean };
+        weakZoneDamage?: { pending?: boolean; battleId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
+        chatSc?: { pending?: boolean; chatId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
+        chatK?: { pending?: boolean; chatId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
         solarExtraLmCharges?: number;
+        solarExtraLmAmount?: number;
+        solarFocusAdBoosted?: boolean;
         referralBlessingUntil?: string;
+        referralBlessingPercent?: number;
+        referralBlessingAdBoosted?: boolean;
+        practiceTreeBlessingUntil?: string;
+        practiceTreeBlessingPercent?: number;
+        practiceTreeBlessingAdBoosted?: boolean;
     };
     nightShift?: {
         isServing?: boolean;

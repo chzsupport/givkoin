@@ -19,6 +19,7 @@ const impressionRateLimit = createRateLimiter({
 router.post('/impression', optionalAuth, impressionRateLimit, adController.recordImpression);
 router.get('/creative', adController.getActiveCreative);
 router.get('/rotation', adController.getRotation);
+router.get('/targets', adController.getTargets);
 
 // Admin routes
 router.use(auth);

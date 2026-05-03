@@ -100,6 +100,7 @@ export default function LotteryPage() {
     const [nextDrawCountdownMs, setNextDrawCountdownMs] = useState<number | null>(null);
     const [maxTicketsPerDay, setMaxTicketsPerDay] = useState(DEFAULT_MAX_TICKETS_DAILY);
     const [ticketCost, setTicketCost] = useState(DEFAULT_TICKET_COST);
+    const [freeTickets, setFreeTickets] = useState(0);
     const [prize, setPrize] = useState(0);
     const [lotteryStatus, setLotteryStatus] = useState<string>('open');
     const [windowWidth, setWindowWidth] = useState(0);
@@ -150,6 +151,7 @@ export default function LotteryPage() {
             );
             setMaxTicketsPerDay(Number(d.maxTicketsPerDay) || DEFAULT_MAX_TICKETS_DAILY);
             setTicketCost(Number(d.ticketCost) || DEFAULT_TICKET_COST);
+            setFreeTickets(Math.max(0, Math.floor(Number(d.freeTickets) || 0)));
             setPrize(Number(d.prize) || 0);
             setLotteryStatus(typeof d.status === 'string' ? d.status : 'open');
         } catch (e) {
@@ -199,6 +201,17 @@ export default function LotteryPage() {
         return () => window.clearTimeout(timeoutId);
     }, [nextDrawCountdownMs, fetchTickets]);
 
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const detail = (event as CustomEvent<{ offerType?: string }>).detail;
+            if (detail?.offerType !== 'lottery_free_ticket') return;
+            fetchTickets();
+            refreshUser();
+        };
+        window.addEventListener('givkoin:ad-boost-completed', handler);
+        return () => window.removeEventListener('givkoin:ad-boost-completed', handler);
+    }, [fetchTickets, refreshUser]);
+
     const handleBuyTicket = async () => {
         const selectedNumbers = ticketSlots.filter((value): value is number => value !== null);
         if (selectedNumbers.length !== TICKET_LENGTH) {
@@ -206,7 +219,7 @@ export default function LotteryPage() {
             return;
         }
         if (!user || ticketsToday >= maxTicketsPerDay) return;
-        if (user.sc < ticketCost) return;
+        if (freeTickets <= 0 && user.sc < ticketCost) return;
 
         setIsBuying(true);
         try {
@@ -398,15 +411,15 @@ export default function LotteryPage() {
                                         </button>
                                         <button
                                             onClick={handleBuyTicket}
-                                            disabled={ticketSlots.filter((value) => value !== null).length !== TICKET_LENGTH || ticketsToday >= maxTicketsPerDay || (user?.sc || 0) < ticketCost || isBuying || lotteryStatus !== 'open'}
+                                            disabled={ticketSlots.filter((value) => value !== null).length !== TICKET_LENGTH || ticketsToday >= maxTicketsPerDay || (freeTickets <= 0 && (user?.sc || 0) < ticketCost) || isBuying || lotteryStatus !== 'open'}
                                             className={`
                                                 px-3 xl:px-4 py-1.5 rounded-lg font-bold text-tiny transition-all
-                                                ${ticketSlots.filter((value) => value !== null).length === TICKET_LENGTH && ticketsToday < maxTicketsPerDay && (user?.sc || 0) >= ticketCost && lotteryStatus === 'open'
+                                                ${ticketSlots.filter((value) => value !== null).length === TICKET_LENGTH && ticketsToday < maxTicketsPerDay && (freeTickets > 0 || (user?.sc || 0) >= ticketCost) && lotteryStatus === 'open'
                                                     ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_12px_rgba(37,99,235,0.25)]'
                                                     : 'bg-gray-700 text-gray-500 cursor-not-allowed'}
                                             `}
                                         >
-                                            {isBuying ? '...' : lotteryStatus !== 'open' ? t('fortune.closed') : ticketsToday >= maxTicketsPerDay ? t('fortune.limit_title') : t('fortune.buy_ticket')}
+                                            {isBuying ? '...' : lotteryStatus !== 'open' ? t('fortune.closed') : ticketsToday >= maxTicketsPerDay ? t('fortune.limit_title') : freeTickets > 0 ? t('fortune.free_ticket') : t('fortune.buy_ticket')}
                                         </button>
                                     </div>
                                 </div>

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { recordActivity } = require('../services/activityService');
 const battleRuntimeStore = require('../services/battleRuntimeStore');
 const { buildBattleSummarySnapshot, publishBattleSummary } = require('../services/battleSummaryService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
@@ -514,6 +515,26 @@ function buildBattleSummaryApiPayload(summary, fallbackBattleId) {
             : [],
         lines,
     };
+}
+
+async function attachBattleRewardBoost({ payload, userId, userLang }) {
+    const rewardSc = Math.max(0, Number(payload?.rewardSc) || 0);
+    if (!payload?.isComplete || !payload?.battleId || rewardSc <= 0) return payload;
+    const boostOffer = await createAdBoostOffer({
+        userId,
+        type: 'battle_reward_bonus',
+        contextKey: `battle:${userId}:${payload.battleId}`,
+        page: 'battle',
+        title: pickLang(userLang, 'Бонус за бой', 'Battle bonus'),
+        description: pickLang(userLang, 'Досмотрите видео, чтобы получить +10% от награды за бой.', 'Watch the video to receive +10% of your battle reward.'),
+        reward: {
+            kind: 'currency',
+            sc: Math.round(rewardSc * 0.1 * 1000) / 1000,
+            transactionType: 'battle_ad_boost',
+            description: pickLang(userLang, 'Буст: награда за бой', 'Boost: battle reward'),
+        },
+    }).catch(() => null);
+    return { ...payload, boostOffer };
 }
 
 async function getHeartbeatBattleSnapshot(battleId) {
@@ -2238,7 +2259,8 @@ exports.getBattleSummary = async (req, res) => {
         }).catch(() => null);
 
         if (preparedSummary && typeof preparedSummary === 'object') {
-            return res.json(buildBattleSummaryApiPayload(preparedSummary, battleId));
+            const payload = buildBattleSummaryApiPayload(preparedSummary, battleId);
+            return res.json(await attachBattleRewardBoost({ payload, userId: req.user?._id, userLang }));
         }
 
         let battle = await getHeartbeatBattleSnapshot(battleId);
@@ -2300,7 +2322,8 @@ exports.getBattleSummary = async (req, res) => {
             entry: userAttendanceEntry,
             detailReady: false,
         });
-        res.json(buildBattleSummaryApiPayload(fallbackSummary, battleId));
+        const payload = buildBattleSummaryApiPayload(fallbackSummary, battleId);
+        res.json(await attachBattleRewardBoost({ payload, userId: req.user?._id, userLang }));
     } catch (error) {
         console.error('Get battle summary error:', error);
         const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.query?.language || 'ru');

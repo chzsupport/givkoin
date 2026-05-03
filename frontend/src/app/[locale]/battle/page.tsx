@@ -1618,13 +1618,26 @@ export default function BattlePage() {
         () => isBoostActiveForBattle(user?.shopBoosts?.weakZoneDamage, battleId),
         [battleId, user?.shopBoosts?.weakZoneDamage],
     );
+    const damageBoostPercent = useMemo(
+        () => damageBoostActive ? Math.max(15, Number(user?.shopBoosts?.battleDamage?.bonusPercent) || 15) : 0,
+        [damageBoostActive, user?.shopBoosts?.battleDamage?.bonusPercent],
+    );
+    const lumensDiscountPercent = useMemo(
+        () => lumensDiscountActive ? Math.max(25, Number(user?.shopBoosts?.battleLumensDiscount?.discountPercent) || 25) : 0,
+        [lumensDiscountActive, user?.shopBoosts?.battleLumensDiscount?.discountPercent],
+    );
+    const weakZoneBoostPercent = useMemo(
+        () => weakZoneBoostActive ? Math.max(50, Number(user?.shopBoosts?.weakZoneDamage?.bonusPercent) || 50) : 0,
+        [weakZoneBoostActive, user?.shopBoosts?.weakZoneDamage?.bonusPercent],
+    );
 
     const getEffectiveWeaponCost = useCallback((weaponIdToUse: number) => {
         const config = WEAPON_CONFIG[weaponIdToUse as keyof typeof WEAPON_CONFIG];
         if (!config) return 0;
-        if (!lumensDiscountActive) return config.costLumens;
-        return Math.max(1, Math.ceil(config.costLumens * 0.75));
-    }, [lumensDiscountActive]);
+        if (lumensDiscountPercent <= 0) return config.costLumens;
+        const costMultiplier = Math.max(0.05, 1 - (Math.min(95, lumensDiscountPercent) / 100));
+        return Math.max(1, Math.ceil(config.costLumens * costMultiplier));
+    }, [lumensDiscountPercent]);
 
     const resetCombo = useCallback(() => {
         if (comboResetTimeoutRef.current) {
@@ -1762,8 +1775,8 @@ export default function BattlePage() {
 
         const penaltyMultiplier = chargeState === 'penalty' ? 0.5 : 1;
         let personalBaseDamage = config.damage;
-        if (damageBoostActive) {
-            personalBaseDamage *= 1.15;
+        if (damageBoostPercent > 0) {
+            personalBaseDamage *= 1 + (damageBoostPercent / 100);
         }
         if (user?.nightShift?.isServing) {
             personalBaseDamage *= 2;
@@ -1773,13 +1786,13 @@ export default function BattlePage() {
         let totalDamage = personalBaseDamage;
         if (inWeakZone) {
             totalDamage += personalBaseDamage * 0.5;
-            if (weakZoneBoostActive) {
-                totalDamage += personalBaseDamage * 0.5;
+            if (weakZoneBoostPercent > 0) {
+                totalDamage += personalBaseDamage * (weakZoneBoostPercent / 100);
             }
         }
 
         return Math.max(1, Math.round(totalDamage));
-    }, [damageBoostActive, ensureShotChargeState, user?.nightShift?.isServing, weakZone, weakZoneBoostActive]);
+    }, [damageBoostPercent, ensureShotChargeState, user?.nightShift?.isServing, weakZone, weakZoneBoostPercent]);
 
     useEffect(() => {
         const detectTier = () => {

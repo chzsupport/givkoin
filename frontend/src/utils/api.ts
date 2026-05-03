@@ -311,6 +311,7 @@ async function getClientIdentityHeaders(): Promise<Record<string, string>> {
 async function handleResponse<T>(res: Response): Promise<T> {
   const data: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
+    emitAdBoostOffer(data);
     const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
     const asString = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -343,6 +344,14 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return data as T;
 }
 
+function emitAdBoostOffer(data: unknown) {
+  if (typeof window === 'undefined') return;
+  if (!data || typeof data !== 'object') return;
+  const offer = (data as { boostOffer?: unknown }).boostOffer;
+  if (!offer || typeof offer !== 'object') return;
+  window.dispatchEvent(new CustomEvent('givkoin:ad-boost-offer', { detail: offer }));
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -368,7 +377,9 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
     body: JSON.stringify(body),
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  return handleResponse<T>(res);
+  const data = await handleResponse<T>(res);
+  emitAdBoostOffer(data);
+  return data;
 }
 
 export async function apiPostKeepalive(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<void> {
@@ -388,7 +399,9 @@ export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): 
     headers: { 'x-site-language': getSiteLanguage(), ...identityHeaders },
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  return handleResponse<T>(res);
+  const data = await handleResponse<T>(res);
+  emitAdBoostOffer(data);
+  return data;
 }
 
 export async function apiPatch<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
@@ -399,7 +412,9 @@ export async function apiPatch<T>(path: string, body: unknown, options: ApiReque
     body: JSON.stringify(body),
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  return handleResponse<T>(res);
+  const data = await handleResponse<T>(res);
+  emitAdBoostOffer(data);
+  return data;
 }
 
 export async function apiPut<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
@@ -410,7 +425,9 @@ export async function apiPut<T>(path: string, body: unknown, options: ApiRequest
     body: JSON.stringify(body),
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  return handleResponse<T>(res);
+  const data = await handleResponse<T>(res);
+  emitAdBoostOffer(data);
+  return data;
 }
 
 export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -420,6 +437,8 @@ export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}
     headers: { 'x-site-language': getSiteLanguage(), ...identityHeaders },
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  return handleResponse<T>(res);
+  const data = await handleResponse<T>(res);
+  emitAdBoostOffer(data);
+  return data;
 }
 

@@ -3,6 +3,7 @@ const { getDocById, listDocsByModel, upsertDoc, deleteDoc } = require('../servic
 const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
 const { getNightShiftStatusForUser } = require('../services/nightShiftRuntimeService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { normalizeSitePath } = require('../utils/sitePath');
 
 const CRYSTAL_MODEL = 'CrystalShard';
@@ -391,7 +392,14 @@ async function applyCrystalCompletionReward(userId) {
         .eq('id', String(userId));
 
     if (error) return null;
-    return nowIso;
+    return {
+        rewardGrantedAt: nowIso,
+        reward: {
+            sc: blessingReward.sc,
+            lumens: blessingReward.lumens,
+            stars: starsAward,
+        },
+    };
 }
 
 async function getCrystalCollectionBlock(userId) {
@@ -653,10 +661,11 @@ exports.completeCollection = async (req, res) => {
         const fullShardIndexes = locations.map((row) => Number(row.shardIndex)).filter(Number.isFinite).sort((a, b) => a - b);
         const fullShardIds = locations.map((row) => String(row.shardId)).filter(Boolean);
 
-        const rewardGrantedAt = await applyCrystalCompletionReward(req.user.id);
-        if (!rewardGrantedAt) {
+        const rewardResult = await applyCrystalCompletionReward(req.user.id);
+        if (!rewardResult?.rewardGrantedAt) {
             return res.status(500).json({ message: 'Не удалось выдать награду за сбор.' });
         }
+        const rewardGrantedAt = rewardResult.rewardGrantedAt;
 
         const updatedProgress = await upsertCrystalProgress(req.user.id, sessionStart, {
             ...progress,
@@ -676,12 +685,30 @@ exports.completeCollection = async (req, res) => {
             reportedCount,
         }, progress);
 
+        const boostOffer = await createAdBoostOffer({
+            userId: req.user.id,
+            type: 'crystal_collection_double',
+            contextKey: `crystal:${req.user.id}:${daily.sessionKey || toIsoDayKey(sessionStart)}`,
+            page: 'activity_collect',
+            title: 'Удвоить награду за осколки',
+            description: 'Досмотрите видео, чтобы получить такую же награду за коллекцию ещё раз.',
+            reward: {
+                kind: 'currency',
+                sc: rewardResult.reward.sc,
+                lumens: rewardResult.reward.lumens,
+                stars: rewardResult.reward.stars,
+                transactionType: 'crystal_ad_boost',
+                description: 'Буст: сбор осколков',
+            },
+        }).catch(() => null);
+
         return res.json({
             collectedShards: updatedProgress.collectedShards || [],
             collectedShardIds: updatedProgress.collectedShardIds || [],
             rewardGranted: Boolean(updatedProgress.rewardGranted),
             reviewStatus: updatedProgress.reviewStatus || 'clean',
             mismatchCount: Math.max(0, Number(updatedProgress.mismatchCount) || 0),
+            boostOffer,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });

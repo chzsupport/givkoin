@@ -7,6 +7,7 @@ const {
     recordTransaction,
 } = require('../services/scService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 
@@ -302,7 +303,8 @@ exports.collectSolarCharge = async (req, res) => {
         const achievementStats = userData.achievementStats && typeof userData.achievementStats === 'object' ? userData.achievementStats : {};
         const shopBoosts = userData.shopBoosts && typeof userData.shopBoosts === 'object' ? userData.shopBoosts : {};
         const charges = Number(shopBoosts?.solarExtraLmCharges) || 0;
-        const extraLm = charges > 0 ? 20 : 0;
+        const configuredExtraLm = Number(shopBoosts?.solarExtraLmAmount);
+        const extraLm = charges > 0 ? (Number.isFinite(configuredExtraLm) && configuredExtraLm > 0 ? configuredExtraLm : 20) : 0;
         const lmAward = baseLmAward + extraLm;
 
         const finalBaseLmAward = keepPositiveReward(
@@ -436,10 +438,30 @@ exports.collectSolarCharge = async (req, res) => {
             console.error('Achievement solar collect error:', e);
         }
 
+        const boostOffer = await createAdBoostOffer({
+            userId: userRow.id,
+            type: 'solar_collect_double',
+            contextKey: `solar:${charge._id}:${now.toISOString()}`,
+            page: 'solar',
+            title: pickLang(userLang, 'Удвоить Солнечный заряд', 'Double Solar Charge'),
+            description: pickLang(userLang, 'Досмотрите видео, чтобы получить такую же награду ещё раз.', 'Watch the video to receive the same reward again.'),
+            reward: {
+                kind: 'currency',
+                sc: finalScAward,
+                lumens: finalLmAward,
+                radiance: 10,
+                radianceActivityType: 'solar_collect',
+                radianceMeta: { source: 'ad_boost', solarChargeId: charge._id },
+                transactionType: 'solar_ad_boost',
+                description: pickLang(userLang, 'Буст: Солнечный заряд', 'Boost: Solar Charge'),
+            },
+        }).catch(() => null);
+
         res.json({
             message: pickLang(userLang, 'Заряд успешно впитан!', 'Charge successfully absorbed!'),
             lmAward: finalLmAward,
             scAward: finalScAward,
+            boostOffer,
             user: {
                 sc: updatedUserRow?.data?.sc ?? nextSc,
                 lumens: updatedUserRow?.data?.lumens ?? nextLumens

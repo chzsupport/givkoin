@@ -5,6 +5,7 @@ const { recordActivity } = require('../services/activityService');
 const { awardReferralBlessingExternal } = require('../services/scService');
 const { getTotalRewardMultiplier } = require('../services/scService');
 const { recordTransaction } = require('../services/scService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
@@ -407,12 +408,34 @@ exports.collectFruit = async (req, res) => {
         // Actually, let's just update the tree's nextFruitAt after some time or via cron
         // For now, let's say the fruit stays for everyone to collect until the next one is scheduled.
 
+        const rewardPayload = {
+            kind: 'currency',
+            sc: rewardType === 'sc' ? reward : 0,
+            lumens: rewardType === 'lumens' ? reward : 0,
+            stars: rewardType === 'stars' ? reward : 0,
+            radiance: 2,
+            radianceActivityType: 'fruit_collect',
+            radianceMeta: { source: 'ad_boost', treeId: tree._id },
+            transactionType: 'fruit_ad_boost',
+            description: pickLang(userLang, 'Буст: сбор плода', 'Boost: fruit collection'),
+        };
+        const boostOffer = await createAdBoostOffer({
+            userId,
+            type: 'fruit_collect_double',
+            contextKey: `fruit:${userId}:${start.toISOString()}`,
+            page: 'entity',
+            title: pickLang(userLang, 'Удвоить плод', 'Double the fruit'),
+            description: pickLang(userLang, 'Досмотрите видео, чтобы получить такую же награду ещё раз.', 'Watch the video to receive the same reward again.'),
+            reward: rewardPayload,
+        }).catch(() => null);
+
         res.json({
             message: pickLang(userLang, 'Плод собран!', 'Fruit collected!'),
             reward,
             rewardType,
             isFruitAvailable: false,
             radianceAwarded: 2,
+            boostOffer,
             user: { sc: nextSc, stars: nextStars, lumens: nextLumens }
         });
     } catch (error) {

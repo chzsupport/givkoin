@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Coins, Star, Clock, RotateCw, ArrowLeft, Gift, TrendingUp, Award, Target, Activity } from 'lucide-react';
@@ -304,7 +304,7 @@ export default function RoulettePage() {
         } catch (e) { console.error('Error loading global stats:', e); }
     };
 
-    const fetchUserStats = async () => {
+    const fetchUserStats = useCallback(async () => {
         try {
             const statusData = await apiGet<unknown>('/fortune/status');
             if (typeof statusData === 'object' && statusData !== null) {
@@ -327,10 +327,25 @@ export default function RoulettePage() {
                 });
             }
         } catch (e) { console.error('Error loading user stats:', e); }
-    };
+    }, []);
 
     useEffect(() => { fetchGlobalStats(); }, []);
-    useEffect(() => { if (user) fetchUserStats(); }, [user]);
+    useEffect(() => { if (user) fetchUserStats(); }, [fetchUserStats, user]);
+
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const detail = (event as CustomEvent<{ offerType?: string; result?: { rouletteExtraSpins?: number } }>).detail;
+            if (detail?.offerType !== 'roulette_extra_spin' && detail?.offerType !== 'roulette_double_today') return;
+            const extraSpins = Number(detail.result?.rouletteExtraSpins);
+            if (detail.offerType === 'roulette_extra_spin' && Number.isFinite(extraSpins) && extraSpins > 0) {
+                setSpinsLeft((current) => Math.max(current, extraSpins));
+            }
+            fetchUserStats();
+            refreshUser();
+        };
+        window.addEventListener('givkoin:ad-boost-completed', handler);
+        return () => window.removeEventListener('givkoin:ad-boost-completed', handler);
+    }, [fetchUserStats, refreshUser]);
 
     const handleSpin = async () => {
         if (!user || spinsLeft <= 0 || isSpinning) return;

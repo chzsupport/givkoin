@@ -202,7 +202,8 @@ async function maybeAwardReferralBlessing({ receiverUserId, creditedAmount, sour
       : null;
     if (!until || until.getTime() <= Date.now()) return;
 
-    const bonus = round3((Number(creditedAmount) || 0) * (REFERRAL_BLESSING_PERCENT / 100));
+    const percent = Math.max(REFERRAL_BLESSING_PERCENT, Number(inviterData?.shopBoosts?.referralBlessingPercent) || REFERRAL_BLESSING_PERCENT);
+    const bonus = round3((Number(creditedAmount) || 0) * (percent / 100));
     if (!(bonus > 0)) return;
 
     await creditK({
@@ -735,9 +736,11 @@ async function awardChatRewardsForChat(chatId) {
   const baseAmount = round3(ratePerHour * effectiveHours);
   const shouldBoostA = Boolean(userAData?.shopBoosts?.chatK?.pending);
   const shouldBoostB = Boolean(userBData?.shopBoosts?.chatK?.pending);
+  const chatBoostPercentA = Math.max(25, Number(userAData?.shopBoosts?.chatK?.bonusPercent) || 25);
+  const chatBoostPercentB = Math.max(25, Number(userBData?.shopBoosts?.chatK?.bonusPercent) || 25);
 
-  const bonusA = shouldBoostA ? round3(baseAmount * 0.25) : 0;
-  const bonusB = shouldBoostB ? round3(baseAmount * 0.25) : 0;
+  const bonusA = shouldBoostA ? round3(baseAmount * (chatBoostPercentA / 100)) : 0;
+  const bonusB = shouldBoostB ? round3(baseAmount * (chatBoostPercentB / 100)) : 0;
 
   await creditK({
     userId: a,

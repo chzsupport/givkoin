@@ -17,6 +17,7 @@ import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
 import { useCrystal } from '@/context/CrystalContext';
 import { CrystalShard } from '@/components/CrystalShard';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { AdBoostHost } from '@/components/AdBoostHost';
 
 const NAVIGATION_RULES: Record<string, string[][]> = {
     '/fortune/roulette': [['/fortune'], ['/tree', '/fortune']],
@@ -622,6 +623,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                     )}
                     {crystalOverlay}
                     <Footer />
+                    <AdBoostHost />
                     <CallNotification />
                 </div>
             </ToastProvider>
@@ -662,6 +664,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                     </div>
                 )}
                 {crystalOverlay}
+                <AdBoostHost />
                 <CallNotification />
             </main>
         </ToastProvider>

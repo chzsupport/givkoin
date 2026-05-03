@@ -4,6 +4,7 @@ const { getDocById, upsertDoc } = require('../services/documentStore');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 
 const DAILY_STREAK_STATUS_CACHE_TTL_MS = Math.max(
@@ -409,6 +410,22 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
   };
 }
 
+async function createAttendanceBoostIfReady({ userId, state, serverDay, currentDayIndex }) {
+  const ready = state.claimedDays.includes(currentDayIndex) && state.questDoneDays.includes(currentDayIndex);
+  if (!ready) return null;
+  return createAdBoostOffer({
+    userId,
+    type: 'attendance_fruit_like',
+    contextKey: `attendance:${userId}:${serverDay}`,
+    page: 'activity_attendance',
+    title: 'Буст за посещаемость',
+    description: 'Досмотрите видео, чтобы получить случайную награду как за плод Древа.',
+    reward: {
+      kind: 'fruit_like_random',
+    },
+  }).catch(() => null);
+}
+
 async function getState(req, res) {
   try {
     const userId = req.user._id;
@@ -472,6 +489,7 @@ async function claimToday(req, res) {
       now,
       language: getRequestLanguage(req),
     });
+    const boostOffer = await createAttendanceBoostIfReady({ userId, state: nextState, serverDay, currentDayIndex });
 
     return res.json({
       ok: true,
@@ -485,6 +503,7 @@ async function claimToday(req, res) {
         todayStatus,
         radianceAward: reward.radianceAward,
       }),
+      boostOffer,
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Ошибка сервера' });
@@ -523,6 +542,7 @@ async function completeQuestToday(req, res) {
       now,
       language: getRequestLanguage(req),
     });
+    const boostOffer = await createAttendanceBoostIfReady({ userId, state: nextState, serverDay, currentDayIndex });
 
     return res.json({
       ok: true,
@@ -536,6 +556,7 @@ async function completeQuestToday(req, res) {
         todayStatus,
         radianceAward: reward.radianceAward,
       }),
+      boostOffer,
     });
   } catch (err) {
     return res.status(500).json({ message: err.message || 'Ошибка сервера' });

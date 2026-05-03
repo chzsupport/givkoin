@@ -1,6 +1,7 @@
 const { SHOP_ITEMS_BY_KEY, localizeShopItem } = require('../config/shopCatalog');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { updateEntityMoodForUser } = require('../services/entityMoodService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 
@@ -211,11 +212,26 @@ exports.useItem = async (req, res) => {
       const userRow = await getUserRowById(req.user._id);
       const userData = userRow?.data && typeof userRow.data === 'object' ? userRow.data : {};
 
+      const boostOffer = await createAdBoostOffer({
+        userId: req.user._id,
+        type: 'warehouse_item_upgrade',
+        contextKey: `warehouse:${itemId}`,
+        page: 'shop',
+        title: pickLang(userLang, 'Усилить предмет', 'Upgrade item'),
+        description: pickLang(userLang, 'Досмотрите видео, чтобы продлить сытость на 12 часов.', 'Watch the video to extend satiety by 12 hours.'),
+        reward: {
+          kind: 'warehouse_upgrade',
+          itemKey: catalogItem.key,
+          itemId,
+        },
+      }).catch(() => null);
+
       return res.json({
         ok: true,
         message: pickLang(userLang, 'Сущность накормлена', 'Entity has been fed'),
         item: localizeWarehouseItem({ ...warehouseItem, status: 'used', usedAt: now.toISOString() }, userLang),
         user: { sc: userData?.sc, lumens: userData?.lumens, stars: userData?.stars },
+        boostOffer,
         entity: {
           _id: updatedEntityRow.id,
           user: updatedEntityRow.user_id,
@@ -287,6 +303,20 @@ exports.useItem = async (req, res) => {
       dedupeKey: `shop_use_item:${itemId}:${req.user._id}`,
     }).catch(() => { });
 
+    const boostOffer = await createAdBoostOffer({
+      userId: req.user._id,
+      type: 'warehouse_item_upgrade',
+      contextKey: `warehouse:${itemId}`,
+      page: 'shop',
+      title: pickLang(userLang, 'Усилить предмет', 'Upgrade item'),
+      description: pickLang(userLang, 'Досмотрите видео, чтобы усилить действие предмета.', 'Watch the video to strengthen the item effect.'),
+      reward: {
+        kind: 'warehouse_upgrade',
+        itemKey: catalogItem.key,
+        itemId,
+      },
+    }).catch(() => null);
+
     return res.json({
       ok: true,
       message: pickLang(userLang, 'Предмет использован', 'Item used'),
@@ -297,6 +327,7 @@ exports.useItem = async (req, res) => {
         stars: updatedUserData?.stars,
         shopBoosts: updatedUserData?.shopBoosts,
       },
+      boostOffer,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || 'Server error' });

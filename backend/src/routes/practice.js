@@ -4,6 +4,7 @@ const { awardRadianceForActivity } = require('../services/activityRadianceServic
 const { applyStarsDelta } = require('../utils/stars');
 const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
 const { applyTreeBlessingToReward, claimTreeBlessingForUser, getTreeBlessingStatusForUser } = require('../services/treeBlessingService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, upsertDoc } = require('../services/documentStore');
 const { getRequestLanguage } = require('../utils/requestLanguage');
@@ -133,7 +134,18 @@ router.post('/tree-blessing/claim', auth, async (req, res) => {
       }
       return res.status(500).json({ message: 'Не удалось выдать благословение' });
     }
-    return res.json({ ok: true, ...result.status });
+    const boostOffer = await createAdBoostOffer({
+      userId: req.user._id,
+      type: 'tree_blessing_double',
+      contextKey: `tree_blessing:${req.user._id}:${result.status?.activeUntil || Date.now()}`,
+      page: 'practice',
+      title: 'Усилить благословение Древа',
+      description: 'Досмотрите видео, чтобы удвоить силу текущего благословения.',
+      reward: {
+        kind: 'tree_blessing_double',
+      },
+    }).catch(() => null);
+    return res.json({ ok: true, ...result.status, boostOffer });
   } catch (error) {
     return res.status(500).json({ message: 'Server error' });
   }
@@ -209,6 +221,27 @@ router.post('/gratitude/complete', auth, async (req, res) => {
       dedupeKey: `gratitude_write:${String(userId)}:${dayKey}:${index}`,
     });
 
+    const boostOffer = await createAdBoostOffer({
+      userId,
+      type: 'gratitude_double',
+      contextKey: `gratitude:${userId}:${dayKey}:${index}`,
+      page: 'practice_gratitude',
+      title: userLang === 'en' ? 'Double gratitude reward' : 'Удвоить благодарность',
+      description: userLang === 'en'
+        ? 'Watch the video to receive the same gratitude reward again.'
+        : 'Досмотрите видео, чтобы получить такую же награду ещё раз.',
+      reward: {
+        kind: 'currency',
+        sc: awardedSc,
+        stars: GRATITUDE_STARS_REWARD,
+        radiance: radianceAward?.granted || radianceAward?.amount || 0,
+        radianceActivityType: 'gratitude_write',
+        radianceMeta: { source: 'ad_boost', index, dayKey },
+        transactionType: 'gratitude_ad_boost',
+        description: userLang === 'en' ? 'Boost: gratitude' : 'Буст: благодарность',
+      },
+    }).catch(() => null);
+
     return res.json({
       ok: true,
         already: false,
@@ -232,6 +265,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
         sc: nextSc,
         stars: Number(starsResult?.stars ?? ((Number(userData.stars) || 0) + GRATITUDE_STARS_REWARD).toFixed(3)),
       },
+      boostOffer,
     });
   } catch (error) {
     // eslint-disable-next-line no-console

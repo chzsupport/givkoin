@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { apiGet, apiPost } from '@/utils/api';
 import { useI18n } from '@/context/I18nContext';
@@ -19,9 +18,9 @@ interface AdBlockProps {
 
 interface Creative {
   _id: string;
-  type: 'image' | 'video' | 'html';
+  type?: 'banner' | 'vast' | 'html';
+  kind?: 'banner' | 'vast';
   content: string;
-  link?: string;
   duration?: number;
 }
 
@@ -30,7 +29,6 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
   const { t } = useI18n();
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isInView, setIsInView] = useState(true);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -38,7 +36,12 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
   useEffect(() => {
     const fetchCreatives = async () => {
       try {
-        const data = await apiGet<Creative[]>('/ads/rotation');
+        const resolvedPage = (page || '').trim()
+          || (pathname ? normalizeSitePath(pathname) : 'global')
+          || 'global';
+        const resolvedPlacement = (placement || 'rotation').trim() || 'rotation';
+        const query = `page=${encodeURIComponent(resolvedPage)}&placement=${encodeURIComponent(resolvedPlacement)}&kind=banner`;
+        const data = await apiGet<Creative[]>(`/ads/rotation?${query}`);
         if (Array.isArray(data) && data.length > 0) {
           setCreatives(data);
         } else {
@@ -51,7 +54,7 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
     };
 
     fetchCreatives();
-  }, []);
+  }, [page, placement, pathname]);
 
   // Handle rotation
   useEffect(() => {
@@ -75,22 +78,6 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
     };
   }, [currentIndex, creatives]);
 
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        setIsInView(Boolean(entry?.isIntersecting));
-      },
-      { threshold: 0.05 }
-    );
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
   // Record Impression
   useEffect(() => {
     if (creatives.length === 0) return;
@@ -106,6 +93,7 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
         await apiPost('/ads/impression', {
           page: resolvedPage,
           placement: resolvedPlacement,
+          creativeId: currentCreative._id,
         });
       } catch (e) {
         console.error('Impression record failed', e);
@@ -120,43 +108,9 @@ export function AdBlock({ page, placement, className, heightClass, hideTitle, ch
     const creative = creatives[currentIndex];
     if (!creative || !creative.content) return null;
 
-    let adElement;
-    switch (creative.type) {
-      case 'image':
-        adElement = (
-          <div className="relative w-full h-full">
-            <Image src={creative.content} alt={t('ads.image_alt')} fill sizes="100vw" className="object-cover" unoptimized />
-          </div>
-        );
-        break;
-      case 'video':
-        adElement = (
-          <video
-            src={creative.content}
-            autoPlay={isInView}
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            className="w-full h-full object-cover"
-          />
-        );
-        break;
-      case 'html':
-        adElement = <div dangerouslySetInnerHTML={{ __html: creative.content }} className="w-full h-full" />;
-        break;
-      default:
-        return null;
-    }
-
-    if (creative.link) {
-      return (
-        <a href={creative.link} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
-          {adElement}
-        </a>
-      );
-    }
-    return adElement;
+    const kind = creative.kind || creative.type;
+    if (kind !== 'banner' && kind !== 'html') return null;
+    return <div dangerouslySetInnerHTML={{ __html: creative.content }} className="w-full h-full" />;
   };
 
   const finalContent = renderContent();

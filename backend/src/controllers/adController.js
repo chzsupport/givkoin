@@ -1,4 +1,5 @@
 const { getAdRate, getTier } = require('../config/adRateMatrix');
+const { AD_TARGETS, normalizeAdTargetList } = require('../config/adTargets');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { deleteCreativeTotally } = require('../services/adminCleanupService');
 
@@ -12,9 +13,8 @@ const AD_CREATIVE_CACHE_TTL_MS = Math.max(
 );
 const activeCreativeCache = new Map();
 const activeCreativeInflight = new Map();
-let rotationCreativesCache = null;
-let rotationCreativesExpiresAt = 0;
-let rotationCreativesInflight = null;
+const rotationCreativesCache = new Map();
+const rotationCreativesInflight = new Map();
 
 const IMPRESSION_MATCH_STAGE = {
     $or: [
@@ -85,64 +85,110 @@ function calculateAdEventRevenue(adRate) {
     return (safeRate / 1000) * 0.8;
 }
 
+function normalizeCreativeKind(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'banner' || raw === 'html') return 'banner';
+    if (raw === 'vast') return 'vast';
+    return '';
+}
+
+function normalizeTargetPlacements(value) {
+    const raw = Array.isArray(value) ? value : [value];
+    const placements = raw
+        .flatMap((item) => String(item || '').split(','))
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 100);
+    const unique = Array.from(new Set(placements));
+    if (!unique.length || unique.includes('all')) return ['all'];
+    return unique;
+}
+
+function getCreativeKind(data) {
+    return normalizeCreativeKind(data?.kind || data?.type);
+}
+
+function mapCreativeRow(row) {
+    if (!row) return null;
+    const data = row.data && typeof row.data === 'object' ? row.data : {};
+    const kind = getCreativeKind(data);
+    return {
+        _id: row.id,
+        ...data,
+        kind: kind || String(data.kind || data.type || 'legacy'),
+        type: kind || String(data.type || data.kind || 'legacy'),
+        targetPages: normalizeAdTargetList(data.targetPages || 'all'),
+        targetPlacements: normalizeTargetPlacements(data.targetPlacements || 'all'),
+        createdAt: row.created_at || data.createdAt || null,
+        updatedAt: row.updated_at || data.updatedAt || null,
+    };
+}
+
+function normalizeCreativeInput(input = {}, existing = null) {
+    const base = existing && typeof existing === 'object' ? existing : {};
+    const merged = { ...base, ...(input && typeof input === 'object' ? input : {}) };
+    const kind = normalizeCreativeKind(merged.kind || merged.type);
+    if (!kind) {
+        const error = new Error('Тип рекламы должен быть Баннер или VAST');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const content = String(merged.content || '').trim();
+    if (!content) {
+        const error = new Error(kind === 'vast' ? 'Вставьте VAST ссылку DAO.ad' : 'Вставьте код баннера');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return {
+        name: String(merged.name || '').trim() || (kind === 'vast' ? 'DAO.ad VAST' : 'Баннер'),
+        kind,
+        type: kind,
+        content,
+        active: merged.active !== false,
+        priority: Number.isFinite(Number(merged.priority)) ? Number(merged.priority) : 0,
+        duration: Math.max(3, Math.min(3600, Math.round(Number(merged.duration) || 10))),
+        targetPages: normalizeAdTargetList(merged.targetPages || 'all'),
+        targetPlacements: normalizeTargetPlacements(merged.targetPlacements || 'all'),
+        startDate: merged.startDate || null,
+        endDate: merged.endDate || null,
+    };
+}
+
 function getCreativeCacheExpiry(nowMs = Date.now()) {
     return nowMs + AD_CREATIVE_CACHE_TTL_MS;
 }
 
-function buildActiveCreativeCacheKey(page, placement) {
-    return `${normalizePage(page)}::${normalizePlacement(placement)}`;
+function buildActiveCreativeCacheKey(page, placement, kind = 'banner') {
+    return `${normalizeCreativeKind(kind) || 'banner'}::${normalizePage(page)}::${normalizePlacement(placement)}`;
 }
 
-function buildActiveCreativeQuery(page, placement, now) {
-    return {
-        active: true,
-        $and: [
-            {
-                $or: [
-                    { targetPages: page },
-                    { targetPages: 'all' }
-                ]
-            },
-            {
-                $or: [
-                    { targetPlacements: placement },
-                    { targetPlacements: 'all' }
-                ]
-            },
-            {
-                $or: [
-                    { startDate: null },
-                    { startDate: { $lte: now } }
-                ]
-            },
-            {
-                $or: [
-                    { endDate: null },
-                    { endDate: { $gte: now } }
-                ]
-            }
-        ]
-    };
+function buildRotationCreativesCacheKey({ page = '', placement = '', kind = 'banner' } = {}) {
+    return `${normalizeCreativeKind(kind) || 'banner'}::${normalizePage(page)}::${normalizePlacement(placement)}`;
 }
 
-function buildRotationCreativesQuery(now) {
-    return {
-        active: true,
-        $and: [
-            {
-                $or: [
-                    { startDate: null },
-                    { startDate: { $lte: now } }
-                ]
-            },
-            {
-                $or: [
-                    { endDate: null },
-                    { endDate: { $gte: now } }
-                ]
-            }
-        ]
-    };
+function isCreativeVisibleNow(data, now = new Date()) {
+    const startDate = data?.startDate ? new Date(data.startDate) : null;
+    const endDate = data?.endDate ? new Date(data.endDate) : null;
+    const startMatch = !startDate || startDate <= now;
+    const endMatch = !endDate || endDate >= now;
+    return startMatch && endMatch;
+}
+
+function creativeMatchesTarget(data, { page = '', placement = '', kind = 'banner', now = new Date() } = {}) {
+    if (!data || data.active !== true) return false;
+    const normalizedKind = normalizeCreativeKind(kind) || 'banner';
+    if (getCreativeKind(data) !== normalizedKind) return false;
+    if (!isCreativeVisibleNow(data, now)) return false;
+
+    const normalizedPage = normalizePage(page);
+    const normalizedPlacement = normalizePlacement(placement);
+    const targetPages = normalizeAdTargetList(data.targetPages || 'all');
+    const targetPlacements = normalizeTargetPlacements(data.targetPlacements || 'all');
+    const pageMatch = !normalizedPage || targetPages.includes('all') || targetPages.includes(normalizedPage);
+    const placementMatch = !normalizedPlacement || targetPlacements.includes('all') || targetPlacements.includes(normalizedPlacement);
+    return pageMatch && placementMatch;
 }
 
 function getCachedActiveCreative(cacheKey, nowMs = Date.now()) {
@@ -166,32 +212,33 @@ function setCachedActiveCreative(cacheKey, value, nowMs = Date.now()) {
     return value;
 }
 
-function getCachedRotationCreatives(nowMs = Date.now()) {
-    if (rotationCreativesCache === null) return null;
-    if (rotationCreativesExpiresAt <= nowMs) {
-        rotationCreativesCache = null;
-        rotationCreativesExpiresAt = 0;
+function getCachedRotationCreatives(cacheKey, nowMs = Date.now()) {
+    const cached = rotationCreativesCache.get(cacheKey);
+    if (!cached) return null;
+    if (cached.expiresAt <= nowMs) {
+        rotationCreativesCache.delete(cacheKey);
         return null;
     }
-    return rotationCreativesCache;
+    return cached.value;
 }
 
-function setCachedRotationCreatives(value, nowMs = Date.now()) {
-    rotationCreativesCache = value;
-    rotationCreativesExpiresAt = getCreativeCacheExpiry(nowMs);
+function setCachedRotationCreatives(cacheKey, value, nowMs = Date.now()) {
+    rotationCreativesCache.set(cacheKey, {
+        value,
+        expiresAt: getCreativeCacheExpiry(nowMs),
+    });
     return value;
 }
 
 function invalidateCreativeRuntimeState() {
     activeCreativeCache.clear();
     activeCreativeInflight.clear();
-    rotationCreativesCache = null;
-    rotationCreativesExpiresAt = 0;
-    rotationCreativesInflight = null;
+    rotationCreativesCache.clear();
+    rotationCreativesInflight.clear();
 }
 
-async function loadActiveCreative(page, placement, now = new Date()) {
-    const cacheKey = buildActiveCreativeCacheKey(page, placement);
+async function loadActiveCreative(page, placement, now = new Date(), kind = 'banner') {
+    const cacheKey = buildActiveCreativeCacheKey(page, placement, kind);
     const nowMs = now.getTime();
     const cached = getCachedActiveCreative(cacheKey, nowMs);
     if (cached.hit) return cached.value;
@@ -210,25 +257,14 @@ async function loadActiveCreative(page, placement, now = new Date()) {
         
         if (error || !Array.isArray(data)) return null;
         
-        const nowTime = now.getTime();
         const filtered = data.filter((row) => {
             const d = row.data || {};
-            const targetPages = d.targetPages || [];
-            const targetPlacements = d.targetPlacements || [];
-            const startDate = d.startDate ? new Date(d.startDate) : null;
-            const endDate = d.endDate ? new Date(d.endDate) : null;
-            
-            const pageMatch = targetPages.includes(page) || targetPages.includes('all');
-            const placementMatch = targetPlacements.includes(placement) || targetPlacements.includes('all');
-            const startMatch = !startDate || startDate <= now;
-            const endMatch = !endDate || endDate >= now;
-            
-            return pageMatch && placementMatch && startMatch && endMatch;
+            return creativeMatchesTarget(d, { page, placement, kind, now });
         });
         
         filtered.sort((a, b) => (Number(b.data?.priority) || 0) - (Number(a.data?.priority) || 0));
         
-        const creative = filtered[0] ? { _id: filtered[0].id, ...filtered[0].data } : null;
+        const creative = filtered[0] ? mapCreativeRow(filtered[0]) : null;
         return setCachedActiveCreative(cacheKey, creative, nowMs);
     })().finally(() => {
         if (activeCreativeInflight.get(cacheKey) === promise) {
@@ -240,11 +276,13 @@ async function loadActiveCreative(page, placement, now = new Date()) {
     return promise;
 }
 
-async function loadRotationCreatives(now = new Date()) {
+async function loadRotationCreatives(now = new Date(), { page = '', placement = '', kind = 'banner' } = {}) {
     const nowMs = now.getTime();
-    const cached = getCachedRotationCreatives(nowMs);
+    const cacheKey = buildRotationCreativesCacheKey({ page, placement, kind });
+    const cached = getCachedRotationCreatives(cacheKey, nowMs);
     if (cached !== null) return cached;
-    if (rotationCreativesInflight) return rotationCreativesInflight;
+    const inflight = rotationCreativesInflight.get(cacheKey);
+    if (inflight) return inflight;
 
     const promise = (async () => {
         const supabase = getSupabaseClient();
@@ -259,11 +297,7 @@ async function loadRotationCreatives(now = new Date()) {
         
         const filtered = data.filter((row) => {
             const d = row.data || {};
-            const startDate = d.startDate ? new Date(d.startDate) : null;
-            const endDate = d.endDate ? new Date(d.endDate) : null;
-            const startMatch = !startDate || startDate <= now;
-            const endMatch = !endDate || endDate >= now;
-            return startMatch && endMatch;
+            return creativeMatchesTarget(d, { page, placement, kind, now });
         });
         
         filtered.sort((a, b) => {
@@ -272,14 +306,14 @@ async function loadRotationCreatives(now = new Date()) {
             return (b.created_at || '').localeCompare(a.created_at || '');
         });
         
-        return setCachedRotationCreatives(filtered.map((row) => ({ _id: row.id, ...row.data })), nowMs);
+        return setCachedRotationCreatives(cacheKey, filtered.map(mapCreativeRow).filter(Boolean), nowMs);
     })().finally(() => {
-        if (rotationCreativesInflight === promise) {
-            rotationCreativesInflight = null;
+        if (rotationCreativesInflight.get(cacheKey) === promise) {
+            rotationCreativesInflight.delete(cacheKey);
         }
     });
 
-    rotationCreativesInflight = promise;
+    rotationCreativesInflight.set(cacheKey, promise);
     return promise;
 }
 
@@ -327,7 +361,10 @@ exports.recordImpression = async (req, res) => {
         } = req.body || {};
 
         const userId = req.user?._id;
-        const eventType = rawEventType === 'session' ? 'session' : 'impression';
+        const safeEventType = String(rawEventType || '').trim();
+        const eventType = ['session', 'vast_start', 'vast_complete', 'vast_error'].includes(safeEventType)
+            ? safeEventType
+            : 'impression';
         const normalizedPage = normalizePage(page);
         const normalizedPlacement = normalizePlacement(
             placement || (eventType === 'session' ? 'page_session' : 'rotation')
@@ -621,11 +658,12 @@ exports.getCreatives = async (req, res) => {
         if (error) return res.status(500).json({ message: error.message });
         
         const creatives = (data || [])
-            .map((row) => ({ _id: row.id, ...row.data }))
+            .map(mapCreativeRow)
+            .filter(Boolean)
             .sort((a, b) => {
                 const prioDiff = (Number(b.priority) || 0) - (Number(a.priority) || 0);
                 if (prioDiff !== 0) return prioDiff;
-                return (b.createdAt || '').localeCompare(a.createdAt || '');
+                return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
             });
         
         res.json(creatives);
@@ -641,7 +679,7 @@ exports.createCreative = async (req, res) => {
         const nowIso = new Date().toISOString();
         const id = `ac_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
         
-        const creativeData = { ...req.body, active: req.body.active ?? true };
+        const creativeData = normalizeCreativeInput(req.body);
         
         await supabase.from(DOC_TABLE).insert({
             model: 'AdCreative',
@@ -654,7 +692,7 @@ exports.createCreative = async (req, res) => {
         invalidateCreativeRuntimeState();
         res.status(201).json({ _id: id, ...creativeData });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(error.statusCode || 500).json({ message: error.message });
     }
 };
 
@@ -673,7 +711,12 @@ exports.updateCreative = async (req, res) => {
             return res.status(404).json({ message: 'Креатив не найден' });
         }
         
-        const nextData = { ...existing.data, ...req.body };
+        const onlyActiveToggle = req.body
+            && Object.keys(req.body).every((key) => key === 'active')
+            && !normalizeCreativeKind(existing.data?.kind || existing.data?.type);
+        const nextData = onlyActiveToggle
+            ? { ...existing.data, active: req.body.active !== false }
+            : normalizeCreativeInput(req.body, existing.data);
         await supabase
             .from(DOC_TABLE)
             .update({ data: nextData, updated_at: new Date().toISOString() })
@@ -682,7 +725,7 @@ exports.updateCreative = async (req, res) => {
         invalidateCreativeRuntimeState();
         res.json({ _id: existing.id, ...nextData });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(error.statusCode || 500).json({ message: error.message });
     }
 };
 
@@ -702,8 +745,9 @@ exports.getActiveCreative = async (req, res) => {
     try {
         const page = normalizePage(req.query?.page);
         const placement = normalizePlacement(req.query?.placement);
+        const kind = normalizeCreativeKind(req.query?.kind) || 'banner';
         const now = new Date();
-        const creative = await loadActiveCreative(page, placement, now);
+        const creative = await loadActiveCreative(page, placement, now, kind);
         res.json(creative);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -714,12 +758,23 @@ exports.getActiveCreative = async (req, res) => {
 exports.getRotation = async (req, res) => {
     try {
         const now = new Date();
-        const creatives = await loadRotationCreatives(now);
+        const creatives = await loadRotationCreatives(now, {
+            page: normalizePage(req.query?.page),
+            placement: normalizePlacement(req.query?.placement),
+            kind: normalizeCreativeKind(req.query?.kind) || 'banner',
+        });
         res.json(creatives);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
+exports.getTargets = async (_req, res) => {
+    res.json({ targets: AD_TARGETS });
+};
+
+exports.loadActiveAdCreative = loadActiveCreative;
+exports.loadRotationAdCreatives = loadRotationCreatives;
+exports.normalizeCreativeKind = normalizeCreativeKind;
 exports.__resetAdControllerRuntimeState = invalidateCreativeRuntimeState;
 

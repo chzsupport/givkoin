@@ -1,6 +1,7 @@
 const { recordActivity } = require('../services/activityService');
 const { awardReferralBlessingExternal } = require('../services/scService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const nightShiftRuntimeService = require('../services/nightShiftRuntimeService');
 const { createNotification } = require('./notificationController');
@@ -220,6 +221,24 @@ exports.endShift = async (req, res) => {
             now: new Date(),
         });
         const userLang = normalizeLang(req.user?.language || req.user?.data?.language || 'ru');
+        const boostOffer = Number(result.payableHours) >= 1
+            ? await createAdBoostOffer({
+                userId: req.user._id,
+                type: 'night_shift_double',
+                contextKey: `night_shift:${shiftSessionId}`,
+                page: 'night_shift',
+                title: pickLang(userLang, 'Удвоить награду смены', 'Double shift reward'),
+                description: pickLang(userLang, 'Досмотрите видео, чтобы получить такую же награду за смену ещё раз.', 'Watch the video to receive the same shift reward again.'),
+                reward: {
+                    kind: 'currency',
+                    sc: result.reward?.sc || 0,
+                    lumens: result.reward?.lm || 0,
+                    stars: result.reward?.stars || 0,
+                    transactionType: 'night_shift_ad_boost',
+                    description: pickLang(userLang, 'Буст: Ночная смена', 'Boost: Night Shift'),
+                },
+            }).catch(() => null)
+            : null;
         res.json({
             ok: true,
             queued: Boolean(result.queued),
@@ -232,6 +251,7 @@ exports.endShift = async (req, res) => {
             rewardPreview: result.reward,
             payableHours: result.payableHours,
             closeReason: result.closeReason,
+            boostOffer,
         });
     } catch (error) {
         if (error.message === 'night_shift_session_not_found') {

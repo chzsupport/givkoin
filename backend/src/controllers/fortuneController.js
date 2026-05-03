@@ -8,6 +8,7 @@ const { recordActivity } = require('../services/activityService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getFortuneConfig } = require('../services/fortuneConfigService');
 const { recordFortuneWin } = require('../services/fortuneWinLogService');
+const { createAdBoostOffer } = require('../services/adBoostService');
 const emailService = require('../services/emailService');
 const { getFrontendBaseUrl } = require('../config/env');
 const { getSupabaseClient } = require('../lib/supabaseClient');
@@ -528,6 +529,30 @@ async function ensureFortuneSpinStateForToday(userId, now = new Date(), { persis
     return spinData;
 }
 
+async function getRouletteRewardsToday(userId, now = new Date()) {
+    const from = startOfDayLocal(now).toISOString();
+    const to = nextMidnightLocal(now).toISOString();
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+        .from(DOC_TABLE)
+        .select('id,data')
+        .eq('model', 'FortuneWinLog')
+        .limit(5000);
+    if (error || !Array.isArray(data)) return { sc: 0, stars: 0 };
+
+    return data.reduce((acc, row) => {
+        const d = row.data || {};
+        const occurredAt = String(d.occurredAt || '');
+        if (String(d.user) !== String(userId)) return acc;
+        if (d.gameType !== 'roulette') return acc;
+        if (occurredAt < from || occurredAt >= to) return acc;
+        if (d.meta?.adBoost) return acc;
+        if (d.rewardType === 'sc') acc.sc += Number(d.amount) || 0;
+        if (d.rewardType === 'star') acc.stars += Number(d.amount) || 0;
+        return acc;
+    }, { sc: 0, stars: 0 });
+}
+
 exports.ensureDailyLotteryNumber = async () => {
     await getDailyLotteryNumbers(new Date());
 };
@@ -551,16 +576,36 @@ exports.getSpinStatus = async (req, res) => {
     try {
         const userLang = normalizeLang(getRequestLanguage(req));
         const now = new Date();
-        const [fortuneConfig, spinData] = await Promise.all([
+        const [fortuneConfig, spinData, userRowForBoost] = await Promise.all([
             getFortuneConfig(),
             ensureFortuneSpinStateForToday(req.user._id, now, { persistReset: true }),
+            getUserRowById(req.user._id),
         ]);
         const dailyFreeSpins = Math.max(1, Number(fortuneConfig?.roulette?.dailyFreeSpins) || 3);
+        const userBoostData = getUserData(userRowForBoost);
+        const fortuneBoosts = userBoostData.fortuneBoosts && typeof userBoostData.fortuneBoosts === 'object' ? userBoostData.fortuneBoosts : {};
+        const availableAdExtraSpins = Math.max(0, Math.floor(Number(fortuneBoosts.rouletteExtraSpins) || 0));
+        const freeSpinsLeft = Math.max(0, dailyFreeSpins - spinData.spinsToday);
+        const spinsLeft = freeSpinsLeft + availableAdExtraSpins;
+        const boostOffer = spinsLeft <= 0
+            ? await createAdBoostOffer({
+                userId: req.user._id,
+                type: 'roulette_extra_spin',
+                contextKey: `roulette_extra:${req.user._id}:${getDayKey(now)}`,
+                page: 'fortune/roulette',
+                title: pickLang(userLang, 'Дополнительное вращение', 'Extra spin'),
+                description: pickLang(userLang, 'Досмотрите видео, чтобы получить ещё одно вращение рулетки.', 'Watch the video to receive one extra roulette spin.'),
+                reward: { kind: 'roulette_extra_spin' },
+            }).catch(() => null)
+            : null;
         res.json({
-            spinsLeft: Math.max(0, dailyFreeSpins - spinData.spinsToday),
+            spinsLeft,
+            freeSpinsLeft,
+            adExtraSpins: availableAdExtraSpins,
             totalSpins: spinData.totalSpins,
             lastSpinAt: spinData.lastSpinAt,
-            nextResetAt: nextMidnightLocal(now)
+            nextResetAt: nextMidnightLocal(now),
+            boostOffer,
         });
     } catch (error) {
         const userLang = normalizeLang(getRequestLanguage(req));
@@ -581,10 +626,25 @@ exports.spin = async (req, res) => {
         const minSpinsSinceStar = Math.max(0, Number(rouletteConfig.minSpinsSinceStar) || 21);
         const minDaysSinceStar = Math.max(0, Number(rouletteConfig.minDaysSinceStar) || 7);
         const allSectors = Array.isArray(rouletteConfig.sectors) ? rouletteConfig.sectors : [];
+        const userRowForBoost = await getUserRowById(req.user._id);
+        const userBoostData = getUserData(userRowForBoost);
+        const fortuneBoosts = userBoostData.fortuneBoosts && typeof userBoostData.fortuneBoosts === 'object' ? userBoostData.fortuneBoosts : {};
+        const availableAdExtraSpins = Math.max(0, Math.floor(Number(fortuneBoosts.rouletteExtraSpins) || 0));
+        const usingAdExtraSpin = spinData.spinsToday >= dailyFreeSpins && availableAdExtraSpins > 0;
 
-        if (spinData.spinsToday >= dailyFreeSpins) {
+        if (spinData.spinsToday >= dailyFreeSpins && !usingAdExtraSpin) {
+            const boostOffer = await createAdBoostOffer({
+                userId: req.user._id,
+                type: 'roulette_extra_spin',
+                contextKey: `roulette_extra:${req.user._id}:${getDayKey(now)}`,
+                page: 'fortune/roulette',
+                title: pickLang(userLang, 'Дополнительное вращение', 'Extra spin'),
+                description: pickLang(userLang, 'Досмотрите видео, чтобы получить ещё одно вращение рулетки.', 'Watch the video to receive one extra roulette spin.'),
+                reward: { kind: 'roulette_extra_spin' },
+            }).catch(() => null);
             return res.status(400).json({
                 message: pickLang(userLang, 'Бесплатные вращения на сегодня закончились', 'Free spins for today are over'),
+                boostOffer,
             });
         }
 
@@ -635,7 +695,7 @@ exports.spin = async (req, res) => {
 
         const lastSpinWasBonus = spinData.lastSpinWasBonus;
 
-        spinData.spinsToday += 1;
+        spinData.spinsToday += usingAdExtraSpin ? 0 : 1;
         spinData.totalSpins += 1;
         spinData.lastSpinAt = now;
         spinData.spinsSinceLastStar += 1;
@@ -732,8 +792,17 @@ exports.spin = async (req, res) => {
             spinData.spinsSinceLastStar = 0;
         }
 
-        if (result.type === 'spin') {
+        if (result.type === 'spin' && !usingAdExtraSpin) {
             spinData.spinsToday = Math.max(0, spinData.spinsToday - 1);
+        }
+
+        if (usingAdExtraSpin) {
+            await updateUserDataById(req.user._id, {
+                fortuneBoosts: {
+                    ...fortuneBoosts,
+                    rouletteExtraSpins: Math.max(0, availableAdExtraSpins - 1),
+                },
+            });
         }
 
         await upsertFortuneSpin(spinData._id, spinData);
@@ -787,11 +856,49 @@ exports.spin = async (req, res) => {
             });
         }
 
+        let boostOffer = null;
+        if (!usingAdExtraSpin && spinData.spinsToday >= dailyFreeSpins) {
+            boostOffer = await createAdBoostOffer({
+                userId: req.user._id,
+                type: 'roulette_extra_spin',
+                contextKey: `roulette_extra:${req.user._id}:${getDayKey(now)}`,
+                page: 'fortune/roulette',
+                title: pickLang(userLang, 'Дополнительное вращение', 'Extra spin'),
+                description: pickLang(userLang, 'Досмотрите видео, чтобы получить ещё одно вращение рулетки.', 'Watch the video to receive one extra roulette spin.'),
+                reward: { kind: 'roulette_extra_spin' },
+            }).catch(() => null);
+        } else if (usingAdExtraSpin) {
+            const todayRewards = await getRouletteRewardsToday(req.user._id, now);
+            if (todayRewards.sc > 0 || todayRewards.stars > 0) {
+                boostOffer = await createAdBoostOffer({
+                    userId: req.user._id,
+                    type: 'roulette_double_today',
+                    contextKey: `roulette_double:${req.user._id}:${getDayKey(now)}`,
+                    page: 'fortune/roulette',
+                    title: pickLang(userLang, 'Удвоить выигрыш рулетки', 'Double roulette winnings'),
+                    description: pickLang(userLang, 'Досмотрите видео, чтобы повторить сегодняшние выигрыши рулетки.', 'Watch the video to repeat today’s roulette winnings.'),
+                    reward: {
+                        kind: 'currency',
+                        sc: todayRewards.sc,
+                        stars: todayRewards.stars,
+                        transactionType: 'roulette_ad_boost',
+                        description: pickLang(userLang, 'Буст: удвоение рулетки', 'Boost: roulette doubling'),
+                    },
+                }).catch(() => null);
+            }
+        }
+
+        const freeSpinsLeft = Math.max(0, dailyFreeSpins - spinData.spinsToday);
+        const remainingAdExtraSpins = usingAdExtraSpin ? Math.max(0, availableAdExtraSpins - 1) : availableAdExtraSpins;
+
         res.json({
             sectorIndex: originalIndex < 0 ? 0 : originalIndex,
             result,
-            spinsLeft: Math.max(0, dailyFreeSpins - spinData.spinsToday),
-            nextResetAt: nextMidnightLocal(now)
+            spinsLeft: freeSpinsLeft + remainingAdExtraSpins,
+            freeSpinsLeft,
+            adExtraSpins: remainingAdExtraSpins,
+            nextResetAt: nextMidnightLocal(now),
+            boostOffer,
         });
     } catch (error) {
         const userLang = normalizeLang(getRequestLanguage(req));
@@ -994,6 +1101,7 @@ exports.getUserStats = async (req, res) => {
 
 exports.getLotteryStatus = async (req, res) => {
     try {
+        const userLang = normalizeLang(getRequestLanguage(req));
         const fortuneConfig = await getFortuneConfig();
         const lotteryConfig = fortuneConfig?.lottery || {};
         const ticketCost = Math.max(1, Number(lotteryConfig.ticketCost) || 100);
@@ -1009,6 +1117,21 @@ exports.getLotteryStatus = async (req, res) => {
         const tickets = Array.isArray(lottery.tickets) ? lottery.tickets : [];
         const ticketsToday = tickets.length;
         const isDrawCompleted = lottery.status === 'paid';
+        const userRowForBoost = await getUserRowById(userId);
+        const userBoostData = getUserData(userRowForBoost);
+        const fortuneBoosts = userBoostData.fortuneBoosts && typeof userBoostData.fortuneBoosts === 'object' ? userBoostData.fortuneBoosts : {};
+        const freeTickets = Math.max(0, Math.floor(Number(fortuneBoosts.lotteryFreeTickets) || 0));
+        const boostOffer = lottery.status === 'open' && ticketsToday < maxTicketsPerDay
+            ? await createAdBoostOffer({
+                userId,
+                type: 'lottery_free_ticket',
+                contextKey: `lottery_free:${userId}:${getDayKey(now)}`,
+                page: 'fortune/lottery',
+                title: pickLang(userLang, 'Бесплатный билет лотереи', 'Free lottery ticket'),
+                description: pickLang(userLang, 'Досмотрите видео, чтобы получить один билет без траты K.', 'Watch the video to get one ticket without spending K.'),
+                reward: { kind: 'lottery_free_ticket' },
+            }).catch(() => null)
+            : null;
 
         res.json({
             ticketsBought: tickets,
@@ -1021,7 +1144,9 @@ exports.getLotteryStatus = async (req, res) => {
             winningNumber: isDrawCompleted ? (lottery.winningNumber || formatLotteryNumbers(winningNumbers)) : null,
             winningNumbers: isDrawCompleted ? (lottery.winningNumbers || winningNumbers) : [],
             status: lottery.status,
-            prize: lottery.prizeSc || 0
+            prize: lottery.prizeSc || 0,
+            freeTickets,
+            boostOffer,
         });
     } catch (error) {
         const userLang = normalizeLang(getRequestLanguage(req));
@@ -1046,10 +1171,12 @@ exports.buyLotteryTicket = async (req, res) => {
             });
         }
 
-        // Проверить баланс
         const userRow = await getUserRowById(userId);
         const userData = getUserData(userRow);
-        if ((Number(userData.sc) || 0) < ticketCost) {
+        const fortuneBoosts = userData.fortuneBoosts && typeof userData.fortuneBoosts === 'object' ? userData.fortuneBoosts : {};
+        const freeTickets = Math.max(0, Math.floor(Number(fortuneBoosts.lotteryFreeTickets) || 0));
+        const useFreeTicket = freeTickets > 0;
+        if (!useFreeTicket && (Number(userData.sc) || 0) < ticketCost) {
             return res.status(400).json({
                 message: pickLang(userLang, 'Недостаточно K для покупки билета', 'Not enough K to buy a ticket'),
             });
@@ -1084,13 +1211,21 @@ exports.buyLotteryTicket = async (req, res) => {
             });
         }
 
-        // Списать K
-        await spendSc({
-            userId,
-            amount: ticketCost,
-            description: pickLang(userLang, 'Покупка лотерейного билета', 'Lottery ticket purchase'),
-            type: 'lottery',
-        });
+        if (useFreeTicket) {
+            await updateUserDataById(userId, {
+                fortuneBoosts: {
+                    ...fortuneBoosts,
+                    lotteryFreeTickets: Math.max(0, freeTickets - 1),
+                },
+            });
+        } else {
+            await spendSc({
+                userId,
+                amount: ticketCost,
+                description: pickLang(userLang, 'Покупка лотерейного билета', 'Lottery ticket purchase'),
+                type: 'lottery',
+            });
+        }
         // Добавить билет
         const tickets = lottery.tickets || [];
         tickets.push({
@@ -1126,6 +1261,8 @@ exports.buyLotteryTicket = async (req, res) => {
             userSc: Number(updatedUserData.sc) || 0,
             ticketNumber: formatLotteryNumbers(normalizedNumbers),
             numbers: normalizedNumbers,
+            freeTicketUsed: useFreeTicket,
+            freeTicketsLeft: useFreeTicket ? Math.max(0, freeTickets - 1) : freeTickets,
         });
     } catch (error) {
         const userLang = normalizeLang(getRequestLanguage(req));
