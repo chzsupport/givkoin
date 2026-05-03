@@ -128,10 +128,8 @@ export default function CabinetReferralsPage() {
             <button
               type="button"
               onClick={() => setBoostModalOpen(true)}
-              className="group relative flex h-12 min-w-[104px] items-center justify-center overflow-hidden rounded-2xl border border-sky-300/35 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.50),transparent_34%),radial-gradient(circle_at_85%_100%,rgba(239,68,68,0.36),transparent_34%),linear-gradient(135deg,#071226,#150812_55%,#1f1604)] px-5 text-center text-sm font-black uppercase tracking-[0.22em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_0_28px_rgba(250,204,21,0.16),0_14px_30px_rgba(0,0,0,0.28)] backdrop-blur-md transition hover:border-yellow-200/45 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_34px_rgba(250,204,21,0.24),0_16px_34px_rgba(0,0,0,0.3)]"
+              className="referral-bonus-button group relative flex h-12 min-w-[104px] items-center justify-center overflow-hidden rounded-2xl border border-sky-300/32 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.42),transparent_34%),radial-gradient(circle_at_85%_100%,rgba(239,68,68,0.28),transparent_34%),linear-gradient(135deg,#071226,#150812_55%,#1f1604)] px-5 text-center text-sm font-black uppercase tracking-[0.22em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.13),0_12px_28px_rgba(0,0,0,0.26)] backdrop-blur-md transition hover:border-yellow-200/40"
             >
-              <span className="referral-bonus-border pointer-events-none absolute inset-0 rounded-2xl" />
-              <span className="pointer-events-none absolute -left-8 top-1/2 h-12 w-12 -translate-y-1/2 rounded-full bg-sky-300/35 blur-xl animate-pulse" />
               <span className="relative z-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.22)]">{t('referrals.manual_boost_button')}</span>
             </button>
 
@@ -301,31 +299,46 @@ export default function CabinetReferralsPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(255, 255, 255, 0.2);
         }
-        .referral-bonus-border {
-          background: conic-gradient(
-            from 0deg,
-            transparent 0deg,
-            transparent 70deg,
-            rgba(125, 211, 252, 0.95) 92deg,
-            rgba(255, 255, 255, 0.90) 108deg,
-            rgba(250, 204, 21, 0.95) 124deg,
-            transparent 150deg,
-            transparent 360deg
-          );
-          padding: 1px;
-          -webkit-mask:
-            linear-gradient(#000 0 0) content-box,
-            linear-gradient(#000 0 0);
-          -webkit-mask-composite: xor;
-          mask:
-            linear-gradient(#000 0 0) content-box,
-            linear-gradient(#000 0 0);
-          mask-composite: exclude;
-          animation: referralBonusBorder 2s linear infinite;
+        .referral-bonus-button {
+          animation: referralBonusBreath 3.2s ease-in-out infinite;
         }
-        @keyframes referralBonusBorder {
-          to {
-            transform: rotate(360deg);
+        .referral-bonus-button::before {
+          content: '';
+          position: absolute;
+          inset: 1px;
+          border-radius: inherit;
+          background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,0.16) 45%, rgba(250,204,21,0.14) 52%, transparent 62%);
+          opacity: 0;
+          transform: translateX(-130%);
+          animation: referralBonusSoftSweep 3.2s ease-in-out infinite;
+        }
+        .referral-bonus-button::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          border: 1px solid rgba(250,204,21,0.12);
+          box-shadow: inset 0 0 12px rgba(125,211,252,0.08);
+        }
+        @keyframes referralBonusBreath {
+          0%, 100% {
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), 0 12px 28px rgba(0,0,0,0.26), 0 0 16px rgba(125,211,252,0.10);
+          }
+          50% {
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 14px 30px rgba(0,0,0,0.28), 0 0 22px rgba(250,204,21,0.16);
+          }
+        }
+        @keyframes referralBonusSoftSweep {
+          0%, 58% {
+            opacity: 0;
+            transform: translateX(-130%);
+          }
+          68% {
+            opacity: 0.65;
+          }
+          82%, 100% {
+            opacity: 0;
+            transform: translateX(130%);
           }
         }
       `}</style>
