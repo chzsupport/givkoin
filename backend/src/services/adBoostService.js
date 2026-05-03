@@ -14,6 +14,9 @@ const OFFER_MODEL = 'AdBoostOffer';
 const WATCH_MODEL = 'AdBoostWatch';
 const OFFER_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.AD_BOOST_OFFER_TTL_MS) || 30 * 60 * 1000);
 const WATCH_TTL_MS = Math.max(60 * 1000, Number(process.env.AD_BOOST_WATCH_TTL_MS) || 15 * 60 * 1000);
+const BOOST_PLACEHOLDER_ENABLED = String(process.env.AD_BOOST_PLACEHOLDER_DISABLED || '').trim().toLowerCase() !== 'true';
+const BOOST_PLACEHOLDER_MEDIA_URL = String(process.env.AD_BOOST_PLACEHOLDER_MEDIA_URL || '/ready.mp4').trim() || '/ready.mp4';
+const BOOST_PLACEHOLDER_CREATIVE_ID = 'internal_vast_placeholder';
 
 const SHOP_RANDOM_ITEM_KEYS = Object.freeze([
   'boost_battle_accuracy',
@@ -155,11 +158,6 @@ async function insertWarehouseItem({ userId, itemKey, sourceOfferId }) {
   return { ...doc, _id: id };
 }
 
-async function hasActiveVastCreative(page) {
-  const creative = await loadActiveAdCreative(normalizePage(page), 'rewarded_vast', new Date(), 'vast');
-  return Boolean(creative?._id);
-}
-
 async function createAdBoostOffer({
   userId,
   type,
@@ -174,7 +172,6 @@ async function createAdBoostOffer({
   const safeType = String(type || '').trim();
   const safeContextKey = String(contextKey || '').trim();
   if (!safeUserId || !safeType || !safeContextKey || !reward) return null;
-  if (!(await hasActiveVastCreative(page))) return null;
 
   const id = buildOfferId(safeUserId, safeType, safeContextKey);
   const existing = await getDocById(id);
@@ -331,6 +328,17 @@ async function resolveVastPayload(creative) {
   return resolveContent(content, 0);
 }
 
+function buildPlaceholderVastPayload() {
+  return {
+    vastUrl: '',
+    vastXml: '',
+    mediaUrl: BOOST_PLACEHOLDER_MEDIA_URL,
+    mediaType: 'video/mp4',
+    tracking: {},
+    placeholder: true,
+  };
+}
+
 async function startAdBoost({ userId, offerId }) {
   const offer = await getDocById(offerId);
   if (!offer || String(offer.user) !== String(userId)) {
@@ -344,8 +352,16 @@ async function startAdBoost({ userId, offerId }) {
     throw error;
   }
 
-  const creative = await loadActiveAdCreative(offer.page || 'all', 'rewarded_vast', new Date(), 'vast');
-  if (!creative?._id) {
+  const creative = await loadActiveAdCreative(offer.page || 'all', 'rewarded_vast', new Date(), 'vast').catch(() => null);
+  let vast = creative?._id ? await resolveVastPayload(creative).catch(() => null) : null;
+  let creativeId = creative?._id || '';
+
+  if (!vast?.mediaUrl && BOOST_PLACEHOLDER_ENABLED) {
+    vast = buildPlaceholderVastPayload();
+    creativeId = creativeId || BOOST_PLACEHOLDER_CREATIVE_ID;
+  }
+
+  if (!vast?.mediaUrl) {
     const error = new Error('VAST реклама не настроена');
     error.statusCode = 400;
     throw error;
@@ -356,16 +372,15 @@ async function startAdBoost({ userId, offerId }) {
   const session = {
     user: String(userId),
     offerId: String(offerId),
-    creativeId: String(creative._id),
+    creativeId: String(creativeId),
     status: 'started',
     startedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + WATCH_TTL_MS).toISOString(),
   };
   await upsertDoc({ id: sessionId, model: WATCH_MODEL, data: session, createdAt: now, updatedAt: now });
-  const vast = await resolveVastPayload(creative);
   return {
     sessionId,
-    creativeId: creative._id,
+    creativeId,
     vast,
   };
 }
