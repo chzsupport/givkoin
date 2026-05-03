@@ -270,7 +270,7 @@ export default function FortunePage() {
                                             </div>
                                             <div className="flex items-center justify-between">
                                                 <div className="px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300 text-tiny">
-                                                    {3 - spinsLeft}/3
+                                                    {spinsLeft}/3
                                                 </div>
                                                 <ChevronRight className="w-4 h-4 text-yellow-400" />
                                             </div>
