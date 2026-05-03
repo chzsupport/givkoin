@@ -1513,7 +1513,16 @@
     "invited": "Invited",
     "active_count": "Active",
     "earned": "Earned",
-    "earned_k": "Earned K"
+    "earned_k": "Earned K",
+    "manual_boost_button": "BOOST",
+    "manual_boost_title": "Referral enhancement",
+    "manual_boost_description": "Watch 3 videos to the end to enable a reward from your referrals' earnings.",
+    "manual_boost_step_1": "step1",
+    "manual_boost_step_2": "step 2",
+    "manual_boost_step_3": "step 3",
+    "manual_boost_loading": "loading",
+    "manual_boost_hint": "Each view counts only after the video fully ends.",
+    "manual_boost_active_message": "All 3 videos are watched. You receive {percent}% of all K earnings from your referrals until {until}."
   },
   "warehouse": {
     "title": "Storage"

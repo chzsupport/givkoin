@@ -1,7 +1,11 @@
 const crypto = require('crypto');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { createAdBoostOffer } = require('../services/adBoostService');
 
 const DAILY_LIMIT = 10;
+const MANUAL_REFERRAL_STEP_COUNT = 3;
+const MANUAL_REFERRAL_PERCENT = 5;
+const MANUAL_REFERRAL_HOURS = 24;
 
 const generateReferralCode = () => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -40,6 +44,45 @@ async function updateUserData(userId, patch) {
     .maybeSingle();
   if (error) return null;
   return data || null;
+}
+
+function getUserData(row) {
+  return row?.data && typeof row.data === 'object' ? row.data : {};
+}
+
+function getShopBoosts(userData) {
+  return userData?.shopBoosts && typeof userData.shopBoosts === 'object' ? userData.shopBoosts : {};
+}
+
+function normalizeManualSteps(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return Array.from(new Set(raw
+    .map((step) => Math.floor(Number(step) || 0))
+    .filter((step) => step >= 1 && step <= MANUAL_REFERRAL_STEP_COUNT)))
+    .sort((a, b) => a - b);
+}
+
+function getManualReferralStatus(userData, now = new Date()) {
+  const shopBoosts = getShopBoosts(userData);
+  const activeUntilRaw = String(shopBoosts.referralBlessingUntil || '').trim();
+  const activeUntilMs = activeUntilRaw ? new Date(activeUntilRaw).getTime() : 0;
+  const active = Number.isFinite(activeUntilMs) && activeUntilMs > now.getTime();
+  const manual = shopBoosts.referralManualBoost && typeof shopBoosts.referralManualBoost === 'object'
+    ? shopBoosts.referralManualBoost
+    : {};
+  const manuallyCompleted = Boolean(manual.completed);
+  const watchedSteps = active || !manuallyCompleted ? normalizeManualSteps(manual.watchedSteps) : [];
+  const completed = Boolean(active && (manuallyCompleted || watchedSteps.length >= MANUAL_REFERRAL_STEP_COUNT));
+  return {
+    stepsTotal: MANUAL_REFERRAL_STEP_COUNT,
+    watchedSteps: completed ? [1, 2, 3] : watchedSteps,
+    active,
+    activeUntil: active ? new Date(activeUntilMs).toISOString() : null,
+    percent: active
+      ? Math.max(MANUAL_REFERRAL_PERCENT, Number(shopBoosts.referralBlessingPercent) || MANUAL_REFERRAL_PERCENT)
+      : MANUAL_REFERRAL_PERCENT,
+    completed,
+  };
 }
 
 async function ensureUserReferralCode(userId) {
@@ -115,7 +158,7 @@ async function sumReferralEarningsSc({ userId }) {
     .from('transactions')
     .select('amount')
     .eq('user_id', String(userId))
-    .eq('type', 'referral')
+    .in('type', ['referral', 'referral_blessing'])
     .eq('direction', 'credit')
     .eq('currency', 'K');
   if (error || !Array.isArray(data)) return 0;
@@ -131,7 +174,7 @@ async function getReferralInfo(req, res, next) {
     if (!ensured?.row) return res.status(404).json({ message: 'Пользователь не найден' });
     const row = ensured.row;
     const code = ensured.code;
-    const userData = row.data && typeof row.data === 'object' ? row.data : {};
+    const userData = getUserData(row);
 
     const supabase = getSupabaseClient();
     const { count: totalInvitedRaw } = await supabase
@@ -167,6 +210,7 @@ async function getReferralInfo(req, res, next) {
       totalInvited,
       activeCount,
       totalEarned,
+      manualBoost: getManualReferralStatus(userData),
       referrals: list.map((r) => {
         const inv = inviteesById.get(String(r.invitee_id)) || null;
         return {
@@ -175,6 +219,80 @@ async function getReferralInfo(req, res, next) {
           status: r.status,
         };
       }),
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function getManualBoostStatus(req, res, next) {
+  try {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ message: 'Требуется авторизация' });
+    const userRow = await getUserRowById(userId);
+    if (!userRow) return res.status(404).json({ message: 'Пользователь не найден' });
+    return res.json(getManualReferralStatus(getUserData(userRow)));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function createManualBoostStep(req, res, next) {
+  try {
+    const userId = req.user?._id;
+    if (!userId) return res.status(401).json({ message: 'Требуется авторизация' });
+
+    const step = Math.floor(Number(req.body?.step) || 0);
+    if (step < 1 || step > MANUAL_REFERRAL_STEP_COUNT) {
+      return res.status(400).json({ message: 'Некорректный шаг' });
+    }
+
+    const userRow = await getUserRowById(userId);
+    if (!userRow) return res.status(404).json({ message: 'Пользователь не найден' });
+
+    const userData = getUserData(userRow);
+    const status = getManualReferralStatus(userData);
+    if (status.active) {
+      return res.status(400).json({ message: 'Реферальное усиление уже активно', status });
+    }
+    if (status.watchedSteps.includes(step)) {
+      return res.status(400).json({ message: 'Этот шаг уже просмотрен', status });
+    }
+
+    const shopBoosts = getShopBoosts(userData);
+    const manual = shopBoosts.referralManualBoost && typeof shopBoosts.referralManualBoost === 'object'
+      ? shopBoosts.referralManualBoost
+      : {};
+    let cycleKey = String(manual.cycleKey || '').trim();
+    if (!cycleKey || manual.completed) {
+      cycleKey = `referral-manual:${String(userId)}:${Date.now()}`;
+      shopBoosts.referralManualBoost = {
+        cycleKey,
+        watchedSteps: status.watchedSteps,
+        completed: false,
+        percent: MANUAL_REFERRAL_PERCENT,
+        activeUntil: null,
+      };
+      await updateUserData(userId, { shopBoosts });
+    }
+
+    const boostOffer = await createAdBoostOffer({
+      userId,
+      type: 'referral_manual_step',
+      contextKey: `${cycleKey}:step:${step}`,
+      page: 'cabinet/referrals',
+      title: `Шаг ${step}`,
+      description: 'Досмотрите видео до конца, чтобы засчитать шаг.',
+      reward: {
+        kind: 'referral_manual_step',
+        step,
+        cycleKey,
+      },
+    });
+
+    return res.json({
+      boostOffer,
+      status: getManualReferralStatus({ ...userData, shopBoosts }),
     });
   } catch (error) {
     return next(error);
@@ -265,5 +383,10 @@ async function claimReferral(req, res, next) {
   }
 }
 
-module.exports = { getReferralInfo, claimReferral };
+module.exports = {
+  getReferralInfo,
+  claimReferral,
+  getManualBoostStatus,
+  createManualBoostStep,
+};
 

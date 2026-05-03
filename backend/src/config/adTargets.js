@@ -21,6 +21,7 @@ const AD_TARGETS = Object.freeze([
   { id: 'galaxy', name: 'Галактика желаний' },
   { id: 'bridges', name: 'Мосты' },
   { id: 'battle', name: 'Бой' },
+  { id: 'cabinet/referrals', name: 'Рефералы' },
   { id: 'entity/profile', name: 'Профиль сущности' },
   { id: 'entity', name: 'Панели Древа: сущность' },
   { id: 'solar', name: 'Панели Древа: энергия' },

@@ -1,6 +1,6 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, upsertDoc, deleteDoc } = require('../services/documentStore');
-const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
 const { getNightShiftStatusForUser } = require('../services/nightShiftRuntimeService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
 const { createAdBoostOffer } = require('../services/adBoostService');
@@ -392,6 +392,12 @@ async function applyCrystalCompletionReward(userId) {
         .eq('id', String(userId));
 
     if (error) return null;
+    awardReferralBlessingExternal({
+        receiverUserId: userId,
+        amount: blessingReward.sc,
+        sourceType: 'crystal',
+        relatedEntity: toIsoDayKey(new Date()),
+    }).catch(() => null);
     return {
         rewardGrantedAt: nowIso,
         reward: {

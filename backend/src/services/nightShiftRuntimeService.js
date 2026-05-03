@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { recordActivity } = require('./activityService');
 const { awardRadianceForActivity } = require('./activityRadianceService');
-const { getBaseRewardMultiplier, recordTransaction } = require('./scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('./scService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, mapDocRow, toIso, upsertDoc } = require('./documentStore');
 const { getActiveUsersCountSnapshot } = require('./battleService');
@@ -2082,6 +2082,12 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
           description: 'Ночная Смена: полный час',
           relatedEntity: row.sessionId,
           occurredAt: now,
+        }).catch(() => null);
+        awardReferralBlessingExternal({
+          receiverUserId: userRow.id,
+          amount: Number(finalReward.sc) || 0,
+          sourceType: 'night_shift',
+          relatedEntity: row.sessionId,
         }).catch(() => null);
       }
 

@@ -2,7 +2,7 @@ const { countActivities, listActivities, recordActivity } = require('../services
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getDocById, upsertDoc } = require('../services/documentStore');
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getRequestLanguage } = require('../utils/requestLanguage');
@@ -391,6 +391,12 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
             : `Посещаемость: день ${currentDayIndex}`,
           relatedEntity: `attendance_day:${serverDay}`,
           occurredAt: now,
+        }).catch(() => null);
+        awardReferralBlessingExternal({
+          receiverUserId: userId,
+          amount: awardedSc,
+          sourceType: 'attendance_bonus',
+          relatedEntity: `attendance_day:${serverDay}`,
         }).catch(() => null);
         scReward = awardedSc;
       }

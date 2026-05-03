@@ -2,7 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { applyStarsDelta } = require('../utils/stars');
-const { getBaseRewardMultiplier, recordTransaction } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
 const { applyTreeBlessingToReward, claimTreeBlessingForUser, getTreeBlessingStatusForUser } = require('../services/treeBlessingService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
@@ -213,6 +213,12 @@ router.post('/gratitude/complete', auth, async (req, res) => {
       description: userLang === 'en' ? 'Gratitude' : 'Благодарность',
       relatedEntity: `${dayKey}:${index}`,
       occurredAt: now,
+    }).catch(() => null);
+    awardReferralBlessingExternal({
+      receiverUserId: userId,
+      amount: awardedSc,
+      sourceType: 'gratitude_write',
+      relatedEntity: `${dayKey}:${index}`,
     }).catch(() => null);
     const radianceAward = await awardRadianceForActivity({
       userId,

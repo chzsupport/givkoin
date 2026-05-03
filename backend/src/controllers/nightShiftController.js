@@ -1,5 +1,4 @@
 const { recordActivity } = require('../services/activityService');
-const { awardReferralBlessingExternal } = require('../services/scService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');

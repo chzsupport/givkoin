@@ -2,7 +2,7 @@ const { isComplaintBlocked, applyPenalty } = require('../utils/penalties');
 const { sendComplaintNotification, sendBanOutcomeEmail } = require('../services/emailService');
 const { updateEntityMoodForUser } = require('../services/entityMoodService');
 const { getNumericSettingValue } = require('../services/settingsRegistryService');
-const { recordTransaction } = require('../services/scService');
+const { recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const chatService = require('../services/chatService');
 
@@ -437,6 +437,12 @@ async function resolveAppeal(req, res, next) {
           amount: compensationAmount,
           currency: 'K',
           description: 'Компенсация за ложную жалобу',
+          relatedEntity: id,
+        }).catch(() => null);
+        awardReferralBlessingExternal({
+          receiverUserId: againstUserId,
+          amount: compensationAmount,
+          sourceType: 'appeal_compensation',
           relatedEntity: id,
         }).catch(() => null);
       }

@@ -38,6 +38,14 @@ interface User {
         referralBlessingUntil?: string;
         referralBlessingPercent?: number;
         referralBlessingAdBoosted?: boolean;
+        referralManualBoost?: {
+            cycleKey?: string;
+            watchedSteps?: number[];
+            completed?: boolean;
+            percent?: number;
+            completedAt?: string | null;
+            activeUntil?: string | null;
+        };
         practiceTreeBlessingUntil?: string;
         practiceTreeBlessingPercent?: number;
         practiceTreeBlessingAdBoosted?: boolean;

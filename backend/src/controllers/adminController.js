@@ -21,7 +21,7 @@ const {
     deleteUserTotally,
     deleteFeedbackMessageTotally,
 } = require('../services/adminCleanupService');
-const { recordTransaction } = require('../services/scService');
+const { recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
 const battleService = require('../services/battleService');
 const { adminAudit } = require('../middleware/adminAudit');
 const { forEachUserBatch } = require('../services/userBatchService');
@@ -1474,6 +1474,12 @@ exports.handleAppeal = async (req, res) => {
                             amount: compensationAmount,
                             currency: 'K',
                             description: 'Компенсация за ложную жалобу',
+                            relatedEntity: id,
+                        }).catch(() => null);
+                        awardReferralBlessingExternal({
+                            receiverUserId: userId,
+                            amount: compensationAmount,
+                            sourceType: 'appeal_compensation',
                             relatedEntity: id,
                         }).catch(() => null);
                     }

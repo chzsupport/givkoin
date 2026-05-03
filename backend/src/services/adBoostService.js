@@ -17,6 +17,9 @@ const WATCH_TTL_MS = Math.max(60 * 1000, Number(process.env.AD_BOOST_WATCH_TTL_M
 const BOOST_PLACEHOLDER_ENABLED = String(process.env.AD_BOOST_PLACEHOLDER_DISABLED || '').trim().toLowerCase() !== 'true';
 const BOOST_PLACEHOLDER_MEDIA_URL = String(process.env.AD_BOOST_PLACEHOLDER_MEDIA_URL || '/ready.mp4').trim() || '/ready.mp4';
 const BOOST_PLACEHOLDER_CREATIVE_ID = 'internal_vast_placeholder';
+const REFERRAL_MANUAL_STEP_COUNT = 3;
+const REFERRAL_MANUAL_PERCENT = 5;
+const REFERRAL_MANUAL_HOURS = 24;
 
 const SHOP_RANDOM_ITEM_KEYS = Object.freeze([
   'boost_battle_accuracy',
@@ -537,6 +540,75 @@ async function grantTreeBlessingDouble({ userId }) {
   return { shopBoosts };
 }
 
+function normalizeReferralManualSteps(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return Array.from(new Set(raw
+    .map((step) => Math.floor(Number(step) || 0))
+    .filter((step) => step >= 1 && step <= REFERRAL_MANUAL_STEP_COUNT)))
+    .sort((a, b) => a - b);
+}
+
+async function grantReferralManualStep({ userId, reward }) {
+  const step = Math.floor(Number(reward.step) || 0);
+  if (step < 1 || step > REFERRAL_MANUAL_STEP_COUNT) {
+    const error = new Error('Некорректный шаг');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const userRow = await getUserRowById(userId);
+  const userData = getUserData(userRow);
+  const shopBoosts = userData.shopBoosts && typeof userData.shopBoosts === 'object' ? userData.shopBoosts : {};
+  const now = new Date();
+  const activeUntilMs = shopBoosts.referralBlessingUntil ? new Date(shopBoosts.referralBlessingUntil).getTime() : 0;
+  const manualState = shopBoosts.referralManualBoost && typeof shopBoosts.referralManualBoost === 'object'
+    ? shopBoosts.referralManualBoost
+    : {};
+  const cycleKey = String(reward.cycleKey || manualState.cycleKey || '').trim() || `manual-referrals:${Date.now()}`;
+
+  const watchedSteps = String(manualState.cycleKey || '') === cycleKey
+    ? normalizeReferralManualSteps(manualState.watchedSteps)
+    : [];
+  if (!watchedSteps.includes(step)) {
+    watchedSteps.push(step);
+    watchedSteps.sort((a, b) => a - b);
+  }
+
+  const completed = watchedSteps.length >= REFERRAL_MANUAL_STEP_COUNT;
+  let activeUntil = Number.isFinite(activeUntilMs) && activeUntilMs > now.getTime()
+    ? new Date(activeUntilMs)
+    : null;
+
+  if (completed && !activeUntil) {
+    activeUntil = new Date(now.getTime() + REFERRAL_MANUAL_HOURS * 60 * 60 * 1000);
+    shopBoosts.referralBlessingUntil = activeUntil.toISOString();
+    shopBoosts.referralBlessingPercent = REFERRAL_MANUAL_PERCENT;
+    shopBoosts.referralBlessingAdBoosted = true;
+  }
+
+  shopBoosts.referralManualBoost = {
+    cycleKey,
+    watchedSteps,
+    completed,
+    percent: REFERRAL_MANUAL_PERCENT,
+    completedAt: completed ? (manualState.completedAt || now.toISOString()) : null,
+    activeUntil: activeUntil ? activeUntil.toISOString() : null,
+  };
+
+  const updatedUser = await updateUserDataById(userId, { shopBoosts });
+  const updatedData = getUserData(updatedUser);
+  return {
+    shopBoosts: updatedData.shopBoosts || shopBoosts,
+    referralManualBoost: {
+      watchedSteps,
+      completed,
+      active: Boolean(activeUntil && activeUntil.getTime() > now.getTime()),
+      activeUntil: activeUntil ? activeUntil.toISOString() : null,
+      percent: REFERRAL_MANUAL_PERCENT,
+    },
+  };
+}
+
 async function grantFruitLikeRandom({ userId, offerId }) {
   const roll = Math.floor(Math.random() * 3);
   const reward = {
@@ -562,6 +634,7 @@ async function applyOfferReward(offer) {
   if (kind === 'roulette_extra_spin') return grantRouletteExtraSpin({ userId: offer.user });
   if (kind === 'lottery_free_ticket') return grantLotteryFreeTicket({ userId: offer.user });
   if (kind === 'tree_blessing_double') return grantTreeBlessingDouble({ userId: offer.user });
+  if (kind === 'referral_manual_step') return grantReferralManualStep({ userId: offer.user, reward });
   if (kind === 'fruit_like_random') return grantFruitLikeRandom({ userId: offer.user, offerId: offer._id });
   return grantCurrencyReward({ userId: offer.user, reward, offerId: offer._id });
 }

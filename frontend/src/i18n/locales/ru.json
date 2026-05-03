@@ -1447,7 +1447,16 @@
     "invited": "Приглашено",
     "active_count": "Активных",
     "earned": "Заработано",
-    "earned_k": "Заработано K"
+    "earned_k": "Заработано K",
+    "manual_boost_button": "БУСТ",
+    "manual_boost_title": "Реферальное усиление",
+    "manual_boost_description": "Посмотрите 3 видео до конца, чтобы включить награду от доходов ваших рефералов.",
+    "manual_boost_step_1": "шаг1",
+    "manual_boost_step_2": "шаг 2",
+    "manual_boost_step_3": "шаг 3",
+    "manual_boost_loading": "загрузка",
+    "manual_boost_hint": "Каждый просмотр засчитывается только после полного завершения видео.",
+    "manual_boost_active_message": "Все 3 видео просмотрены. Вы получаете {percent}% от всех доходов ваших рефералов в K до {until}."
   },
   "warehouse": {
     "title": "Склад"

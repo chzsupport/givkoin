@@ -28,6 +28,14 @@ type ShopBoosts = {
   referralBlessingUntil?: string;
   referralBlessingPercent?: number;
   referralBlessingAdBoosted?: boolean;
+  referralManualBoost?: {
+    cycleKey?: string;
+    watchedSteps?: number[];
+    completed?: boolean;
+    percent?: number;
+    completedAt?: string | null;
+    activeUntil?: string | null;
+  };
   practiceTreeBlessingUntil?: string;
   practiceTreeBlessingPercent?: number;
   practiceTreeBlessingAdBoosted?: boolean;
@@ -58,6 +66,13 @@ type CompleteResponse = {
     shopBoosts?: ShopBoosts;
     rouletteExtraSpins?: number;
     lotteryFreeTickets?: number;
+    referralManualBoost?: {
+      watchedSteps?: number[];
+      completed?: boolean;
+      active?: boolean;
+      activeUntil?: string | null;
+      percent?: number;
+    };
   };
 };
 
