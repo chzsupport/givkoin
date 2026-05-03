@@ -128,9 +128,11 @@ export default function CabinetReferralsPage() {
             <button
               type="button"
               onClick={() => setBoostModalOpen(true)}
-              className="flex h-12 items-center rounded-2xl border border-white/12 bg-white/[0.07] px-5 text-sm font-black uppercase tracking-[0.22em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_28px_rgba(0,0,0,0.22)] backdrop-blur-md transition hover:border-sky-200/35 hover:bg-sky-200/[0.10]"
+              className="group relative flex h-12 items-center overflow-hidden rounded-2xl border border-sky-300/35 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.50),transparent_34%),radial-gradient(circle_at_85%_100%,rgba(239,68,68,0.36),transparent_34%),linear-gradient(135deg,#071226,#150812_55%,#1f1604)] px-5 text-sm font-black uppercase tracking-[0.22em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_0_28px_rgba(250,204,21,0.16),0_14px_30px_rgba(0,0,0,0.28)] backdrop-blur-md transition hover:border-yellow-200/45 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_34px_rgba(250,204,21,0.24),0_16px_34px_rgba(0,0,0,0.3)]"
             >
-              {t('referrals.manual_boost_button')}
+              <span className="pointer-events-none absolute -left-8 top-1/2 h-12 w-12 -translate-y-1/2 rounded-full bg-sky-300/35 blur-xl animate-pulse" />
+              <span className="referral-boost-shine pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/18 to-transparent" />
+              <span className="relative z-10 drop-shadow-[0_0_10px_rgba(255,255,255,0.22)]">{t('referrals.manual_boost_button')}</span>
             </button>
 
             <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-900/20 to-black/40 p-2 pl-4 backdrop-blur-md">
@@ -298,6 +300,22 @@ export default function CabinetReferralsPage() {
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(255, 255, 255, 0.2);
+        }
+        .referral-boost-shine {
+          animation: referralBoostShine 3.8s ease-in-out infinite;
+        }
+        @keyframes referralBoostShine {
+          0%, 45% {
+            transform: translateX(0);
+            opacity: 0;
+          }
+          58% {
+            opacity: 0.75;
+          }
+          72%, 100% {
+            transform: translateX(320%);
+            opacity: 0;
+          }
         }
       `}</style>
     </div>
