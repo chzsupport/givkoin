@@ -1,4 +1,4 @@
-const { getRadianceState, addRadianceFromLumens } = require('../services/radianceService');
+const { getRadianceState } = require('../services/radianceService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { applyStarsDelta } = require('../utils/stars');
 const { recordActivity } = require('../services/activityService');
@@ -179,6 +179,7 @@ exports.healTree = async (req, res) => {
             return res.status(400).json({ message: pickLang(userLang, 'Недостаточно Люменов', 'Not enough Lumens') });
         }
 
+        const radianceAmount = lumens * 4;
         let nextLumens = (Number(userData.lumens) || 0) - lumens;
         const starsAward = Math.floor(lumens / 100) * 0.001;
         let nextStars = Number(userData.stars) || 0;
@@ -198,10 +199,15 @@ exports.healTree = async (req, res) => {
             stars: nextStars,
         });
 
-        const radianceResult = await addRadianceFromLumens({
-            lumens,
-            source: 'tree_heal',
-            meta: { lumens, userId: String(userId || '') },
+        const radianceResult = await awardRadianceForActivity({
+            userId,
+            units: lumens,
+            activityType: 'tree_heal_button',
+            meta: {
+                lumens,
+                radiance: radianceAmount,
+                conversionRate: 4,
+            },
         });
 
         // Achievements Logic
@@ -263,13 +269,14 @@ exports.healTree = async (req, res) => {
             userId,
             type: 'tree_heal',
             minutes: 1,
-            meta: { lumens, starsAward },
+            meta: { lumens, radiance: radianceAmount, conversionRate: 4, starsAward },
         }).catch(() => { });
 
         res.json({
             ok: true,
             lumens,
             starsAward,
+            radianceAmount,
             radiance: radianceResult,
             user: { sc: userData.sc, stars: nextStars, lumens: nextLumens },
         });

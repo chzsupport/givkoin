@@ -223,6 +223,17 @@ export default function CabinetHistoryPage() {
     return row || activityType;
   };
 
+  const getTreeHealConversionText = (row: RadianceHistoryItem) => {
+    if (row.activityType !== 'tree_heal_button') return null;
+    const lumens = Number(row.meta?.lumens);
+    if (!Number.isFinite(lumens) || lumens <= 0) return null;
+
+    const radiance = Number(row.meta?.radiance);
+    const safeRadiance = Number.isFinite(radiance) && radiance > 0 ? radiance : (Number(row.amount) || 0);
+
+    return `−${formatNumber(lumens, language)} Lm = +${formatNumber(safeRadiance, language)} ${t('cabinet.radiance')}`;
+  };
+
   const resolveEconomyDescriptionKey = (description?: string | null) => {
     const normalized = String(description || '')
       .trim()
@@ -804,6 +815,7 @@ export default function CabinetHistoryPage() {
                 {radianceHistory.map((row, idx) => {
                   const at = row.occurredAt ? new Date(row.occurredAt) : null;
                   const atText = at && !Number.isNaN(at.getTime()) ? formatDateTime(at, language) : '—';
+                  const treeHealConversion = getTreeHealConversionText(row);
                   return (
                     <div key={`${row.activityType}-${idx}-${row.amount}`} className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2 text-secondary text-white/70">
@@ -813,6 +825,11 @@ export default function CabinetHistoryPage() {
                         <span className="text-white/80">{getRadianceActivityName(row.activityType, row.amount || 0)}</span>
                         <span className="text-tiny text-white/60">{atText}</span>
                       </div>
+                      {treeHealConversion && (
+                        <div className="mt-2 text-tiny text-emerald-200/80">
+                          {treeHealConversion}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

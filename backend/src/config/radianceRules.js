@@ -67,7 +67,7 @@ const RADIANCE_RULES = {
   tree_heal_button: {
     awardStep: 4,
     resolveAmount: ({ units, meta = {} }) => {
-      const lumens = Math.max(1, toPositiveInt(units, toPositiveInt(meta.lumens, 1)));
+      const lumens = toPositiveNumber(units, toPositiveNumber(meta.lumens, 0));
       return lumens * 4;
     },
   },
