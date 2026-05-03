@@ -417,7 +417,7 @@ exports.collectFruit = async (req, res) => {
             radianceActivityType: 'fruit_collect',
             radianceMeta: { source: 'ad_boost', treeId: tree._id },
             transactionType: 'fruit_ad_boost',
-            description: pickLang(userLang, 'Буст: сбор плода', 'Boost: fruit collection'),
+            description: pickLang(userLang, 'Дополнительная награда: сбор плода', 'Extra reward: fruit collection'),
         };
         const boostOffer = await createAdBoostOffer({
             userId,

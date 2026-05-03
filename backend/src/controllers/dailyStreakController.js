@@ -418,7 +418,7 @@ async function createAttendanceBoostIfReady({ userId, state, serverDay, currentD
     type: 'attendance_fruit_like',
     contextKey: `attendance:${userId}:${serverDay}`,
     page: 'activity_attendance',
-    title: 'Буст за посещаемость',
+    title: 'Подарок за посещаемость',
     description: 'Досмотрите видео, чтобы получить случайную награду как за плод Древа.',
     reward: {
       kind: 'fruit_like_random',

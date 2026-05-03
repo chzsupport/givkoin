@@ -453,7 +453,7 @@ exports.collectSolarCharge = async (req, res) => {
                 radianceActivityType: 'solar_collect',
                 radianceMeta: { source: 'ad_boost', solarChargeId: charge._id },
                 transactionType: 'solar_ad_boost',
-                description: pickLang(userLang, 'Буст: Солнечный заряд', 'Boost: Solar Charge'),
+                description: pickLang(userLang, 'Дополнительная награда: Солнечный заряд', 'Extra reward: Solar Charge'),
             },
         }).catch(() => null);
 

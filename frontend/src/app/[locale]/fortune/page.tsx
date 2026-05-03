@@ -49,6 +49,12 @@ interface LuckyWinner {
     date: string;
 }
 
+function emitRewardOffer(offer: unknown) {
+    if (typeof window === 'undefined') return;
+    if (!offer || typeof offer !== 'object' || !('id' in offer)) return;
+    window.dispatchEvent(new CustomEvent('givkoin:ad-boost-offer', { detail: offer }));
+}
+
 export default function FortunePage() {
     const { user, refreshUser, updateUser } = useAuth();
     const toast = useToast();
@@ -56,6 +62,7 @@ export default function FortunePage() {
     const [stats, setStats] = useState<FortuneStats | null>(null);
     const [showLuckyResult, setShowLuckyResult] = useState(false);
     const [luckyPrize, setLuckyPrize] = useState<string | null>(null);
+    const [pendingLuckyOffer, setPendingLuckyOffer] = useState<unknown>(null);
     const [isSpinningLucky, setIsSpinningLucky] = useState(false);
     const [spinsLeft, setSpinsLeft] = useState(0);
     const [ticketsToday, setTicketsToday] = useState(0);
@@ -155,9 +162,10 @@ export default function FortunePage() {
         luckyRequestLockRef.current = true;
         setIsSpinningLucky(true);
         try {
-            const res = await apiPost<unknown>('/fortune/lucky-draw', {});
+            const res = await apiPost<unknown>('/fortune/lucky-draw', {}, { suppressBoostOffer: true });
             const prize = typeof res === 'object' && res !== null && 'prize' in res ? String((res as { prize?: unknown }).prize) : '';
             setLuckyPrize(prize);
+            setPendingLuckyOffer(typeof res === 'object' && res !== null ? (res as { boostOffer?: unknown }).boostOffer || null : null);
             setShowLuckyResult(true);
             updateUser({ ...user, luckyDayAvailable: false });
             await Promise.all([
@@ -171,6 +179,15 @@ export default function FortunePage() {
         } finally {
             setIsSpinningLucky(false);
             luckyRequestLockRef.current = false;
+        }
+    };
+
+    const closeLuckyResult = () => {
+        setShowLuckyResult(false);
+        const offer = pendingLuckyOffer;
+        setPendingLuckyOffer(null);
+        if (offer) {
+            window.setTimeout(() => emitRewardOffer(offer), 160);
         }
     };
 
@@ -453,7 +470,7 @@ export default function FortunePage() {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
-                        onClick={() => setShowLuckyResult(false)}
+                        onClick={closeLuckyResult}
                     >
                         <motion.div
                             initial={{ scale: 0.8, opacity: 0 }}
@@ -469,7 +486,7 @@ export default function FortunePage() {
                                 {luckyPrize}
                             </div>
                             <button
-                                onClick={() => setShowLuckyResult(false)}
+                                onClick={closeLuckyResult}
                                 className="px-8 py-3 bg-white/10 hover:bg-white/20 rounded-xl text-secondary"
                             >
                                 {t('fortune.great')}

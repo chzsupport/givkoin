@@ -85,6 +85,12 @@ const LOTTERY_MAX_NUMBER = 49;
 const DEFAULT_TICKET_COST = 100;
 const DEFAULT_MAX_TICKETS_DAILY = 10;
 
+function emitRewardOffer(offer: unknown) {
+    if (typeof window === 'undefined') return;
+    if (!offer || typeof offer !== 'object' || !('id' in offer)) return;
+    window.dispatchEvent(new CustomEvent('givkoin:ad-boost-offer', { detail: offer }));
+}
+
 export default function LotteryPage() {
     const { user, refreshUser } = useAuth();
     const toast = useToast();
@@ -223,9 +229,10 @@ export default function LotteryPage() {
 
         setIsBuying(true);
         try {
-            await apiPost('/fortune/lottery/buy', { numbers: selectedNumbers });
+            const result = await apiPost<unknown>('/fortune/lottery/buy', { numbers: selectedNumbers }, { suppressBoostOffer: true });
             setTicketSlots(Array.from({ length: TICKET_LENGTH }, () => null));
             toast.success(t('fortune.ticket_purchased'), t('fortune.lottery_good_luck'));
+            emitRewardOffer(typeof result === 'object' && result !== null ? (result as { boostOffer?: unknown }).boostOffer : null);
             refreshUser();
             fetchTickets();
         } catch (e: unknown) {

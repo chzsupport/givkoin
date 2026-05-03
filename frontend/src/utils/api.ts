@@ -12,6 +12,7 @@ export const BACKEND_STATUS_EVENT = 'givkoin:backend-status';
 const DEFAULT_TIMEOUT_MS = 120000;
 type ApiRequestOptions = {
   timeoutMs?: number;
+  suppressBoostOffer?: boolean;
 };
 
 function localizeMessage(message: string) {
@@ -311,7 +312,6 @@ async function getClientIdentityHeaders(): Promise<Record<string, string>> {
 async function handleResponse<T>(res: Response): Promise<T> {
   const data: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
-    emitAdBoostOffer(data);
     const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
     const asString = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -352,6 +352,11 @@ function emitAdBoostOffer(data: unknown) {
   window.dispatchEvent(new CustomEvent('givkoin:ad-boost-offer', { detail: offer }));
 }
 
+function scheduleAdBoostOffer(data: unknown) {
+  if (typeof window === 'undefined') return;
+  window.setTimeout(() => emitAdBoostOffer(data), 240);
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -378,7 +383,7 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const data = await handleResponse<T>(res);
-  emitAdBoostOffer(data);
+  if (!options.suppressBoostOffer) scheduleAdBoostOffer(data);
   return data;
 }
 
@@ -400,7 +405,6 @@ export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): 
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const data = await handleResponse<T>(res);
-  emitAdBoostOffer(data);
   return data;
 }
 
@@ -413,7 +417,7 @@ export async function apiPatch<T>(path: string, body: unknown, options: ApiReque
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const data = await handleResponse<T>(res);
-  emitAdBoostOffer(data);
+  if (!options.suppressBoostOffer) scheduleAdBoostOffer(data);
   return data;
 }
 
@@ -426,7 +430,7 @@ export async function apiPut<T>(path: string, body: unknown, options: ApiRequest
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const data = await handleResponse<T>(res);
-  emitAdBoostOffer(data);
+  if (!options.suppressBoostOffer) scheduleAdBoostOffer(data);
   return data;
 }
 
@@ -438,7 +442,7 @@ export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}
     credentials: 'include',
   }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const data = await handleResponse<T>(res);
-  emitAdBoostOffer(data);
+  if (!options.suppressBoostOffer) scheduleAdBoostOffer(data);
   return data;
 }
 

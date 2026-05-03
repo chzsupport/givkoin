@@ -183,7 +183,7 @@ async function createAdBoostOffer({
     type: safeType,
     contextKey: safeContextKey,
     page: normalizePage(page),
-    title: String(title || 'Буст за видео'),
+    title: String(title || 'Подарок за видео'),
     description: String(description || 'Досмотрите видео до конца, чтобы получить награду.'),
     reward,
     status: 'pending',
@@ -342,12 +342,12 @@ function buildPlaceholderVastPayload() {
 async function startAdBoost({ userId, offerId }) {
   const offer = await getDocById(offerId);
   if (!offer || String(offer.user) !== String(userId)) {
-    const error = new Error('Буст не найден');
+    const error = new Error('Предложение не найдено');
     error.statusCode = 404;
     throw error;
   }
   if (offer.status !== 'pending' || isExpired(offer.expiresAt)) {
-    const error = new Error('Буст уже недоступен');
+    const error = new Error('Предложение уже недоступно');
     error.statusCode = 400;
     throw error;
   }
@@ -396,7 +396,7 @@ async function grantCurrencyReward({ userId, reward, offerId, now = new Date() }
       userId,
       amount: sc,
       type: reward.transactionType || 'ad_boost',
-      description: reward.description || 'Буст за просмотр VAST',
+      description: reward.description || 'Дополнительная награда за просмотр',
       relatedEntity: offerId,
       skipDebuff: true,
       skipBlessing: true,
@@ -415,7 +415,7 @@ async function grantCurrencyReward({ userId, reward, offerId, now = new Date() }
       direction: 'credit',
       amount: lumens,
       currency: 'LM',
-      description: reward.description || 'Буст за просмотр VAST',
+      description: reward.description || 'Дополнительная награда за просмотр',
       relatedEntity: offerId,
       occurredAt: now,
     }).catch(() => null);
@@ -428,7 +428,7 @@ async function grantCurrencyReward({ userId, reward, offerId, now = new Date() }
       delta: stars,
       skipDebuff: true,
       type: reward.transactionType || 'ad_boost',
-      description: reward.description || 'Буст за просмотр VAST',
+      description: reward.description || 'Дополнительная награда за просмотр',
       relatedEntity: offerId,
       occurredAt: now,
     });
@@ -542,7 +542,7 @@ async function grantFruitLikeRandom({ userId, offerId }) {
   const reward = {
     kind: 'currency',
     transactionType: 'attendance_ad_boost',
-    description: 'Буст: посещаемость',
+    description: 'Дополнительная награда: посещаемость',
   };
   if (roll === 0) {
     reward.sc = Math.floor(Math.random() * 41) + 10;
@@ -574,7 +574,7 @@ async function completeAdBoost({ userId, sessionId }) {
     throw error;
   }
   if (session.status === 'completed') {
-    const error = new Error('Этот буст уже засчитан');
+    const error = new Error('Это предложение уже засчитано');
     error.statusCode = 400;
     throw error;
   }
@@ -586,17 +586,17 @@ async function completeAdBoost({ userId, sessionId }) {
 
   const offer = await getDocById(session.offerId);
   if (!offer || String(offer.user) !== String(userId)) {
-    const error = new Error('Буст не найден');
+    const error = new Error('Предложение не найдено');
     error.statusCode = 404;
     throw error;
   }
   if (offer.status === 'completed') {
-    const error = new Error('Этот буст уже получен');
+    const error = new Error('Это предложение уже получено');
     error.statusCode = 400;
     throw error;
   }
   if (offer.status !== 'pending' || isExpired(offer.expiresAt)) {
-    const error = new Error('Буст уже недоступен');
+    const error = new Error('Предложение уже недоступно');
     error.statusCode = 400;
     throw error;
   }
@@ -608,7 +608,7 @@ async function completeAdBoost({ userId, sessionId }) {
     watchSessionId: session._id,
   }, now);
   if (!claimedOffer) {
-    const error = new Error('Этот буст уже обрабатывается');
+    const error = new Error('Это предложение уже обрабатывается');
     error.statusCode = 400;
     throw error;
   }

@@ -257,22 +257,22 @@ exports.useItem = async (req, res) => {
 
     if (catalogItem.key === 'boost_battle_accuracy') {
       if (shopBoosts.battleDamage?.pending) {
-        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Boost is already prepared') });
+        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
       shopBoosts.battleDamage = { pending: true };
     } else if (catalogItem.key === 'boost_battle_economy') {
       if (shopBoosts.battleLumensDiscount?.pending) {
-        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Boost is already prepared') });
+        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
       shopBoosts.battleLumensDiscount = { pending: true };
     } else if (catalogItem.key === 'boost_weak_zone_focus') {
       if (shopBoosts.weakZoneDamage?.pending) {
-        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Boost is already prepared') });
+        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
       shopBoosts.weakZoneDamage = { pending: true };
     } else if (catalogItem.key === 'boost_chat_key') {
       if (shopBoosts.chatSc?.pending) {
-        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Boost is already prepared') });
+        return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
       shopBoosts.chatSc = { pending: true };
     } else if (catalogItem.key === 'boost_solar_focus') {

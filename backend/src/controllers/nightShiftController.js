@@ -235,7 +235,7 @@ exports.endShift = async (req, res) => {
                     lumens: result.reward?.lm || 0,
                     stars: result.reward?.stars || 0,
                     transactionType: 'night_shift_ad_boost',
-                    description: pickLang(userLang, 'Буст: Ночная смена', 'Boost: Night Shift'),
+                    description: pickLang(userLang, 'Дополнительная награда: Ночная смена', 'Extra reward: Night Shift'),
                 },
             }).catch(() => null)
             : null;

@@ -7,7 +7,7 @@ exports.start = async (req, res) => {
   try {
     const offerId = String(req.body?.offerId || '').trim();
     if (!offerId) {
-      return res.status(400).json({ message: 'Не найден буст' });
+      return res.status(400).json({ message: 'Не найдено предложение' });
     }
     const result = await startAdBoost({ userId: req.user._id, offerId });
     return res.json(result);

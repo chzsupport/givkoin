@@ -146,6 +146,12 @@ type RouletteGlobalStats = {
     };
 };
 
+function emitRewardOffer(offer: unknown) {
+    if (typeof window === 'undefined') return;
+    if (!offer || typeof offer !== 'object' || !('id' in offer)) return;
+    window.dispatchEvent(new CustomEvent('givkoin:ad-boost-offer', { detail: offer }));
+}
+
 export default function RoulettePage() {
     const { user, refreshUser } = useAuth();
     const toast = useToast();
@@ -362,7 +368,7 @@ export default function RoulettePage() {
         setRotation(loadingRotationTarget);
 
         try {
-            const res = await apiPost<unknown>('/fortune/spin', {});
+            const res = await apiPost<unknown>('/fortune/spin', {}, { suppressBoostOffer: true });
             if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
             const winningIndex = Number((res as { sectorIndex?: unknown }).sectorIndex);
             const serverResult = (res as { result?: unknown }).result as { label?: string; type?: string; value?: number | string };
@@ -415,6 +421,7 @@ export default function RoulettePage() {
                         count: prev.count + 1
                     }));
                 }
+                emitRewardOffer((res as { boostOffer?: unknown }).boostOffer);
                 await refreshUser();
                 await fetchGlobalStats();
                 await fetchUserStats();

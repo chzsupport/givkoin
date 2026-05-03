@@ -698,7 +698,7 @@ exports.completeCollection = async (req, res) => {
                 lumens: rewardResult.reward.lumens,
                 stars: rewardResult.reward.stars,
                 transactionType: 'crystal_ad_boost',
-                description: 'Буст: сбор осколков',
+                description: 'Дополнительная награда: сбор осколков',
             },
         }).catch(() => null);
 
