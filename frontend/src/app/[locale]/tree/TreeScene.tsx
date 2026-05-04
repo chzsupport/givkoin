@@ -883,6 +883,23 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.target.set(0, 210, 0);
+    controls.enablePan = false;
+    controls.screenSpacePanning = false;
+    controls.enableZoom = true;
+    controls.enableRotate = true;
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: null,
+    };
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_ROTATE,
+    };
+    controls.update();
+    const lockedPolarAngle = controls.getPolarAngle();
+    controls.minPolarAngle = lockedPolarAngle;
+    controls.maxPolarAngle = lockedPolarAngle;
 
     scene.add(new THREE.HemisphereLight('#8cc8ff', '#09050e', 0));
     const fillLight = new THREE.DirectionalLight('#bfe9ff', 0);
@@ -922,7 +939,6 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       if (!visibleRef.current) return;
 
       const timeSeconds = clock.getElapsedTime();
-      treeRig.rotation.y = timeSeconds * 0.05;
 
       updateGroundGlow(timeSeconds, groundState);
       updateWave(timeSeconds, waveState, treeState);
