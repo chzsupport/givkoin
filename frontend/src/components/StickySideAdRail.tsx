@@ -23,12 +23,14 @@ export function StickySideAdRail({
   const { t } = useI18n();
   const railRef = useRef<HTMLElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const adWidth = adSlot?.width ?? 0;
+  const adHeight = adSlot?.height ?? 0;
 
   useEffect(() => {
     const rail = railRef.current;
     const panel = panelRef.current;
 
-    if (!rail || !panel || !adSlot || typeof window === 'undefined' || window.innerWidth < 1024) {
+    if (!rail || !panel || !adWidth || !adHeight || typeof window === 'undefined' || window.innerWidth < 1024) {
       if (panel) panel.style.transform = 'translate3d(0, 0, 0)';
       return;
     }
@@ -47,7 +49,7 @@ export function StickySideAdRail({
     const measureBounds = () => {
       const rect = rail.getBoundingClientRect();
       railTop = rect.top + window.scrollY;
-      maxY = Math.max(0, rail.offsetHeight - adSlot.height - topOffset);
+      maxY = Math.max(0, rail.offsetHeight - adHeight - topOffset);
     };
 
     const animate = () => {
@@ -87,7 +89,7 @@ export function StickySideAdRail({
       window.removeEventListener('resize', updateTarget);
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [adSlot]);
+  }, [adWidth, adHeight]);
 
   if (!adSlot) return null;
 
