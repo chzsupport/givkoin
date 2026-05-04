@@ -7,7 +7,7 @@ const { getRequestLanguage } = require('../utils/requestLanguage');
 const { normalizeComplaintReason } = require('../utils/complaintReason');
 const {
     applyChatCompletionEffects,
-    computeDurationSeconds,
+    computeChatDurationSeconds,
 } = require('../services/chatCompletionService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
@@ -621,11 +621,11 @@ async function submitComplaint(req, res) {
         });
 
         // Обновляем чат
-        const startedAt = chat.startedAt ? new Date(chat.startedAt) : now;
-        const durationSeconds = computeDurationSeconds({
-            startedAt,
+        const durationSeconds = computeChatDurationSeconds({
+            startedAt: chat.startedAt || now,
             endedAt: now,
             reportedTotalDurationSeconds,
+            waitingSince: chat.waitingState?.isWaiting ? chat.waitingState?.waitingSince : null,
         });
         const supabase = getSupabaseClient();
         const nowIso = now.toISOString();

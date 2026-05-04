@@ -67,6 +67,18 @@ function extractParticipant(raw: unknown): { id: string; nickname: string } | nu
     return { id, nickname };
 }
 
+function readSocketDate(value: unknown): Date | null {
+    if (typeof value !== 'string' && typeof value !== 'number') return null;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function readActiveElapsedSeconds(value: unknown): number | null {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds < 0) return null;
+    return Math.floor(seconds);
+}
+
 export default function ChatPage() {
     const { chatId } = useParams();
     const router = useRouter();
@@ -76,6 +88,7 @@ export default function ChatPage() {
     const { localePath, t } = useI18n();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [startedAt, setStartedAt] = useState<Date>(new Date());
+    const [activeDurationSeconds, setActiveDurationSeconds] = useState(0);
     const [showRating, setShowRating] = useState(false);
     const [showComplaint, setShowComplaint] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
@@ -100,6 +113,8 @@ export default function ChatPage() {
     const lastLocalActivityAtRef = useRef<number>(Date.now());
     const chatHeartbeatSentAtRef = useRef<number>(0);
     const heartbeatTimeoutRef = useRef<number | null>(null);
+    const pausedActiveDurationRef = useRef<number | null>(null);
+    const activeDurationSecondsRef = useRef(0);
 
     useEffect(() => {
         const updateDimensions = () => {
@@ -137,7 +152,35 @@ export default function ChatPage() {
         hasMessagesBaselineRef.current = false;
         lastLocalActivityAtRef.current = Date.now();
         chatHeartbeatSentAtRef.current = 0;
+        pausedActiveDurationRef.current = null;
     }, [chatId]);
+
+    const computeActiveDurationSeconds = useCallback(() => {
+        return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+    }, [startedAt]);
+
+    useEffect(() => {
+        const updateActiveDuration = () => {
+            if (isWaitingForPartner) {
+                if (pausedActiveDurationRef.current == null) {
+                    pausedActiveDurationRef.current = computeActiveDurationSeconds();
+                }
+                setActiveDurationSeconds(pausedActiveDurationRef.current);
+                return;
+            }
+
+            pausedActiveDurationRef.current = null;
+            setActiveDurationSeconds(computeActiveDurationSeconds());
+        };
+
+        updateActiveDuration();
+        const timer = window.setInterval(updateActiveDuration, 1000);
+        return () => window.clearInterval(timer);
+    }, [computeActiveDurationSeconds, isWaitingForPartner]);
+
+    useEffect(() => {
+        activeDurationSecondsRef.current = activeDurationSeconds;
+    }, [activeDurationSeconds]);
 
     const fetchMessages = useCallback(async () => {
         if (!chatId || !user) return;
@@ -218,6 +261,10 @@ export default function ChatPage() {
             setIsWaitingForPartner(false);
             setWaitingMessage('');
             setWaitingTimeLeft(60);
+            const endedDuration = readActiveElapsedSeconds(data?.duration);
+            if (endedDuration != null) {
+                setActiveDurationSeconds(endedDuration);
+            }
 
             clearActiveChat();
 
@@ -261,6 +308,14 @@ export default function ChatPage() {
 
         // Система ожидания собеседника
         socket.on('partner_disconnected', (data) => {
+            const pausedSeconds = readActiveElapsedSeconds(data?.activeElapsedSeconds);
+            if (pausedSeconds != null) {
+                pausedActiveDurationRef.current = pausedSeconds;
+                setActiveDurationSeconds(pausedSeconds);
+            } else if (pausedActiveDurationRef.current == null) {
+                pausedActiveDurationRef.current = computeActiveDurationSeconds();
+                setActiveDurationSeconds(pausedActiveDurationRef.current);
+            }
             setIsWaitingForPartner(true);
             setWaitingTimeLeft(data?.timeLeft ?? 60);
             const fallbackKey = data?.strictMode === false ? 'chat.partner_connection_lost_soft' : 'chat.partner_connection_lost_wait';
@@ -270,14 +325,24 @@ export default function ChatPage() {
             setMaxDisconnects(data?.maxDisconnects ?? 2);
         });
 
-        socket.on('partner_reconnected', () => {
+        socket.on('partner_reconnected', (data) => {
+            const nextStartedAt = readSocketDate(data?.startedAt);
+            if (nextStartedAt) {
+                setStartedAt(nextStartedAt);
+            }
+            pausedActiveDurationRef.current = null;
             setIsWaitingForPartner(false);
             setWaitingMessage('');
             setWaitingTimeLeft(60);
             fetchMessages();
         });
 
-        socket.on('chat_resumed', () => {
+        socket.on('chat_resumed', (data) => {
+            const nextStartedAt = readSocketDate(data?.startedAt);
+            if (nextStartedAt) {
+                setStartedAt(nextStartedAt);
+            }
+            pausedActiveDurationRef.current = null;
             setIsWaitingForPartner(false);
             setWaitingMessage('');
             setWaitingTimeLeft(60);
@@ -299,7 +364,7 @@ export default function ChatPage() {
             socket.off('partner_reconnected');
             socket.off('chat_resumed');
         };
-    }, [socket, chatId, user, clearActiveChat, router, fetchMessages, playIncomingMessageSound, touchChatActivity, localePath, t]);
+    }, [socket, chatId, user, clearActiveChat, router, fetchMessages, playIncomingMessageSound, touchChatActivity, computeActiveDurationSeconds, localePath, t]);
 
     useEffect(() => {
         if (!socket || !chatId || !user) return;
@@ -312,8 +377,8 @@ export default function ChatPage() {
         };
 
         const getHeartbeatState = (now: number) => {
-            const chatStartedAtMs = startedAt.getTime();
-            const strictMode = Number.isFinite(chatStartedAtMs) && (now - chatStartedAtMs) < CHAT_STRICT_PHASE_MS;
+            void now;
+            const strictMode = activeDurationSecondsRef.current * 1000 < CHAT_STRICT_PHASE_MS;
             const heartbeatIntervalMs = strictMode ? CHAT_STRICT_HEARTBEAT_MS : CHAT_RELAXED_HEARTBEAT_MS;
             return { strictMode, heartbeatIntervalMs };
         };
@@ -329,7 +394,7 @@ export default function ChatPage() {
             clearHeartbeatTimeout();
 
             const now = Date.now();
-            if (document.hidden) {
+            if (document.hidden || isWaitingForPartner) {
                 return;
             }
 
@@ -380,7 +445,7 @@ export default function ChatPage() {
             window.removeEventListener('focus', markActivity);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [socket, chatId, startedAt, user, touchChatActivity]);
+    }, [socket, chatId, isWaitingForPartner, user, touchChatActivity]);
 
     // Таймер обратного отсчета для ожидания
     useEffect(() => {
@@ -389,7 +454,6 @@ export default function ChatPage() {
         const timer = setInterval(() => {
             setWaitingTimeLeft(prev => {
                 if (prev <= 1) {
-                    setIsWaitingForPartner(false);
                     return 0;
                 }
                 return prev - 1;
@@ -418,7 +482,7 @@ export default function ChatPage() {
 
     const handleLeave = () => {
         if (!socket || !chatId) return;
-        const reportedTotalDurationSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+        const reportedTotalDurationSeconds = Math.max(0, Math.floor(activeDurationSeconds));
 
         if (isFriend) {
             socket.emit('leave_chat', { chatId: chatId.toString(), reportedTotalDurationSeconds });
@@ -431,7 +495,7 @@ export default function ChatPage() {
             return;
         }
 
-        const durationSeconds = (Date.now() - startedAt.getTime()) / 1000;
+        const durationSeconds = activeDurationSeconds;
         setLeaveConfirmIsEarly(durationSeconds < 300 && !isFriend);
         setLeaveConfirmChatId(chatId.toString());
         setShowLeaveConfirm(true);
@@ -439,7 +503,7 @@ export default function ChatPage() {
 
     const handleConfirmLeaveWaiting = () => {
         if (!socket || !leaveWarningChatId) return;
-        const reportedTotalDurationSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+        const reportedTotalDurationSeconds = Math.max(0, Math.floor(activeDurationSeconds));
         socket.emit('leave_chat', { chatId: leaveWarningChatId, reportedTotalDurationSeconds });
         setShowLeaveWarning(false);
         setLeaveWarningChatId(null);
@@ -452,7 +516,7 @@ export default function ChatPage() {
 
     const handleConfirmLeave = () => {
         if (!socket || !leaveConfirmChatId) return;
-        const reportedTotalDurationSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+        const reportedTotalDurationSeconds = Math.max(0, Math.floor(activeDurationSeconds));
         socket.emit('leave_chat', { chatId: leaveConfirmChatId, reportedTotalDurationSeconds });
         setShowLeaveConfirm(false);
         setLeaveConfirmChatId(null);
@@ -485,7 +549,7 @@ export default function ChatPage() {
         if (!chatId) return;
 
         try {
-            const reportedTotalDurationSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+            const reportedTotalDurationSeconds = Math.max(0, Math.floor(activeDurationSeconds));
             const data = await apiPost<{
                 success: boolean;
                 message: string;
@@ -522,6 +586,8 @@ export default function ChatPage() {
             if (typeof chat === 'object' && chat !== null && 'participants' in chat) {
                 const participants = (chat as { participants?: unknown }).participants;
                 const startedAtValue = (chat as { startedAt?: unknown }).startedAt;
+                const waitingStateRaw = (chat as { waitingState?: unknown }).waitingState;
+                const disconnectionCountRaw = (chat as { disconnectionCount?: unknown }).disconnectionCount;
                 const relationshipRaw = (chat as { relationship?: unknown }).relationship;
                 const list = Array.isArray(participants) ? participants : [];
                 const partner = list
@@ -531,9 +597,40 @@ export default function ChatPage() {
                     setPartnerId(partner.id);
                     setPartnerName(partner.nickname || t('chat.partner_default_name'));
                 }
-                if (typeof startedAtValue === 'string' || typeof startedAtValue === 'number') {
-                    setStartedAt(new Date(startedAtValue));
+                const parsedStartedAt = readSocketDate(startedAtValue);
+                const nextStartedAt = parsedStartedAt || new Date();
+                if (parsedStartedAt) {
+                    setStartedAt(parsedStartedAt);
                 }
+
+                const waitingState = typeof waitingStateRaw === 'object' && waitingStateRaw !== null
+                    ? waitingStateRaw as Record<string, unknown>
+                    : null;
+                const disconnectedId = String(waitingState?.disconnectedUserId || '');
+                if (waitingState?.isWaiting === true && disconnectedId && disconnectedId !== user._id) {
+                    const waitingSince = readSocketDate(waitingState.waitingSince);
+                    const activeSeconds = readActiveElapsedSeconds(waitingState.activeElapsedSeconds)
+                        ?? (waitingSince ? Math.max(0, Math.floor((waitingSince.getTime() - nextStartedAt.getTime()) / 1000)) : null);
+                    if (activeSeconds != null) {
+                        pausedActiveDurationRef.current = activeSeconds;
+                        setActiveDurationSeconds(activeSeconds);
+                    }
+                    const waitingElapsed = waitingSince ? Math.max(0, Math.floor((Date.now() - waitingSince.getTime()) / 1000)) : 0;
+                    setIsWaitingForPartner(true);
+                    setWaitingTimeLeft(Math.max(0, 60 - waitingElapsed));
+                    setWaitingMessage(t('chat.partner_connection_lost_wait'));
+                    const disconnectionCount = typeof disconnectionCountRaw === 'object' && disconnectionCountRaw !== null
+                        ? disconnectionCountRaw as Record<string, unknown>
+                        : {};
+                    setDisconnectCount(Math.max(0, Number(disconnectionCount[disconnectedId]) || 0));
+                    setMaxDisconnects(3);
+                } else if (waitingState?.isWaiting !== true) {
+                    setIsWaitingForPartner(false);
+                    setWaitingMessage('');
+                    setWaitingTimeLeft(60);
+                    pausedActiveDurationRef.current = null;
+                }
+
                 if (relationshipRaw && typeof relationshipRaw === 'object') {
                     const rel = relationshipRaw as Partial<Relationship>;
                     setRelationship({
@@ -667,6 +764,7 @@ export default function ChatPage() {
                         <ChatWindow
                             messages={messages}
                             startedAt={startedAt}
+                            activeDurationSeconds={activeDurationSeconds}
                             onSendMessage={handleSendMessage}
                             onLeave={handleLeave}
                             onComplaint={handleComplaint}

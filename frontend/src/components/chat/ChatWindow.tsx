@@ -17,6 +17,7 @@ interface Message {
 interface ChatWindowProps {
     messages: Message[];
     startedAt: Date;
+    activeDurationSeconds?: number;
     onSendMessage: (text: string) => void;
     onLeave: () => void;
     onComplaint: () => void;
@@ -38,6 +39,7 @@ interface ChatWindowProps {
 export const ChatWindow: React.FC<ChatWindowProps> = ({
     messages,
     startedAt,
+    activeDurationSeconds,
     onSendMessage,
     onLeave,
     onComplaint,
@@ -113,10 +115,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
     useEffect(() => {
         const checkTime = () => {
-            const now = new Date();
-            const start = new Date(startedAt);
-            const diff = (now.getTime() - start.getTime()) / 1000 / 60; // minutes
-            if (diff >= 5) {
+            const seconds = typeof activeDurationSeconds === 'number' && Number.isFinite(activeDurationSeconds)
+                ? activeDurationSeconds
+                : (Date.now() - new Date(startedAt).getTime()) / 1000;
+            if (seconds >= 300) {
                 setShowAddFriend(true);
             }
         };
@@ -124,7 +126,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         checkTime();
         const interval = setInterval(checkTime, 10000); // Check every 10s
         return () => clearInterval(interval);
-    }, [startedAt]);
+    }, [startedAt, activeDurationSeconds]);
 
     useEffect(() => {
         return () => {
@@ -203,7 +205,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
                 {/* Центр - таймер и никнейм */}
                 <div className="flex items-center gap-3">
-                    <ChatTimer startedAt={startedAt} />
+                    <ChatTimer startedAt={startedAt} elapsedSeconds={activeDurationSeconds} />
                     <div className="w-px h-4 bg-white/20" />
                     <span className="text-white font-medium text-sm">{partnerLabel}</span>
                 </div>

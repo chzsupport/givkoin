@@ -11,6 +11,7 @@ const { normalizeRequestLanguage } = require('../utils/requestLanguage');
 const { normalizeComplaintReason } = require('../utils/complaintReason');
 const {
     applyChatCompletionEffects,
+    computeChatDurationSeconds,
     computeDurationSeconds,
 } = require('./chatCompletionService');
 
@@ -497,6 +498,38 @@ function clearCurrentCallForInitiator(initiatorId, targetId = null, callToken = 
     });
 }
 
+function getWaitingSince(chat) {
+    return chat?.waitingState?.isWaiting && chat.waitingState?.waitingSince
+        ? chat.waitingState.waitingSince
+        : null;
+}
+
+function getActiveChatDurationSeconds(chat, {
+    endedAt = new Date(),
+    reportedTotalDurationSeconds = null,
+} = {}) {
+    const endDate = endedAt instanceof Date ? endedAt : new Date(endedAt || Date.now());
+    return computeChatDurationSeconds({
+        startedAt: chat?.startedAt || endDate,
+        endedAt: endDate,
+        reportedTotalDurationSeconds,
+        waitingSince: getWaitingSince(chat),
+    });
+}
+
+function getAdjustedStartedAtAfterWaiting(chat, resumedAt = new Date()) {
+    const startedAtMs = chat?.startedAt ? new Date(chat.startedAt).getTime() : Date.now();
+    const waitingSinceMs = getWaitingSince(chat) ? new Date(getWaitingSince(chat)).getTime() : 0;
+    const resumedAtMs = resumedAt instanceof Date ? resumedAt.getTime() : new Date(resumedAt || Date.now()).getTime();
+    if (!Number.isFinite(startedAtMs) || !Number.isFinite(waitingSinceMs) || !Number.isFinite(resumedAtMs)) {
+        return null;
+    }
+    if (waitingSinceMs <= startedAtMs || resumedAtMs <= waitingSinceMs) {
+        return null;
+    }
+    return new Date(startedAtMs + (resumedAtMs - waitingSinceMs));
+}
+
 async function closeChatAfterDisconnect(io, chat, {
     disconnectedUserId,
     waitingUserId,
@@ -512,10 +545,7 @@ async function closeChatAfterDisconnect(io, chat, {
 
     const persistTranscript = await getChatFriendSnapshot(chat);
     const endedAt = new Date();
-    const durationSeconds = computeDurationSeconds({
-        startedAt: chat.startedAt || endedAt,
-        endedAt,
-    });
+    const durationSeconds = getActiveChatDurationSeconds(chat, { endedAt });
 
     let warning = { warningCount30Days: 0, lifeDeducted: false };
     if (applyStrictWarning && !persistTranscript && disconnectedUserId) {
@@ -543,8 +573,8 @@ async function startWaitingForReconnect(io, chatId, disconnectedUserId, waitingU
     if (!chat || chat.status !== 'active') return;
     clearActiveChatContext(chatId);
     const now = Date.now();
-    const chatAgeMs = Math.max(0, now - new Date(chat.startedAt || now).getTime());
-    const strictMode = chatAgeMs < CHAT_STRICT_PHASE_MS;
+    const activeElapsedSeconds = getActiveChatDurationSeconds(chat, { endedAt: new Date(now) });
+    const strictMode = activeElapsedSeconds < Math.floor(CHAT_STRICT_PHASE_MS / 1000);
 
     if (!strictMode) {
         await closeChatAfterDisconnect(io, chat, {
@@ -573,6 +603,7 @@ async function startWaitingForReconnect(io, chatId, disconnectedUserId, waitingU
         mode: 'strict',
         disconnectedUserId,
         waitingSince: now,
+        activeElapsedSeconds,
     };
 
     await updateChatById(chatId, { waiting_state: nextWaitingState, disconnection_count: disconnectionCount });
@@ -582,6 +613,7 @@ async function startWaitingForReconnect(io, chatId, disconnectedUserId, waitingU
         disconnectCount: newDisconnectCount,
         maxDisconnects: MAX_DISCONNECTS_PER_CHAT,
         timeLeft: 60,
+        activeElapsedSeconds,
         strictMode: true,
     }));
 
@@ -628,18 +660,31 @@ async function handlePartnerReconnected(io, chatId, userId) {
     // Находим ожидающего пользователя
     const waitingUserId = chat.participants.find(p => p.toString() !== userId.toString());
 
-    // Восстанавливаем состояние чата
-    await updateChatById(chatId, { waiting_state: null });
-    await primeActiveChatContext(chat);
+    const resumedAt = new Date();
+    const adjustedStartedAt = getAdjustedStartedAtAfterWaiting(chat, resumedAt);
+    const adjustedStartedAtIso = adjustedStartedAt ? adjustedStartedAt.toISOString() : null;
+
+    // Восстанавливаем состояние чата и сдвигаем старт на длину ожидания.
+    const updatedChat = await updateChatById(chatId, {
+        waiting_state: null,
+        ...(adjustedStartedAtIso ? { started_at: adjustedStartedAtIso } : {}),
+    });
+    await primeActiveChatContext(updatedChat || {
+        ...chat,
+        waitingState: null,
+        startedAt: adjustedStartedAt || chat.startedAt,
+    });
 
     // Уведомляем ожидающего
     io.to(`user-${waitingUserId}`).emit('partner_reconnected', buildSocketMessageKey('chat.partner_reconnected', {
         chatId,
+        ...(adjustedStartedAtIso ? { startedAt: adjustedStartedAtIso } : {}),
     }));
 
     // Уведомляем вернувшегося
     io.to(`user-${userId}`).emit('chat_resumed', buildSocketMessageKey('chat.chat_resumed', {
         chatId,
+        ...(adjustedStartedAtIso ? { startedAt: adjustedStartedAtIso } : {}),
     }));
 }
 
@@ -903,7 +948,7 @@ async function closeIdleChatIfNeeded(io, chat) {
     const idleDeadline = getChatIdleDeadline(state, chat);
     if (!idleDeadline) return false;
     if (Date.now() < idleDeadline) return false;
-    const durationSeconds = Math.max(0, Math.floor((idleDeadline - new Date(chat.startedAt || idleDeadline).getTime()) / 1000));
+    const durationSeconds = getActiveChatDurationSeconds(chat, { endedAt: new Date(idleDeadline) });
     const persistTranscript = await getChatFriendSnapshot(chat);
 
     await finalizeCompletedChat(io, chat, {
@@ -1246,6 +1291,10 @@ function initSocketService(io) {
                         const waitingSinceMs = new Date(activeChat.waitingState.waitingSince).getTime();
                         const elapsed = Math.floor((Date.now() - waitingSinceMs) / 1000);
                         const timeLeft = Math.max(0, 60 - elapsed);
+                        const activeElapsedSeconds = Math.max(0, Math.floor(
+                            Number(activeChat.waitingState?.activeElapsedSeconds)
+                            || getActiveChatDurationSeconds(activeChat, { endedAt: new Date(waitingSinceMs) })
+                        ));
                         const disconnectionCount = activeChat.disconnectionCount && typeof activeChat.disconnectionCount === 'object'
                             ? activeChat.disconnectionCount
                             : {};
@@ -1260,6 +1309,7 @@ function initSocketService(io) {
                             disconnectCount,
                             maxDisconnects: activeChat.waitingState?.mode === 'soft' ? 0 : MAX_DISCONNECTS_PER_CHAT,
                             timeLeft: activeChat.waitingState?.mode === 'soft' ? 0 : timeLeft,
+                            activeElapsedSeconds,
                             strictMode: activeChat.waitingState?.mode !== 'soft',
                         }));
                     }
@@ -1355,6 +1405,10 @@ function initSocketService(io) {
                     const waitingSinceMs = new Date(chat.waitingState.waitingSince).getTime();
                     const elapsed = Math.floor((Date.now() - waitingSinceMs) / 1000);
                     const timeLeft = Math.max(0, 60 - elapsed);
+                    const activeElapsedSeconds = Math.max(0, Math.floor(
+                        Number(chat.waitingState?.activeElapsedSeconds)
+                        || getActiveChatDurationSeconds(chat, { endedAt: new Date(waitingSinceMs) })
+                    ));
                     const disconnectedId = chat.waitingState?.disconnectedUserId ? String(chat.waitingState.disconnectedUserId) : '';
                     const disconnectionCount = chat.disconnectionCount && typeof chat.disconnectionCount === 'object'
                         ? chat.disconnectionCount
@@ -1373,6 +1427,7 @@ function initSocketService(io) {
                         disconnectCount,
                         maxDisconnects: chat.waitingState?.mode === 'soft' ? 0 : MAX_DISCONNECTS_PER_CHAT,
                         timeLeft: chat.waitingState?.mode === 'soft' ? 0 : timeLeft,
+                        activeElapsedSeconds,
                         strictMode: chat.waitingState?.mode !== 'soft',
                     }));
                 }
@@ -1525,6 +1580,10 @@ function initSocketService(io) {
 
                 if (chat.waitingState?.isWaiting) {
                     const isStrictWaiting = chat.waitingState?.mode !== 'soft';
+                    const duration = getActiveChatDurationSeconds(chat, {
+                        endedAt: new Date(now),
+                        reportedTotalDurationSeconds,
+                    });
 
                     if (chatWaitingTimeouts.has(chatId)) {
                         clearTimeout(chatWaitingTimeouts.get(chatId));
@@ -1540,20 +1599,12 @@ function initSocketService(io) {
 
                     await finalizeCompletedChat(io, chat, {
                         endedAt: new Date(now),
-                        durationSeconds: computeDurationSeconds({
-                            startedAt: chat.startedAt || new Date(now),
-                            endedAt: new Date(now),
-                            reportedTotalDurationSeconds,
-                        }),
+                        durationSeconds: duration,
                         persistTranscript: isFriends,
                         leftEarlyUserId: currentUserId,
                         chatEndedPayload: {
                             reason: 'left_waiting',
-                            duration: computeDurationSeconds({
-                                startedAt: chat.startedAt || new Date(now),
-                                endedAt: new Date(now),
-                                reportedTotalDurationSeconds,
-                            }),
+                            duration,
                             lifeDeducted: !isFriends && isStrictWaiting,
                         },
                         emitRatePrompt: true,
@@ -1561,8 +1612,7 @@ function initSocketService(io) {
                     return;
                 }
 
-                const duration = computeDurationSeconds({
-                    startedAt: chat.startedAt || new Date(now),
+                const duration = getActiveChatDurationSeconds(chat, {
                     endedAt: new Date(now),
                     reportedTotalDurationSeconds,
                 });
@@ -1612,20 +1662,16 @@ function initSocketService(io) {
                     chatWaitingTimeouts.delete(chatId);
                 }
 
+                const duration = getActiveChatDurationSeconds(chat, { endedAt: new Date() });
+
                 await finalizeCompletedChat(io, chat, {
                     endedAt: new Date(),
-                    durationSeconds: computeDurationSeconds({
-                        startedAt: chat.startedAt || new Date(),
-                        endedAt: new Date(),
-                    }),
+                    durationSeconds: duration,
                     persistTranscript: isFriends,
                     leftEarlyUserId: currentUserId,
                     chatEndedPayload: {
                         reason: 'left_waiting',
-                        duration: computeDurationSeconds({
-                            startedAt: chat.startedAt || new Date(),
-                            endedAt: new Date(),
-                        }),
+                        duration,
                         lifeDeducted: !isFriends && isStrictWaiting,
                     },
                     emitRatePrompt: true,
@@ -1888,9 +1934,7 @@ function initSocketService(io) {
                 if (hasPendingAgainst) return;
 
                 // Check duration >= 5 mins (300s)
-                const startedAt = chat.startedAt ? new Date(chat.startedAt) : new Date();
-                const duration = computeDurationSeconds({
-                    startedAt,
+                const duration = getActiveChatDurationSeconds(chat, {
                     endedAt: new Date(),
                     reportedTotalDurationSeconds,
                 });

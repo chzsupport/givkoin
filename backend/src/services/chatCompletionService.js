@@ -92,6 +92,28 @@ function computeDurationSeconds({ startedAt, endedAt = new Date(), reportedTotal
   return Math.min(Math.max(0, Math.floor(reported)), maxSeconds + 5);
 }
 
+function computeChatDurationSeconds({
+  startedAt,
+  endedAt = new Date(),
+  reportedTotalDurationSeconds = null,
+  waitingSince = null,
+}) {
+  const rawStartedAtMs = new Date(startedAt || Date.now()).getTime();
+  const rawEndedAtMs = new Date(endedAt || Date.now()).getTime();
+  const startedAtMs = Number.isFinite(rawStartedAtMs) ? rawStartedAtMs : Date.now();
+  const endedAtMs = Number.isFinite(rawEndedAtMs) ? rawEndedAtMs : Date.now();
+  const waitingSinceMs = waitingSince ? new Date(waitingSince).getTime() : 0;
+  const effectiveEndedAtMs = Number.isFinite(waitingSinceMs) && waitingSinceMs > startedAtMs
+    ? Math.min(endedAtMs, waitingSinceMs)
+    : endedAtMs;
+  const maxSeconds = Math.max(0, Math.floor((effectiveEndedAtMs - startedAtMs) / 1000));
+  const reported = Number(reportedTotalDurationSeconds);
+  if (!Number.isFinite(reported) || reported < 0) {
+    return maxSeconds;
+  }
+  return Math.min(Math.max(0, Math.floor(reported)), maxSeconds);
+}
+
 async function processChatAchievements(uid, pid, mins) {
   try {
     const row = await getUserRowById(uid);
@@ -195,6 +217,7 @@ async function applyChatCompletionEffects({ chatId, durationSeconds, leftEarlyUs
 
 module.exports = {
   applyChatCompletionEffects,
+  computeChatDurationSeconds,
   computeDurationSeconds,
 };
 
