@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
-import { StickySideAdRail } from '@/components/StickySideAdRail';
+import { FloatingSideAds } from '@/components/FloatingSideAds';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { PageTitle } from '@/components/PageTitle';
 import { HeartHandshake } from 'lucide-react';
 import { apiGet, apiPost } from '@/utils/api';
-import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
+import { useFloatingSideAds } from '@/hooks/useFloatingSideAds';
 import { useI18n } from '@/context/I18nContext';
 
 const STORAGE_KEY = 'givkoin_gratitude_daily_draft';
@@ -70,9 +70,7 @@ export default function PracticeGratitudePage() {
   const { updateUser } = useAuth();
   const toast = useToast();
   const { t, localePath } = useI18n();
-  const [windowWidth, setWindowWidth] = useState(0);
-  const sideAdSlot = getResponsiveSideAdSlot(windowWidth, typeof window !== 'undefined' ? window.innerHeight : 0);
-  const isDesktop = Boolean(sideAdSlot);
+  const { adHeight, adWidth, isDesktop, pageRef, leftAdRef, rightAdRef } = useFloatingSideAds();
   const [serverDay, setServerDay] = useState('');
   const [entries, setEntries] = useState<string[]>(Array(GRATITUDE_COUNT).fill(''));
   const [rewarded, setRewarded] = useState<boolean[]>(Array(GRATITUDE_COUNT).fill(false));
@@ -82,17 +80,6 @@ export default function PracticeGratitudePage() {
     scRewardPerEntry: 5,
     starsPerEntry: 0.001,
   });
-
-  useEffect(() => {
-    const updateLayout = () => {
-      const w = window.innerWidth;
-      setWindowWidth(w);
-    };
-
-    updateLayout();
-    window.addEventListener('resize', updateLayout);
-    return () => window.removeEventListener('resize', updateLayout);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +159,8 @@ export default function PracticeGratitudePage() {
 
   return (
     <div
-      className="flex-1 flex flex-col min-h-0 bg-[#050510] text-slate-200 font-sans selection:bg-indigo-500/30"
+      ref={pageRef}
+      className="relative w-full bg-[#050510] text-slate-200 font-sans selection:bg-indigo-500/30"
     >
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-[#050510] to-[#050510]" />
@@ -180,10 +168,22 @@ export default function PracticeGratitudePage() {
         <div className="absolute bottom-1/3 left-1/4 h-48 w-48 rounded-full bg-cyan-500/10 blur-3xl" />
       </div>
 
-      <div className="relative z-10 flex items-start flex-1 min-h-0">
-        <StickySideAdRail adSlot={sideAdSlot} page="practice_gratitude" placement="practice_gratitude_sidebar_left" />
+      <FloatingSideAds
+        adHeight={adHeight}
+        adWidth={adWidth}
+        isDesktop={isDesktop}
+        leftAdRef={leftAdRef}
+        page="practice_gratitude"
+        rightAdRef={rightAdRef}
+        leftPlacement="practice_gratitude_sidebar_left"
+        rightPlacement="practice_gratitude_sidebar_right"
+      />
 
-        <div className="flex-1 flex flex-col min-w-0 px-3 lg:px-4 py-2 lg:py-3 min-h-0 overflow-y-auto">
+      <div
+        className="relative z-10 px-3 lg:px-4 py-2 lg:py-3"
+        style={isDesktop ? { paddingLeft: adWidth + 28, paddingRight: adWidth + 28 } : undefined}
+      >
+        <div className="flex flex-col min-w-0">
           <div className={`${isDesktop ? 'hidden' : 'flex'} mx-auto mb-6 shrink-0 justify-center w-full`}>
             <AdaptiveAdWrapper
               page="practice_gratitude"
@@ -221,7 +221,7 @@ export default function PracticeGratitudePage() {
             </div>
           </header>
 
-          <div className="flex-1 min-h-0 flex items-start justify-center pb-2">
+          <div className="flex items-start justify-center pb-2">
             <div className="w-full space-y-5 rounded-2xl border border-white/10 bg-white/5 px-6 py-6 backdrop-blur-md">
               <div className="space-y-3 text-sm leading-relaxed text-white/70">
                 <p>
@@ -291,8 +291,6 @@ export default function PracticeGratitudePage() {
             </div>
           </div>
         </div>
-
-        <StickySideAdRail adSlot={sideAdSlot} page="practice_gratitude" placement="practice_gratitude_sidebar_right" />
       </div>
     </div>
   );
