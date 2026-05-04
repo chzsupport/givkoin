@@ -148,8 +148,11 @@ export function CallNotification() {
                 <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/70 backdrop-blur-sm">
                     <div className="w-[min(92vw,460px)] rounded-[28px] border border-white/15 bg-[#141414]/95 px-6 py-8 text-center text-white shadow-2xl">
                         <div className="text-[22px] font-semibold">{t('chat.partner_found_title')}</div>
-                        <div className="mt-3 text-[17px] text-white/90">{t('chat.chat_preparing_wait')} {timeLeft}</div>
-                        <div className="mt-6 text-[42px] font-bold tracking-[0.08em]">{timeLeft}</div>
+                        <div className="mt-3 text-[17px] text-white/90">{t('chat.chat_preparing_wait')}</div>
+                        <div className="mt-6 flex items-baseline justify-center gap-2 text-[42px] font-bold tracking-[0.04em]">
+                            <span>{timeLeft}</span>
+                            <span className="text-[18px] font-semibold tracking-normal text-white/75">{t('chat.seconds_short')}</span>
+                        </div>
                         <div className="mt-5 text-[15px] text-white/70">{t('chat.have_nice_chat')}</div>
                     </div>
                 </div>
