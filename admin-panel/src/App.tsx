@@ -5349,7 +5349,7 @@ function EntitiesSection() {
   const normalizeAvatarUrl = (url?: string) => {
     if (!url) return '';
     if (/^https?:\/\//i.test(url)) return url;
-    if (url.startsWith('/collection/')) {
+    if (url.startsWith('/collection/') || url.startsWith('/entitycollect/')) {
       return `${FRONTEND_BASE_URL}${url}`;
     }
     const apiBase = api.defaults.baseURL || '';
