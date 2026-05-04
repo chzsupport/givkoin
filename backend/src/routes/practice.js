@@ -244,7 +244,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
         radianceActivityType: 'gratitude_write',
         radianceMeta: { source: 'ad_boost', index, dayKey },
         transactionType: 'gratitude_ad_boost',
-        description: userLang === 'en' ? 'Extra reward: gratitude' : 'Дополнительная награда: благодарность',
+        description: userLang === 'en' ? 'Extra reward: Gratitude' : 'Дополнительная награда: Благодарность',
       },
     }).catch(() => null);
 

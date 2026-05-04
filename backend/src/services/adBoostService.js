@@ -403,6 +403,7 @@ async function grantCurrencyReward({ userId, reward, offerId, now = new Date() }
       relatedEntity: offerId,
       skipDebuff: true,
       skipBlessing: true,
+      skipMood: true,
     });
     result.sc = updated?.sc;
   }
@@ -614,7 +615,7 @@ async function grantFruitLikeRandom({ userId, offerId }) {
   const reward = {
     kind: 'currency',
     transactionType: 'attendance_ad_boost',
-    description: 'Дополнительная награда: посещаемость',
+    description: 'Дополнительная награда: Посещаемость',
   };
   if (roll === 0) {
     reward.sc = Math.floor(Math.random() * 41) + 10;

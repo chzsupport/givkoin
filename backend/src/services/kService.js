@@ -210,7 +210,7 @@ async function maybeAwardReferralBlessing({ receiverUserId, creditedAmount, sour
       userId: inviterId,
       amount: bonus,
       type: 'referral_blessing',
-      description: null,
+      description: 'Дополнительная награда: Благословение рефералов',
       relatedEntity: relatedEntity || receiverUserId,
     });
   } catch (e) {
@@ -443,7 +443,16 @@ async function getCreditKMoodMultiplier(userId) {
   return promise;
 }
 
-async function creditK({ userId, amount, type = 'other', description, relatedEntity, skipDebuff = false, skipBlessing = false }) {
+async function creditK({
+  userId,
+  amount,
+  type = 'other',
+  description,
+  relatedEntity,
+  skipDebuff = false,
+  skipBlessing = false,
+  skipMood = false,
+}) {
   ensurePositive(amount);
   const blessingPromise = skipBlessing ? Promise.resolve(1) : getTreeBlessingRewardMultiplierForUser(userId);
   const [mGlobal, mUser, mBlessing] = skipDebuff
@@ -459,7 +468,9 @@ async function creditK({ userId, amount, type = 'other', description, relatedEnt
   let debuffedAmountRaw = amount * rewardMultiplier;
   if (!(debuffedAmountRaw > 0)) return null;
 
-  debuffedAmountRaw *= await getCreditKMoodMultiplier(userId);
+  if (!skipMood) {
+    debuffedAmountRaw *= await getCreditKMoodMultiplier(userId);
+  }
 
   const debuffedAmount = round3(debuffedAmountRaw);
   if (!(debuffedAmount > 0)) return null;
@@ -473,7 +484,12 @@ async function creditK({ userId, amount, type = 'other', description, relatedEnt
 
   await createTransaction({ userId, type, direction: 'credit', amount: debuffedAmount, description, relatedEntity });
   await maybeAwardReferralBlessing({ receiverUserId: userId, creditedAmount: debuffedAmount, sourceType: type, relatedEntity });
-  return updated;
+  return {
+    ...updated,
+    k: nextK,
+    creditedAmount: debuffedAmount,
+    requestedAmount: round3(amount),
+  };
 }
 
 async function debitK({ userId, amount, type = 'other', description, relatedEntity }) {
@@ -761,10 +777,11 @@ async function awardChatRewardsForChat(chatId) {
       userId: a,
       amount: bonusA,
       type: 'chat_boost',
-      description,
+      description: 'Дополнительная награда: Ключ взаимопонимания',
       relatedEntity: chatId,
       skipDebuff: true,
       skipBlessing: true,
+      skipMood: true,
     });
   }
   if (bonusB > 0) {
@@ -772,10 +789,11 @@ async function awardChatRewardsForChat(chatId) {
       userId: b,
       amount: bonusB,
       type: 'chat_boost',
-      description,
+      description: 'Дополнительная награда: Ключ взаимопонимания',
       relatedEntity: chatId,
       skipDebuff: true,
       skipBlessing: true,
+      skipMood: true,
     });
   }
 

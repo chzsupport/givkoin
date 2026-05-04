@@ -531,7 +531,7 @@ async function attachBattleRewardBoost({ payload, userId, userLang }) {
             kind: 'currency',
             sc: Math.round(rewardSc * 0.1 * 1000) / 1000,
             transactionType: 'battle_ad_boost',
-            description: pickLang(userLang, 'Дополнительная награда: бой', 'Extra reward: battle reward'),
+            description: pickLang(userLang, 'Дополнительная награда: Бой', 'Extra reward: Battle'),
         },
     }).catch(() => null);
     return { ...payload, boostOffer };

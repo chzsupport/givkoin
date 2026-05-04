@@ -217,6 +217,21 @@ export default function CabinetHistoryPage() {
     stars: t('history.stars'),
   };
 
+  const BOOST_TYPE_NAMES: Record<string, string> = {
+    gratitude_ad_boost: t('history.ad_boost_gratitude'),
+    solar_ad_boost: t('history.ad_boost_solar'),
+    roulette_ad_boost: t('history.ad_boost_roulette'),
+    night_shift_ad_boost: t('history.ad_boost_night_shift'),
+    crystal_ad_boost: t('history.ad_boost_crystal'),
+    battle_ad_boost: t('history.ad_boost_battle'),
+    fruit_ad_boost: t('history.ad_boost_fruit'),
+    attendance_ad_boost: t('history.ad_boost_attendance'),
+    personal_luck_ad_reward: t('history.ad_boost_personal_luck'),
+    chat_boost: t('history.ad_boost_chat_key'),
+    referral_blessing: t('history.ad_boost_referral_blessing'),
+    ad_boost: t('history.ad_boost_generic'),
+  };
+
   const getRadianceActivityName = (activityType: string, amount: number) => {
     const row = RADIANCE_ACTIVITY_NAMES[String(activityType || '')];
     if (typeof row === 'function') return row(amount);
@@ -232,6 +247,12 @@ export default function CabinetHistoryPage() {
     const safeRadiance = Number.isFinite(radiance) && radiance > 0 ? radiance : (Number(row.amount) || 0);
 
     return `−${formatNumber(lumens, language)} Lm = +${formatNumber(safeRadiance, language)} ${t('cabinet.radiance')}`;
+  };
+
+  const isExplicitBoostDescription = (description?: string | null) => {
+    const normalized = String(description || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return normalized.startsWith('\u0434\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u0430\u044f \u043d\u0430\u0433\u0440\u0430\u0434\u0430')
+      || normalized.startsWith('extra reward');
   };
 
   const resolveEconomyDescriptionKey = (description?: string | null) => {
@@ -256,6 +277,9 @@ export default function CabinetHistoryPage() {
   };
 
   const getEconomyEntryName = (row: EconomyHistoryItem, mode: 'sc' | 'stars') => {
+    if (isExplicitBoostDescription(row.description)) return String(row.description || '').trim();
+    const boostTypeName = BOOST_TYPE_NAMES[String(row.type || '')];
+    if (boostTypeName) return boostTypeName;
     const descriptionKey = resolveEconomyDescriptionKey(row.description);
     if (descriptionKey) return t(descriptionKey);
     const map = mode === 'sc' ? SC_TYPE_NAMES : STAR_TYPE_NAMES;

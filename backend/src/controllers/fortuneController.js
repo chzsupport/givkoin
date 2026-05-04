@@ -538,23 +538,29 @@ async function getRouletteRewardsToday(userId, now = new Date()) {
     const to = nextMidnightLocal(now).toISOString();
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .select('id,data')
-        .eq('model', 'FortuneWinLog')
+        .from('transactions')
+        .select('id,type,direction,amount,currency,description,occurred_at')
+        .eq('user_id', String(userId))
+        .eq('direction', 'credit')
+        .gte('occurred_at', from)
+        .lt('occurred_at', to)
         .limit(5000);
     if (error || !Array.isArray(data)) return { sc: 0, stars: 0 };
 
     return data.reduce((acc, row) => {
-        const d = row.data || {};
-        const occurredAt = String(d.occurredAt || '');
-        if (String(d.user) !== String(userId)) return acc;
-        if (d.gameType !== 'roulette') return acc;
-        if (occurredAt < from || occurredAt >= to) return acc;
-        if (d.meta?.adBoost) return acc;
-        if (d.meta?.usingAdExtraSpin) return acc;
-        if (d.meta?.eligibleForRouletteDouble === false) return acc;
-        if (d.rewardType === 'sc') acc.sc += Number(d.amount) || 0;
-        if (d.rewardType === 'star') acc.stars += Number(d.amount) || 0;
+        const type = String(row?.type || '');
+        const currency = String(row?.currency || 'K').toUpperCase();
+        const description = String(row?.description || '').trim().toLowerCase();
+        const amount = Number(row?.amount) || 0;
+        if (!(amount > 0)) return acc;
+        if (type === 'fortune' && currency === 'K') {
+            const isRouletteWin = description.includes('выигрыш в колесе фортуны')
+                || description.includes('fortune wheel winnings');
+            if (isRouletteWin) acc.sc += amount;
+        }
+        if (type === 'fortune_roulette' && currency === 'STAR') {
+            acc.stars += amount;
+        }
         return acc;
     }, { sc: 0, stars: 0 });
 }
@@ -877,7 +883,7 @@ exports.spin = async (req, res) => {
                         sc: todayRewards.sc,
                         stars: todayRewards.stars,
                         transactionType: 'roulette_ad_boost',
-                        description: pickLang(userLang, 'Дополнительная награда: удвоение рулетки', 'Extra reward: roulette doubling'),
+                        description: pickLang(userLang, 'Дополнительная награда: Фортуна (Рулетка)', 'Extra reward: Fortune (Roulette)'),
                     },
                 }).catch(() => null);
             }
@@ -1361,12 +1367,18 @@ exports.luckyDraw = async (req, res) => {
 
         const amount = crypto.randomInt(1, 51);
 
+        let creditedAmount = amount;
         try {
-            await awardFortuneSc({
+            const awardResult = await awardFortuneSc({
                 userId: req.user._id,
                 amount,
                 description: pickLang(userLang, 'Личная удача', 'Personal luck'),
             });
+            if (!awardResult) {
+                creditedAmount = 0;
+            } else if (Number.isFinite(Number(awardResult?.creditedAmount))) {
+                creditedAmount = Math.max(0, Number(awardResult.creditedAmount) || 0);
+            }
         } catch (e) {
             await rollbackPersonalLuckClaim({ claimId: reserve.claimId });
             throw e;
@@ -1375,8 +1387,8 @@ exports.luckyDraw = async (req, res) => {
         await Promise.all([
             finalizePersonalLuckClaim({
                 claimId: reserve.claimId,
-                amount,
-                rewardLabel: `${amount} K`,
+                amount: creditedAmount,
+                rewardLabel: `${creditedAmount} K`,
                 finalizedAt: now,
             }),
             updateUserDataById(req.user._id, { achievementStats: { ...stats, lastLuckyDrawAt: now } }),
@@ -1390,7 +1402,7 @@ exports.luckyDraw = async (req, res) => {
             dedupeKey: `personal_luck:${req.user._id}:${dayStart.toISOString().slice(0, 10)}`,
         }).catch(() => { });
 
-        const boostOffer = await createAdBoostOffer({
+        const boostOffer = creditedAmount > 0 ? await createAdBoostOffer({
             userId: req.user._id,
             type: 'personal_luck_double',
             contextKey: `personal_luck_double:${req.user._id}:${getDayKey(now)}`,
@@ -1399,13 +1411,13 @@ exports.luckyDraw = async (req, res) => {
             description: pickLang(userLang, 'Досмотрите видео, чтобы получить ещё столько же K.', 'Watch the video to receive the same K reward again.'),
             reward: {
                 kind: 'currency',
-                sc: amount,
+                sc: creditedAmount,
                 transactionType: 'personal_luck_ad_reward',
-                description: pickLang(userLang, 'Дополнительная награда: личная удача', 'Extra reward: personal luck'),
+                description: pickLang(userLang, 'Дополнительная награда: Личная удача', 'Extra reward: Personal luck'),
             },
-        }).catch(() => null);
+        }).catch(() => null) : null;
 
-        res.json({ prize: `${amount} K`, amount, boostOffer });
+        res.json({ prize: `${creditedAmount} K`, amount: creditedAmount, boostOffer });
     } catch (error) {
         res.status(500).json({ message: pickLang(userLang, 'Ошибка сервера', 'Server error') });
     } finally {
