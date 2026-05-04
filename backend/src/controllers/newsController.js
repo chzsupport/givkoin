@@ -23,6 +23,15 @@ const NEWS_FEED_PAGE_MAX = 25;
 const COMMENTS_PAGE_DEFAULT = 5;
 const COMMENTS_PAGE_MAX = 50;
 
+function normalizeLang(value) {
+  const lang = String(value || 'ru').toLowerCase();
+  return lang.startsWith('en') ? 'en' : 'ru';
+}
+
+function pickLang(lang, ru, en) {
+  return normalizeLang(lang) === 'en' ? en : ru;
+}
+
 function generateObjectId() {
   return crypto.randomBytes(12).toString('hex');
 }
