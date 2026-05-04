@@ -53,31 +53,31 @@ export function CallNotification() {
             return translated || data?.message || t(fallbackKey);
         };
 
-        socket.on('friend_invite', (data: { inviterId: string; inviterName: string }) => {
+        const handleFriendInvite = (data: { inviterId: string; inviterName: string }) => {
             setIncomingCall({
                 callerId: data.inviterId,
                 callerName: data.inviterName,
                 source: 'friend',
             });
-        });
+        };
 
-        socket.on('incoming_call', (data: { callerId: string; source?: 'friend' | 'random'; callerName?: string }) => {
+        const handleIncomingCall = (data: { callerId: string; source?: 'friend' | 'random'; callerName?: string }) => {
             setIncomingCall({
                 callerId: data.callerId,
                 callerName: data.callerName,
                 source: data.source === 'friend' ? 'friend' : 'random',
             });
-        });
+        };
 
-        socket.on('call_timeout', () => {
+        const handleCallTimeout = () => {
             setIncomingCall(null);
-        });
+        };
 
-        socket.on('invite_declined', (data: { message?: string; messageKey?: string }) => {
+        const handleInviteDeclined = (data: { message?: string; messageKey?: string }) => {
             toast.error(t('chat.call_declined'), resolveSocketMessage(data, 'chat.invite_declined'));
-        });
+        };
 
-        socket.on('chat_preparing', ({ chatId, readyAt, countdownSeconds }: { chatId: string; readyAt?: string; countdownSeconds?: number }) => {
+        const handleChatPreparing = ({ chatId, readyAt, countdownSeconds }: { chatId: string; readyAt?: string; countdownSeconds?: number }) => {
             if (!chatId) return;
             setIncomingCall(null);
             setPreparingChat({
@@ -85,21 +85,28 @@ export function CallNotification() {
                 readyAt: readyAt || null,
                 countdownSeconds: Math.max(0, Number(countdownSeconds) || 0),
             });
-        });
+        };
 
-        socket.on('partner_found', ({ chatId }: { chatId: string }) => {
+        const handlePartnerFound = ({ chatId }: { chatId: string }) => {
             setIncomingCall(null);
             setPreparingChat(null);
             router.push(localePath(`/chat/${chatId}`));
-        });
+        };
+
+        socket.on('friend_invite', handleFriendInvite);
+        socket.on('incoming_call', handleIncomingCall);
+        socket.on('call_timeout', handleCallTimeout);
+        socket.on('invite_declined', handleInviteDeclined);
+        socket.on('chat_preparing', handleChatPreparing);
+        socket.on('partner_found', handlePartnerFound);
 
         return () => {
-            socket.off('friend_invite');
-            socket.off('incoming_call');
-            socket.off('call_timeout');
-            socket.off('invite_declined');
-            socket.off('chat_preparing');
-            socket.off('partner_found');
+            socket.off('friend_invite', handleFriendInvite);
+            socket.off('incoming_call', handleIncomingCall);
+            socket.off('call_timeout', handleCallTimeout);
+            socket.off('invite_declined', handleInviteDeclined);
+            socket.off('chat_preparing', handleChatPreparing);
+            socket.off('partner_found', handlePartnerFound);
         };
     }, [socket, router, toast, localePath, t]);
 

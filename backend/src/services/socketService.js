@@ -712,6 +712,8 @@ function setActiveChatContext(chatId, context = {}) {
         startedAt: context.startedAt || null,
         status: context.status || 'active',
         isFriend: typeof context.isFriend === 'boolean' ? context.isFriend : null,
+        readyAt: context.readyAt || null,
+        isPreparing: Boolean(context.isPreparing),
     };
     activeChatContexts.set(String(id), next);
     return next;
@@ -724,7 +726,11 @@ function clearActiveChatContext(chatId) {
 }
 
 function getChatPreparationState(chatLike) {
-    const readyAtValue = chatLike?.preparationState?.readyAt || chatLike?.readyAt || null;
+    const startedAtMs = chatLike?.startedAt ? new Date(chatLike.startedAt).getTime() : 0;
+    const futureStartedAt = Number.isFinite(startedAtMs) && startedAtMs > Date.now()
+        ? new Date(startedAtMs).toISOString()
+        : null;
+    const readyAtValue = chatLike?.preparationState?.readyAt || chatLike?.readyAt || futureStartedAt || null;
     const readyAtMs = readyAtValue ? new Date(readyAtValue).getTime() : 0;
     const isPreparingByTime = Number.isFinite(readyAtMs) && readyAtMs > Date.now();
     const isPreparingFlag = typeof chatLike?.preparationState?.isPreparing === 'boolean'
@@ -751,14 +757,15 @@ async function primeActiveChatContext(chat) {
     }
 
     const state = await ensureChatTranscriptMetadata(chat);
+    const preparation = getChatPreparationState(chat);
     return setActiveChatContext(chatId, {
         participants,
         participantLanguages: state?.participantLanguages || {},
         startedAt: chat.startedAt ? new Date(chat.startedAt).toISOString() : new Date().toISOString(),
         status: chat.status || 'active',
         isFriend: typeof state?.isFriendSnapshot === 'boolean' ? state.isFriendSnapshot : null,
-        readyAt: chat?.preparationState?.readyAt || null,
-        isPreparing: Boolean(chat?.preparationState?.isPreparing),
+        readyAt: preparation.readyAt || null,
+        isPreparing: preparation.isPreparing,
     });
 }
 
@@ -774,6 +781,7 @@ async function getChatFriendSnapshot(chat) {
         ? await friendService.areUsersFriends(participants[0], participants[1]).catch(() => false)
         : false;
 
+    const preparation = getChatPreparationState(chat);
     setActiveChatContext(chat._id, {
         ...(context || {}),
         participants: participants.length ? participants : context?.participants || [],
@@ -781,10 +789,8 @@ async function getChatFriendSnapshot(chat) {
         startedAt: context?.startedAt || (chat.startedAt ? new Date(chat.startedAt).toISOString() : null),
         status: chat.status || context?.status || 'active',
         isFriend,
-        readyAt: chat?.preparationState?.readyAt || context?.readyAt || null,
-        isPreparing: typeof chat?.preparationState?.isPreparing === 'boolean'
-            ? chat.preparationState.isPreparing
-            : Boolean(context?.isPreparing),
+        readyAt: preparation.readyAt || context?.readyAt || null,
+        isPreparing: preparation.isPreparing || Boolean(context?.isPreparing),
     });
 
     await chatService.touchChatActivity(chat._id, {
@@ -847,10 +853,6 @@ async function finalizeCompletedChat(io, chat, {
         ended_at: endDate.toISOString(),
         duration: safeDurationSeconds,
         waiting_state: null,
-        preparation_state: {
-            isPreparing: false,
-            readyAt: chat?.preparationState?.readyAt || null,
-        },
         ...chatPatch,
     });
     if (chatPreparationTimeouts.has(String(chat._id))) {
@@ -2011,10 +2013,6 @@ async function startChat(io, user1Id, user2Id) {
             status: 'active',
             started_at: readyAtIso,
             disconnection_count: { [u1]: 0, [u2]: 0 },
-            preparation_state: {
-                isPreparing: CHAT_PREPARE_DELAY_MS > 0,
-                readyAt: readyAtIso,
-            },
             created_at: new Date(now).toISOString(),
             updated_at: new Date(now).toISOString(),
         })
@@ -2097,12 +2095,6 @@ async function startChat(io, user1Id, user2Id) {
                 return;
             }
 
-            await updateChatById(createdRow.id, {
-                preparation_state: {
-                    isPreparing: false,
-                    readyAt: readyAtIso,
-                },
-            });
             setActiveChatContext(String(createdRow.id), {
                 ...(activeChatContexts.get(String(createdRow.id)) || {}),
                 participants: [u1, u2],

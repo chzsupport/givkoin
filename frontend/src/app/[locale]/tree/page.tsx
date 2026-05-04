@@ -640,27 +640,31 @@ export default function TreePage() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('chat_preparing', () => {
+    const handleChatPreparing = () => {
       setIsSearching(false);
       setIsFoundNotice(false);
-    });
+    };
 
-    socket.on('partner_found', ({ chatId }) => {
+    const handlePartnerFound = ({ chatId }: { chatId: string }) => {
       setIsSearching(false);
       setIsFoundNotice(true);
       router.push(localePath(`/chat/${chatId}`));
-    });
+    };
 
-    socket.on('no_partner', () => {
+    const handleNoPartner = () => {
       setIsSearching(false);
       setIsFoundNotice(false);
       toast.error(t('chat.not_found'), t('chat.no_partner_found'));
-    });
+    };
+
+    socket.on('chat_preparing', handleChatPreparing);
+    socket.on('partner_found', handlePartnerFound);
+    socket.on('no_partner', handleNoPartner);
 
     return () => {
-      socket.off('chat_preparing');
-      socket.off('partner_found');
-      socket.off('no_partner');
+      socket.off('chat_preparing', handleChatPreparing);
+      socket.off('partner_found', handlePartnerFound);
+      socket.off('no_partner', handleNoPartner);
     };
   }, [socket, router, localePath, toast, t]);
 
