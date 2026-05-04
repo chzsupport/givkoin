@@ -257,6 +257,9 @@
     "boost": "Enhancement",
     "purchased": "Purchased",
     "used": "Used",
+    "effect": "Effect",
+    "bonus": "Bonus",
+    "total": "Total",
     "use_item": "Use",
     "referrals": "Referrals"
   },

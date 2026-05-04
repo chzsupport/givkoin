@@ -111,9 +111,39 @@ const SHOP_ITEMS_BY_KEY = SHOP_ITEMS.reduce((acc, item) => {
   return acc;
 }, {});
 
+const WAREHOUSE_ITEM_EFFECTS = {
+  boost_battle_accuracy: { kind: 'bonus_percent', unit: 'percent', sign: '+', baseValue: 15, boostedValue: 20 },
+  boost_battle_economy: { kind: 'discount_percent', unit: 'percent', sign: '-', baseValue: 25, boostedValue: 30 },
+  boost_weak_zone_focus: { kind: 'bonus_percent', unit: 'percent', sign: '+', baseValue: 50, boostedValue: 55 },
+  boost_chat_key: { kind: 'bonus_percent', unit: 'percent', sign: '+', baseValue: 25, boostedValue: 30 },
+  boost_solar_focus: { kind: 'lumens_flat', unit: 'lm', sign: '+', baseValue: 20, boostedValue: 25 },
+  boost_referral_blessing: { kind: 'bonus_percent', unit: 'percent', sign: '+', baseValue: 5, boostedValue: 10 },
+};
+
+function getWarehouseItemEffect(itemKey, options = {}) {
+  const effect = WAREHOUSE_ITEM_EFFECTS[String(itemKey || '')];
+  if (!effect) return null;
+  const adBoosted = Boolean(options.adBoosted);
+  const activeValue = adBoosted ? effect.boostedValue : effect.baseValue;
+  return {
+    kind: effect.kind,
+    unit: effect.unit,
+    sign: effect.sign,
+    baseValue: effect.baseValue,
+    boostedValue: effect.boostedValue,
+    activeValue,
+    bonusValue: adBoosted ? Math.max(0, effect.boostedValue - effect.baseValue) : 0,
+    adBoosted,
+    appliedAt: options.appliedAt || null,
+    boostedAt: adBoosted ? (options.boostedAt || new Date().toISOString()) : null,
+  };
+}
+
 module.exports = {
   SHOP_ITEMS,
   SHOP_ITEMS_BY_KEY,
+  WAREHOUSE_ITEM_EFFECTS,
+  getWarehouseItemEffect,
   listLocalizedShopItems,
   localizeShopItem,
 };

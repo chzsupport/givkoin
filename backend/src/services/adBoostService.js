@@ -7,7 +7,7 @@ const { creditSc, recordTransaction } = require('./scService');
 const { applyStarsDelta } = require('../utils/stars');
 const { awardRadianceForActivity } = require('./activityRadianceService');
 const { __resetTreeBlessingRuntimeState } = require('./treeBlessingService');
-const { SHOP_ITEMS_BY_KEY, localizeShopItem } = require('../config/shopCatalog');
+const { SHOP_ITEMS_BY_KEY, getWarehouseItemEffect, localizeShopItem } = require('../config/shopCatalog');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const OFFER_MODEL = 'AdBoostOffer';
@@ -459,8 +459,45 @@ async function grantShopRandomItem({ userId, offerId }) {
   return { item };
 }
 
+async function markWarehouseItemAdBoosted({ userId, itemId, itemKey, now = new Date() }) {
+  const safeItemId = String(itemId || '').trim();
+  if (!safeItemId) return null;
+  const supabase = getSupabaseClient();
+  const { data: row, error } = await supabase
+    .from(DOC_TABLE)
+    .select('id,data')
+    .eq('model', 'WarehouseItem')
+    .eq('id', safeItemId)
+    .eq('data->>user', String(userId))
+    .maybeSingle();
+  if (error || !row?.data) return null;
+
+  const existing = row.data && typeof row.data === 'object' ? row.data : {};
+  const existingEffect = existing.usageEffect && typeof existing.usageEffect === 'object' ? existing.usageEffect : {};
+  const boostedAt = now.toISOString();
+  const usageEffect = getWarehouseItemEffect(itemKey || existing.itemKey, {
+    adBoosted: true,
+    appliedAt: existingEffect.appliedAt || existing.usedAt || boostedAt,
+    boostedAt,
+  });
+  if (!usageEffect) return null;
+
+  const nextData = {
+    ...existing,
+    usageEffect,
+  };
+  const { data: updated } = await supabase
+    .from(DOC_TABLE)
+    .update({ data: nextData, updated_at: boostedAt })
+    .eq('id', safeItemId)
+    .select('id,data')
+    .maybeSingle();
+  return updated?.data ? { ...updated.data, _id: updated.id } : null;
+}
+
 async function applyWarehouseUpgrade({ userId, reward }) {
   const itemKey = String(reward.itemKey || '');
+  const itemId = String(reward.itemId || '').trim();
   const userRow = await getUserRowById(userId);
   const userData = getUserData(userRow);
   const shopBoosts = userData.shopBoosts && typeof userData.shopBoosts === 'object' ? userData.shopBoosts : {};
@@ -501,7 +538,8 @@ async function applyWarehouseUpgrade({ userId, reward }) {
   }
 
   await updateUserDataById(userId, { shopBoosts });
-  return { shopBoosts };
+  const item = await markWarehouseItemAdBoosted({ userId, itemId, itemKey, now }).catch(() => null);
+  return { shopBoosts, item };
 }
 
 async function grantRouletteExtraSpin({ userId }) {

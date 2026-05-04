@@ -1,13 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost } from '@/utils/api';
 import { useToast } from '@/context/ToastContext';
 import { useAuth } from '@/context/AuthContext';
 import { PageTitle } from '@/components/PageTitle';
 import { Package } from 'lucide-react';
 import { useI18n } from '@/context/I18nContext';
-import { formatDateTime } from '@/utils/formatters';
+import { formatDateTime, formatNumber } from '@/utils/formatters';
+
+type WarehouseUsageEffect = {
+  unit?: 'percent' | 'lm' | string;
+  sign?: '+' | '-' | string;
+  baseValue?: number;
+  boostedValue?: number;
+  activeValue?: number;
+  bonusValue?: number;
+  adBoosted?: boolean;
+};
 
 type WarehouseItem = {
   _id: string;
@@ -19,6 +29,7 @@ type WarehouseItem = {
   status: 'stored' | 'used';
   purchasedAt?: string;
   usedAt?: string;
+  usageEffect?: WarehouseUsageEffect | null;
 };
 
 export default function CabinetWarehousePage() {
@@ -30,10 +41,10 @@ export default function CabinetWarehousePage() {
   const [loading, setLoading] = useState(true);
   const [usingId, setUsingId] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const data = await apiGet<{ items: WarehouseItem[] }>('/warehouse');
     setItems(data.items || []);
-  };
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -43,7 +54,41 @@ export default function CabinetWarehousePage() {
         toast.error(t('common.error'), message || t('cabinet.warehouse_load_error'));
       })
       .finally(() => setLoading(false));
-  }, [toast, t]);
+  }, [load, toast, t]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ offerType?: string }>).detail;
+      if (detail?.offerType !== 'warehouse_item_upgrade') return;
+      load().catch(() => {});
+    };
+    window.addEventListener('givkoin:ad-boost-completed', handler);
+    return () => window.removeEventListener('givkoin:ad-boost-completed', handler);
+  }, [load]);
+
+  const formatEffectValue = (effect: WarehouseUsageEffect, value: number) => {
+    const safeValue = Number(value) || 0;
+    const sign = String(effect.sign || '');
+    if (effect.unit === 'percent') return `${sign}${formatNumber(safeValue, language)}%`;
+    if (effect.unit === 'lm') return `${sign}${formatNumber(safeValue, language)} Lm`;
+    return `${sign}${formatNumber(safeValue, language)}`;
+  };
+
+  const getEffectText = (effect?: WarehouseUsageEffect | null) => {
+    if (!effect) return '';
+    const activeValue = Number(effect.activeValue);
+    if (!Number.isFinite(activeValue)) return '';
+    const parts = [`${t('cabinet.effect')}: ${formatEffectValue(effect, activeValue)}`];
+    const bonusValue = Number(effect.bonusValue);
+    const boostedValue = Number(effect.boostedValue);
+    if (effect.adBoosted && Number.isFinite(bonusValue) && bonusValue > 0) {
+      parts.push(`${t('cabinet.bonus')}: ${formatEffectValue(effect, bonusValue)}`);
+    }
+    if (effect.adBoosted && Number.isFinite(boostedValue)) {
+      parts.push(`${t('cabinet.total')}: ${formatEffectValue(effect, boostedValue)}`);
+    }
+    return parts.join(' • ');
+  };
 
   const handleUseItem = async (id: string) => {
     setUsingId(id);
@@ -85,6 +130,7 @@ export default function CabinetWarehousePage() {
                 {items.map((it) => {
                   const isStored = it.status === 'stored';
                   const isUsing = usingId === it._id;
+                  const effectText = getEffectText(it.usageEffect);
                   return (
                     <div key={it._id} className="px-5 py-4">
                       <div className="flex items-start justify-between gap-4">
@@ -100,6 +146,11 @@ export default function CabinetWarehousePage() {
                             {t('cabinet.purchased')}: {it.purchasedAt ? formatDateTime(it.purchasedAt, language) : '—'}
                             {it.usedAt ? ` • ${t('cabinet.used')}: ${formatDateTime(it.usedAt, language)}` : ''}
                           </div>
+                          {effectText && (
+                            <div className="text-caption text-amber-100/80 mt-1">
+                              {effectText}
+                            </div>
+                          )}
                         </div>
 
                         <div className="shrink-0 flex items-center gap-2">

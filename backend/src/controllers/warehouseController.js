@@ -1,4 +1,4 @@
-const { SHOP_ITEMS_BY_KEY, localizeShopItem } = require('../config/shopCatalog');
+const { SHOP_ITEMS_BY_KEY, getWarehouseItemEffect, localizeShopItem } = require('../config/shopCatalog');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { updateEntityMoodForUser } = require('../services/entityMoodService');
 const { createAdBoostOffer } = require('../services/adBoostService');
@@ -60,9 +60,42 @@ async function listWarehouseItems(userId) {
     .order('created_at', { ascending: false })
     .limit(500);
   if (error || !Array.isArray(data)) return [];
-  return data
+  const items = data
     .map((row) => ({ ...row.data, _id: row.id, createdAt: row.created_at }))
     .sort((a, b) => (b.purchasedAt || b.createdAt || '').localeCompare(a.purchasedAt || a.createdAt || ''));
+
+  const usedItemIds = items
+    .filter((item) => item?.status === 'used')
+    .map((item) => String(item?._id || ''))
+    .filter(Boolean);
+  if (!usedItemIds.length) return items;
+
+  const { data: offerRows } = await supabase
+    .from(DOC_TABLE)
+    .select('data')
+    .eq('model', 'AdBoostOffer')
+    .eq('data->>user', String(userId))
+    .eq('data->>type', 'warehouse_item_upgrade')
+    .eq('data->>status', 'completed')
+    .limit(1000);
+  const boostedItemIds = new Set(
+    (Array.isArray(offerRows) ? offerRows : [])
+      .map((row) => String(row?.data?.reward?.itemId || row?.data?.contextKey || '').replace(/^warehouse:/, ''))
+      .filter((id) => usedItemIds.includes(id))
+  );
+
+  if (!boostedItemIds.size) return items;
+  return items.map((item) => {
+    if (!boostedItemIds.has(String(item?._id || ''))) return item;
+    const existingEffect = item.usageEffect && typeof item.usageEffect === 'object' ? item.usageEffect : {};
+    if (existingEffect.adBoosted) return item;
+    const usageEffect = getWarehouseItemEffect(item.itemKey, {
+      adBoosted: true,
+      appliedAt: existingEffect.appliedAt || item.usedAt || null,
+      boostedAt: existingEffect.boostedAt || null,
+    });
+    return usageEffect ? { ...item, usageEffect } : item;
+  });
 }
 
 async function findWarehouseItem(itemId, userId) {
@@ -115,10 +148,14 @@ function localizeWarehouseItem(item, language = 'ru') {
   const catalogItem = SHOP_ITEMS_BY_KEY[item.itemKey];
   if (!catalogItem) return item;
   const localized = localizeShopItem(catalogItem, language);
+  const fallbackEffect = item.status === 'used' && !item.usageEffect
+    ? getWarehouseItemEffect(item.itemKey, { adBoosted: false, appliedAt: item.usedAt || null })
+    : null;
   return {
     ...item,
     title: localized.title || item.title || '',
     description: localized.description || item.description || '',
+    ...(fallbackEffect ? { usageEffect: fallbackEffect } : {}),
   };
 }
 
@@ -259,25 +296,28 @@ exports.useItem = async (req, res) => {
       if (shopBoosts.battleDamage?.pending) {
         return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
-      shopBoosts.battleDamage = { pending: true };
+      shopBoosts.battleDamage = { pending: true, bonusPercent: 15, adBoosted: false, sourceWarehouseItemId: itemId };
     } else if (catalogItem.key === 'boost_battle_economy') {
       if (shopBoosts.battleLumensDiscount?.pending) {
         return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
-      shopBoosts.battleLumensDiscount = { pending: true };
+      shopBoosts.battleLumensDiscount = { pending: true, discountPercent: 25, adBoosted: false, sourceWarehouseItemId: itemId };
     } else if (catalogItem.key === 'boost_weak_zone_focus') {
       if (shopBoosts.weakZoneDamage?.pending) {
         return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
-      shopBoosts.weakZoneDamage = { pending: true };
+      shopBoosts.weakZoneDamage = { pending: true, bonusPercent: 50, adBoosted: false, sourceWarehouseItemId: itemId };
     } else if (catalogItem.key === 'boost_chat_key') {
       if (shopBoosts.chatSc?.pending) {
         return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
-      shopBoosts.chatSc = { pending: true };
+      shopBoosts.chatSc = { pending: true, bonusPercent: 25, adBoosted: false, sourceWarehouseItemId: itemId };
     } else if (catalogItem.key === 'boost_solar_focus') {
       const charges = Number(catalogItem.solarCharges) || 0;
       shopBoosts.solarExtraLmCharges = (Number(shopBoosts.solarExtraLmCharges) || 0) + charges;
+      shopBoosts.solarExtraLmAmount = Number(catalogItem.solarExtraLm) || 20;
+      shopBoosts.solarFocusAdBoosted = false;
+      shopBoosts.solarFocusSourceWarehouseItemId = itemId;
     } else if (catalogItem.key === 'boost_referral_blessing') {
       const until = shopBoosts.referralBlessingUntil ? new Date(shopBoosts.referralBlessingUntil) : null;
       if (until && until.getTime() > now.getTime()) {
@@ -285,6 +325,9 @@ exports.useItem = async (req, res) => {
       }
       const hours = Number(catalogItem.blessingHours) || 0;
       shopBoosts.referralBlessingUntil = new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString();
+      shopBoosts.referralBlessingPercent = Number(catalogItem.referralPercent) || 5;
+      shopBoosts.referralBlessingAdBoosted = false;
+      shopBoosts.referralBlessingSourceWarehouseItemId = itemId;
     } else {
       return res.status(400).json({ message: pickLang(userLang, 'Неизвестный предмет', 'Unknown item') });
     }
@@ -294,7 +337,15 @@ exports.useItem = async (req, res) => {
     });
     const updatedUserData = updatedUserRow?.data && typeof updatedUserRow.data === 'object' ? updatedUserRow.data : {};
 
-    await updateWarehouseItem(itemId, { status: 'used', usedAt: now.toISOString() }, warehouseItem);
+    const usageEffect = getWarehouseItemEffect(catalogItem.key, {
+      adBoosted: false,
+      appliedAt: now.toISOString(),
+    });
+    const updatedWarehouseItem = await updateWarehouseItem(itemId, {
+      status: 'used',
+      usedAt: now.toISOString(),
+      ...(usageEffect ? { usageEffect } : {}),
+    }, warehouseItem);
 
     awardRadianceForActivity({
       userId: req.user._id,
@@ -320,7 +371,12 @@ exports.useItem = async (req, res) => {
     return res.json({
       ok: true,
       message: pickLang(userLang, 'Предмет использован', 'Item used'),
-      item: localizeWarehouseItem({ ...warehouseItem, status: 'used', usedAt: now.toISOString() }, userLang),
+      item: localizeWarehouseItem(updatedWarehouseItem || {
+        ...warehouseItem,
+        status: 'used',
+        usedAt: now.toISOString(),
+        ...(usageEffect ? { usageEffect } : {}),
+      }, userLang),
       user: {
         sc: updatedUserData?.sc,
         lumens: updatedUserData?.lumens,
