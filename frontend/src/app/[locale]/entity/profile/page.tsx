@@ -124,12 +124,12 @@ export default function EntityProfilePage() {
                     {/* Left Column: Portrait */}
                     <div className="w-full xl:w-64 flex flex-col items-center xl:items-start shrink-0 gap-3">
                         {/* Portrait - Smaller on desktop to fit */}
-                        <div className="relative w-32 sm:w-40 md:w-48 xl:w-full aspect-square rounded-2xl overflow-hidden border-2 border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-neutral-900 shrink-0">
-                            <Image src={entity.avatarUrl} alt={entity.name} fill sizes="(max-width: 1280px) 192px, 256px" className="object-contain" unoptimized />
+                        <div className="relative w-full xl:w-full aspect-square rounded-2xl overflow-hidden border-2 border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-neutral-900 shrink-0">
+                            <Image src={entity.avatarUrl} alt={entity.name} fill sizes="(max-width: 1279px) calc(100vw - 32px), 256px" className="object-contain" unoptimized />
                         </div>
 
                         <div className="w-full text-center xl:text-left">
-                            <h1 className="text-lg sm:text-xl font-bold uppercase tracking-wider text-blue-300 leading-tight break-words">
+                            <h1 data-crystal-anchor="entity-name" className="text-lg sm:text-xl font-bold uppercase tracking-wider text-blue-300 leading-tight break-words">
                                 {entity.name}
                             </h1>
                             <div className="text-label text-neutral-500 mt-1">

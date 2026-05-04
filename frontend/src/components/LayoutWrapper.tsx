@@ -293,13 +293,17 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
             const scrollY = window.scrollY || document.documentElement.scrollTop;
 
             const SHARD_WIDTH = 25;
-            const side = currentPageShard.side || 'right';
+            const isEntityProfilePage = normalizeSitePath(pathname || '/') === '/entity/profile';
+            const side = isEntityProfilePage ? 'right' : currentPageShard.side || 'right';
 
             const main = document.querySelector('main');
+            const entityProfileAnchor = isEntityProfilePage
+                ? document.querySelector('[data-crystal-anchor="entity-name"]')
+                : null;
             const mainH1 = main?.querySelector('h1') || null;
             const pageH1 = document.querySelector('h1');
             const h2 = document.querySelector('main h2');
-            const target = mainH1 || pageH1 || h2;
+            const target = entityProfileAnchor || mainH1 || pageH1 || h2;
             
             if (target) {
                 const tRect = getTextRect(target) || target.getBoundingClientRect();
