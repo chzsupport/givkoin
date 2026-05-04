@@ -159,6 +159,24 @@ export default function ChatPage() {
         return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
     }, [startedAt]);
 
+    const freezeActiveDuration = useCallback((elapsedSeconds: number | null) => {
+        const serverSeconds = elapsedSeconds != null ? Math.max(0, Math.floor(elapsedSeconds)) : null;
+        const currentVisibleSeconds = Math.max(0, Math.floor(activeDurationSecondsRef.current || 0));
+        const pausedSeconds = pausedActiveDurationRef.current != null
+            ? Math.max(0, Math.floor(pausedActiveDurationRef.current))
+            : null;
+        const fallbackSeconds = pausedSeconds != null
+            ? Math.max(pausedSeconds, currentVisibleSeconds)
+            : Math.max(currentVisibleSeconds, computeActiveDurationSeconds());
+        const frozenSeconds = serverSeconds != null && serverSeconds > 0
+            ? serverSeconds
+            : Math.max(serverSeconds ?? 0, fallbackSeconds);
+
+        pausedActiveDurationRef.current = frozenSeconds;
+        activeDurationSecondsRef.current = frozenSeconds;
+        setActiveDurationSeconds(frozenSeconds);
+    }, [computeActiveDurationSeconds]);
+
     useEffect(() => {
         const updateActiveDuration = () => {
             if (isWaitingForPartner) {
@@ -309,13 +327,7 @@ export default function ChatPage() {
         // Система ожидания собеседника
         socket.on('partner_disconnected', (data) => {
             const pausedSeconds = readActiveElapsedSeconds(data?.activeElapsedSeconds);
-            if (pausedSeconds != null) {
-                pausedActiveDurationRef.current = pausedSeconds;
-                setActiveDurationSeconds(pausedSeconds);
-            } else if (pausedActiveDurationRef.current == null) {
-                pausedActiveDurationRef.current = computeActiveDurationSeconds();
-                setActiveDurationSeconds(pausedActiveDurationRef.current);
-            }
+            freezeActiveDuration(pausedSeconds);
             setIsWaitingForPartner(true);
             setWaitingTimeLeft(data?.timeLeft ?? 60);
             const fallbackKey = data?.strictMode === false ? 'chat.partner_connection_lost_soft' : 'chat.partner_connection_lost_wait';
@@ -364,7 +376,7 @@ export default function ChatPage() {
             socket.off('partner_reconnected');
             socket.off('chat_resumed');
         };
-    }, [socket, chatId, user, clearActiveChat, router, fetchMessages, playIncomingMessageSound, touchChatActivity, computeActiveDurationSeconds, localePath, t]);
+    }, [socket, chatId, user, clearActiveChat, router, fetchMessages, playIncomingMessageSound, touchChatActivity, computeActiveDurationSeconds, freezeActiveDuration, localePath, t]);
 
     useEffect(() => {
         if (!socket || !chatId || !user) return;
