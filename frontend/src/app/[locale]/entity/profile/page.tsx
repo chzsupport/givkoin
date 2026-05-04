@@ -129,9 +129,9 @@ export default function EntityProfilePage() {
                         </div>
 
                         <div className="w-full text-center xl:text-left">
-                            <div className="text-lg sm:text-xl font-bold uppercase tracking-wider text-blue-300 leading-tight break-words">
+                            <h1 className="text-lg sm:text-xl font-bold uppercase tracking-wider text-blue-300 leading-tight break-words">
                                 {entity.name}
-                            </div>
+                            </h1>
                             <div className="text-label text-neutral-500 mt-1">
                                 {t('entity_profile.soul_reflection')}
                             </div>
