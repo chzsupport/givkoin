@@ -31,10 +31,12 @@ const ROULETTE_SECTORS = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
-const ROULETTE_LOADING_SPIN_DURATION = 0.4;
-const ROULETTE_SETTLE_DURATION_MS = 1600;
+const ROULETTE_LOADING_SPIN_DURATION = 0.55;
+const ROULETTE_SETTLE_DURATION_MS = 1150;
 const ROULETTE_SETTLE_DURATION_SEC = ROULETTE_SETTLE_DURATION_MS / 1000;
-const ROULETTE_RESULT_TURNS = 2;
+const ROULETTE_RESULT_TURNS = 1;
+
+const normalizeRotation = (value: number) => ((value % 360) + 360) % 360;
 
 const WheelComponent = ({
     size,
@@ -63,15 +65,21 @@ const WheelComponent = ({
                 className="w-full h-full rounded-full border-[5px] border-yellow-600/50 shadow-2xl relative overflow-hidden bg-[#1a1a2e]"
                 animate={{ rotate: rotation }}
                 transition={spinMode === 'loading'
-                    ? { duration: ROULETTE_LOADING_SPIN_DURATION, ease: 'linear', repeat: Infinity }
-                    : { duration: spinDuration, ease: [0.15, 0.25, 0.25, 1] }}
+                    ? { duration: ROULETTE_LOADING_SPIN_DURATION, ease: [0.2, 0.72, 0.2, 1] }
+                    : spinMode === 'settling'
+                        ? { duration: spinDuration, ease: [0.16, 0.76, 0.24, 1] }
+                        : { duration: 0 }}
                 onUpdate={(latest) => {
                     const nextRotate = latest.rotate;
                     if (typeof nextRotate === 'number') {
                         onRotationUpdate?.(nextRotate);
                     }
                 }}
-                style={{ boxShadow: '0 0 30px rgba(234, 179, 8, 0.3), inset 0 0 20px rgba(0,0,0,0.5)' }}
+                style={{
+                    boxShadow: '0 0 30px rgba(234, 179, 8, 0.3), inset 0 0 20px rgba(0,0,0,0.5)',
+                    willChange: isSpinning ? 'transform' : 'auto',
+                    backfaceVisibility: 'hidden',
+                }}
             >
                 {ROULETTE_SECTORS.map((sector, index) => {
                     const angle = index * sectorAngle;
@@ -383,7 +391,7 @@ export default function RoulettePage() {
             const safeWinningIndex = Number.isFinite(winningIndex) ? winningIndex : 0;
             const randomOffset = (Math.random() - 0.5) * Math.min(10, sectorAngle * 0.35);
             const targetAngle = (360 - (safeWinningIndex * sectorAngle + sectorAngle / 2) + randomOffset);
-            const currentAngle = ((rotationRef.current % 360) + 360) % 360;
+            const currentAngle = normalizeRotation(rotationRef.current);
             let angleDiff = targetAngle - currentAngle;
             if (angleDiff < 0) angleDiff += 360;
             const targetRotation = rotationRef.current + (360 * ROULETTE_RESULT_TURNS) + angleDiff;
@@ -394,9 +402,12 @@ export default function RoulettePage() {
             setRotation(targetRotation);
 
             spinFinishTimeoutRef.current = setTimeout(async () => {
+                const normalizedRotation = normalizeRotation(targetRotation);
+                rotationRef.current = normalizedRotation;
                 setIsSpinning(false);
                 setSpinMode('idle');
                 setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
+                setRotation(normalizedRotation);
                 setWinResult({ label: resultLabel, type: resultType, value: resultValue });
                 setSpinsLeft(remainingSpins);
                 spinFinishTimeoutRef.current = null;
