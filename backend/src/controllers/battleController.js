@@ -1587,7 +1587,6 @@ function buildInitialAttendanceRuntimeEntry({
         nonBaseWeaponHits: 0,
         totalShots: 0,
         totalHits: 0,
-        sectorDarknessDamage: 0,
         weakZoneHits: 0,
         nonWeakZoneHits: 0,
         weapon2Hits: 0,
@@ -1598,10 +1597,8 @@ function buildInitialAttendanceRuntimeEntry({
         syncSlot: Number.isFinite(syncSlot) && syncSlot >= 0 ? syncSlot : null,
         syncSlotCount: Number.isFinite(syncSlotCount) && syncSlotCount >= 1 ? syncSlotCount : null,
         syncIntervalSeconds: Number.isFinite(syncIntervalSeconds) && syncIntervalSeconds >= 1 ? syncIntervalSeconds : null,
-        personalSlider: 0,
         voiceLastResolvedBucket: 0,
         voiceShotDetectedBucket: 0,
-        sectorLastMinuteViolation: false,
         lumensSpentWeapon3First2Min: 0,
         lumensSpentOtherFirst2Min: 0,
         crystalsCollected: 0,
@@ -2084,13 +2081,6 @@ function isHitNearAimPoint({ shotMeta, worldPoint, weaponId }) {
     const dz = worldPoint.z - aimWorldPoint.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     return dist <= rules.maxAimDeviation;
-}
-
-function computeSectorIntensity(userDamage, sectorDarknessDamage) {
-    const diff = Number(userDamage || 0) - Number(sectorDarknessDamage || 0);
-    const raw = Math.round(diff / 1000);
-    const sectorScore = Math.max(-50, Math.min(50, raw));
-    return Math.max(0, Math.min(100, 50 + sectorScore));
 }
 
 const COMBO_GAP_MS = 3000;

@@ -419,9 +419,6 @@ const WEAK_ZONE_DELAY_MAX_MS = 45000;
 const WEAK_ZONE_DURATION_MIN_MS = 10000;
 const WEAK_ZONE_DURATION_MAX_MS = 15000;
 const WEAK_ZONE_RADIUS = 55;
-const VOICE_SLIDER_STEP = 5;
-const VOICE_SLIDER_MIN = -50;
-const VOICE_SLIDER_MAX = 50;
 const SPARK_DELAY_MIN_MS = 15000;
 const SPARK_DELAY_MAX_MS = 60000;
 const SPARK_REWARD_LUMENS = 100;
@@ -452,7 +449,6 @@ const CURRENT_BATTLE_SELECT = [
   'durationSeconds',
   'darknessDamage',
   'lightDamage',
-  'sectorDarknessDamagePerUser',
   'attendanceCount',
   'activeUsersCountSnapshot',
   'globalDebuffActive',
@@ -953,14 +949,10 @@ async function markVoiceShotDetected({ battleId, userId, bucketIndex }) {
 
 function buildVoiceResolutionUpdate({ battle, attendanceEntry = null, at = new Date(), userId = null }) {
   const entry = attendanceEntry || null;
-  const currentSlider = Number(entry?.personalSlider) || 0;
-  const currentViolation = Boolean(entry?.sectorLastMinuteViolation);
 
   if (!battle?.startsAt) {
     return {
       voice: { active: false, command: null, bucketIndex: null },
-      personalSlider: currentSlider,
-      sectorLastMinuteViolation: currentViolation,
       update: null,
     };
   }
@@ -970,8 +962,6 @@ function buildVoiceResolutionUpdate({ battle, attendanceEntry = null, at = new D
   const lastResolvedStored = Math.max(0, Number(entry?.voiceLastResolvedBucket) || 0);
   const shotDetectedStored = Math.max(0, Number(entry?.voiceShotDetectedBucket) || 0);
 
-  let slider = currentSlider;
-  let violation = currentViolation;
   let lastResolved = lastResolvedStored;
   let voiceCommandsSuccess = Number(entry?.voiceCommandsSuccess) || 0;
   let voiceCommandsSilenceSuccess = Number(entry?.voiceCommandsSilenceSuccess) || 0;
@@ -981,25 +971,16 @@ function buildVoiceResolutionUpdate({ battle, attendanceEntry = null, at = new D
   let voiceCommandsHistory = Array.isArray(entry?.voiceCommandsHistory) ? [...entry.voiceCommandsHistory] : [];
 
   const nowMs = now.getTime();
-  const endsAtMs = battle.endsAt ? new Date(battle.endsAt).getTime() : null;
-  const inLastMinute = endsAtMs != null ? nowMs >= endsAtMs - 60000 : false;
   const nextPendingCommand = getVoiceCommandForBucket(battle, lastResolved, userId);
-  const needsLastMinuteViolationCheck = inLastMinute && (slider < 1 || slider > 10) && !violation;
 
-  if ((!nextPendingCommand || nowMs < nextPendingCommand.endsAt) && !needsLastMinuteViolationCheck) {
+  if (!nextPendingCommand || nowMs < nextPendingCommand.endsAt) {
     return {
       voice: state,
-      personalSlider: slider,
-      sectorLastMinuteViolation: violation,
       update: null,
     };
   }
 
   let changed = false;
-  if (needsLastMinuteViolationCheck) {
-    violation = true;
-    changed = true;
-  }
 
   for (;;) {
     const nextBucket = lastResolved;
@@ -1011,7 +992,6 @@ function buildVoiceResolutionUpdate({ battle, attendanceEntry = null, at = new D
     const shotDetected = shotDetectedStored === bucketStored;
     const success = cmd.requireShot ? shotDetected : !shotDetected;
 
-    slider = clamp(slider + (success ? VOICE_SLIDER_STEP : -VOICE_SLIDER_STEP), VOICE_SLIDER_MIN, VOICE_SLIDER_MAX);
     lastResolved = nextBucket + 1;
     voiceCommandsTotalAttempts += 1;
 
@@ -1028,29 +1008,20 @@ function buildVoiceResolutionUpdate({ battle, attendanceEntry = null, at = new D
     }
     voiceCommandsHistory.push(success);
 
-    if (endsAtMs != null && cmd.endsAt >= endsAtMs - 60000 && (slider < 1 || slider > 10)) {
-      violation = true;
-    }
     changed = true;
   }
 
   if (!changed) {
     return {
       voice: state,
-      personalSlider: slider,
-      sectorLastMinuteViolation: violation,
       update: null,
     };
   }
 
   return {
     voice: state,
-    personalSlider: slider,
-    sectorLastMinuteViolation: violation,
     update: {
       $set: {
-        'attendance.$.personalSlider': slider,
-        'attendance.$.sectorLastMinuteViolation': violation,
         'attendance.$.voiceLastResolvedBucket': lastResolved,
         'attendance.$.voiceCommandsSuccess': voiceCommandsSuccess,
         'attendance.$.voiceCommandsSilenceSuccess': voiceCommandsSilenceSuccess,
@@ -1096,8 +1067,6 @@ async function applyVoiceResolutionsForUser({ battleId, userId, at = new Date() 
 
   return {
     voice: resolution.voice,
-    personalSlider: resolution.personalSlider,
-    sectorLastMinuteViolation: resolution.sectorLastMinuteViolation,
   };
 }
 
@@ -1243,7 +1212,6 @@ async function scheduleBattle({
     scheduledIntervalHours: scheduledIntervalHours == null ? null : Number(scheduledIntervalHours),
     darknessDamage: 0,
     lightDamage: 0,
-    sectorDarknessDamagePerUser: 0,
     activeUsersCountSnapshot: 0,
     attendanceCount: 0,
     maxAttendanceCount: 0,
