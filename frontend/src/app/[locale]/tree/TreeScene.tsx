@@ -939,6 +939,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       if (!visibleRef.current) return;
 
       const timeSeconds = clock.getElapsedTime();
+      treeRig.rotation.y = timeSeconds * 0.05;
 
       updateGroundGlow(timeSeconds, groundState);
       updateWave(timeSeconds, waveState, treeState);
