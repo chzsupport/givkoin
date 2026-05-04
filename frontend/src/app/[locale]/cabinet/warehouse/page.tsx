@@ -76,9 +76,11 @@ export default function CabinetWarehousePage() {
 
   const getEffectText = (effect?: WarehouseUsageEffect | null) => {
     if (!effect) return '';
+    const baseValue = Number(effect.baseValue);
     const activeValue = Number(effect.activeValue);
-    if (!Number.isFinite(activeValue)) return '';
-    const parts = [`${t('cabinet.effect')}: ${formatEffectValue(effect, activeValue)}`];
+    const effectValue = Number.isFinite(baseValue) ? baseValue : activeValue;
+    if (!Number.isFinite(effectValue)) return '';
+    const parts = [`${t('cabinet.effect')}: ${formatEffectValue(effect, effectValue)}`];
     const bonusValue = Number(effect.bonusValue);
     const boostedValue = Number(effect.boostedValue);
     if (effect.adBoosted && Number.isFinite(bonusValue) && bonusValue > 0) {
