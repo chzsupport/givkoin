@@ -336,7 +336,12 @@ export default function NewsPage() {
         const fetchNews = async () => {
             try {
                 const newsData = await apiGet<NewsFeedResponse>(`/news?limit=${POSTS_PAGE_SIZE}`);
-                const feedItems = decoratePostsWithNewsCard(Array.isArray(newsData?.items) ? newsData.items : [], newsCard);
+                // Берём newsCard из ответа /news если есть, иначе из user
+                const serverNewsCard = (newsData as Record<string, unknown>)?.newsCard as NewsCard | null ?? newsCard;
+                if (serverNewsCard && user) {
+                    updateUser({ ...user, newsCard: serverNewsCard });
+                }
+                const feedItems = decoratePostsWithNewsCard(Array.isArray(newsData?.items) ? newsData.items : [], serverNewsCard);
                 const feedViewBatchKeys = rememberViewBatchKey(feedItems, newsData?.viewBatchKey || null, { replace: true });
                 setPosts(feedItems);
                 setPostsNextCursor(newsData?.nextCursor || null);

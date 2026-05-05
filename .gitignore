@@ -41,9 +41,5 @@ Thumbs.db
 .vscode/
 tmp_Profile_*_History.db
 
-# Load test results
-stress-test/
-load-tests/
-
 # Documentation
 docs/

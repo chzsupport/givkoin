@@ -1233,11 +1233,14 @@ async function listPosts(req, res, next) {
       })
       : null;
 
+    const newsCard = userId ? await getNewsUserCard({ userId, now }).catch(() => null) : null;
+
     return res.json({
       items: out,
       nextCursor: feedPage.nextCursor,
       hasMore: feedPage.hasMore,
       viewBatchKey,
+      newsCard,
     });
   } catch (err) {
     return next(err);

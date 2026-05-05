@@ -32,12 +32,36 @@ export default function EntityProfilePage() {
         isSated: boolean;
     }>(null);
 
+    const [entityData, setEntityData] = useState<{
+        _id: string;
+        user: string;
+        name: string;
+        stage: number;
+        mood: string;
+        avatarUrl: string;
+        satietyUntil: string | null;
+        createdAt: string;
+        updatedAt: string;
+        history: unknown[];
+    } | null>(user?.entity || null);
+
     useEffect(() => {
-        if (user && !user.entity) {
+        apiGet<{ entity: typeof entityData }>('/entity/me')
+            .then((r) => {
+                if (r?.entity) {
+                    setEntityData(r.entity);
+                    if (user) updateUser({ ...user, entity: r.entity } as typeof user);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (user && !entityData) {
             router.replace(localePath('/entity/create'));
         }
-    }, [user, router, localePath]);
-    const entity = user?.entity;
+    }, [user, entityData, router, localePath]);
+    const entity = entityData;
     const entityId = entity?._id;
 
     useEffect(() => {

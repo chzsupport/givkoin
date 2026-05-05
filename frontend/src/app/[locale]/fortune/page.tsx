@@ -130,7 +130,12 @@ export default function FortunePage() {
             const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
             const spinStatus = await apiGet<unknown>('/fortune/status');
-            if (isObj(spinStatus)) setSpinsLeft(Number(spinStatus.spinsLeft) || 0);
+            if (isObj(spinStatus)) {
+                setSpinsLeft(Number(spinStatus.spinsLeft) || 0);
+                if (typeof spinStatus.luckyDayAvailable === 'boolean') {
+                    updateUser({ ...user, luckyDayAvailable: spinStatus.luckyDayAvailable } as typeof user);
+                }
+            }
 
             const lotteryStatus = await apiGet<unknown>('/fortune/lottery/status');
             if (isObj(lotteryStatus)) setTicketsToday(Number(lotteryStatus.ticketsToday) || 0);

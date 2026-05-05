@@ -110,7 +110,7 @@ async function recordPageView(req, res, next) {
       }));
     }
 
-    Promise.all(writes).catch(() => {});
+    await Promise.all(writes);
 
     return res.json({ ok: true });
   } catch (error) {
@@ -134,7 +134,7 @@ async function recordBehavior(req, res, next) {
       return res.status(400).json({ message: 'Invalid behavior category' });
     }
 
-    recordBehaviorEvent({
+    await recordBehaviorEvent({
       userId: req.user._id,
       category,
       eventType,
@@ -143,7 +143,7 @@ async function recordBehavior(req, res, next) {
       battleId: battleId || null,
       scoreHint: Number.isFinite(scoreHint) ? scoreHint : 0,
       meta: req.body?.meta && typeof req.body.meta === 'object' ? req.body.meta : {},
-    }).catch(() => {});
+    });
 
     return res.json({ ok: true });
   } catch (error) {
@@ -156,12 +156,10 @@ async function recordLeave(req, res, next) {
     if (shouldWriteLastSeen(req.user?._id)) {
       const supabase = getSupabaseClient();
       const nowIso = new Date().toISOString();
-      supabase
+      await supabase
         .from('users')
         .update({ last_seen_at: nowIso, updated_at: nowIso })
-        .eq('id', String(req.user._id))
-        .then(() => {})
-        .catch(() => {});
+        .eq('id', String(req.user._id));
     }
     return res.json({ ok: true });
   } catch (error) {
