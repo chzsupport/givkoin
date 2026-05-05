@@ -84,6 +84,7 @@ async function findBridgeByCountries(fromCountry, toCountry) {
         .from(DOC_TABLE)
         .select('id,data')
         .eq('model', 'Bridge')
+        .or(`data->>fromCountry.eq.${fromCountry},data->>fromCountry.eq.${toCountry}`)
         .limit(500);
     if (error || !Array.isArray(data)) return null;
     
@@ -142,20 +143,19 @@ async function deleteBridge(id) {
 
 async function countBridges(filters = {}) {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase
+    let query = supabase
         .from(DOC_TABLE)
-        .select('id,data')
-        .eq('model', 'Bridge')
-        .limit(5000);
-    if (error || !Array.isArray(data)) return 0;
-    
-    return data.filter((row) => {
-        const d = row.data || {};
-        if (filters.createdBy && String(d.createdBy) !== String(filters.createdBy)) return false;
-        if (filters.status && d.status !== filters.status) return false;
-        if (filters.createdAt && d.createdAt && d.createdAt < filters.createdAt) return false;
-        return true;
-    }).length;
+        .select('id', { count: 'exact', head: true })
+        .eq('model', 'Bridge');
+    if (filters.createdBy) {
+        query = query.eq('data->>createdBy', String(filters.createdBy));
+    }
+    if (filters.status) {
+        query = query.eq('data->>status', String(filters.status));
+    }
+    const { count, error } = await query;
+    if (error) return 0;
+    return Math.max(0, Number(count) || 0);
 }
 
 async function getBridgeUserStats(userId) {
@@ -260,6 +260,7 @@ async function hydrateBridgeContributors(bridges) {
     for (const b of list) {
         const contributors = Array.isArray(b?.contributors) ? b.contributors : [];
         for (const c of contributors) {
+            if (typeof c.user === 'object' && c.user?.nickname) continue;
             const uid = toId(c?.user);
             if (uid) userIds.add(uid);
         }
@@ -282,6 +283,7 @@ async function hydrateBridgeContributors(bridges) {
     for (const b of list) {
         const contributors = Array.isArray(b?.contributors) ? b.contributors : [];
         for (const c of contributors) {
+            if (typeof c.user === 'object' && c.user?.nickname) continue;
             const uid = toId(c?.user);
             if (!uid) continue;
             c.user = { _id: uid, nickname: nickById.get(uid) || 'Игрок' };
@@ -412,6 +414,7 @@ exports.createBridge = async (req, res) => {
         }
 
         // 4. Create bridge
+        const creatorNickname = String(userRow?.nickname || getUserData(userRow).nickname || '').trim() || 'Игрок';
         const bridge = await insertBridge({
             createdBy: user._id,
             fromCity: fromCountry,
@@ -421,7 +424,7 @@ exports.createBridge = async (req, res) => {
             requiredStones: distance,
             currentStones: 1, // Start with 1 stone
             status: 'building',
-            contributors: [{ user: user._id, stones: 1 }],
+            contributors: [{ user: { _id: user._id, nickname: creatorNickname }, stones: 1 }],
             lastContributionAt: new Date().toISOString(),
         });
 
@@ -452,21 +455,24 @@ exports.createBridge = async (req, res) => {
             dedupeKey: `bridge_create:${bridge._id}:${user._id}`,
         }).catch(() => null);
 
-        // Ачивка #66. Строитель будущего (Сразу после победы)
-        try {
-            const stats = user.achievementStats || {};
-            const lastBattleAt = stats.lastBattleFinishedAt;
-            const lastBattleWon = stats.lastBattleWon;
-            if (lastBattleAt && lastBattleWon === true) {
-                const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-                if (new Date(lastBattleAt) >= tenMinsAgo) {
-                    const { grantAchievement } = require('../services/achievementService');
-                    await grantAchievement({ userId: user._id, achievementId: 66 });
+        // Ачивка #66 — в фоне, не блокирует ответ
+        const _achUserId = user._id;
+        const _achStats = { ...user.achievementStats };
+        (async () => {
+            try {
+                const lastBattleAt = _achStats.lastBattleFinishedAt;
+                const lastBattleWon = _achStats.lastBattleWon;
+                if (lastBattleAt && lastBattleWon === true) {
+                    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+                    if (new Date(lastBattleAt) >= tenMinsAgo) {
+                        const { grantAchievement } = require('../services/achievementService');
+                        await grantAchievement({ userId: _achUserId, achievementId: 66 });
+                    }
                 }
+            } catch (e) {
+                console.error('Achievement #66 grant error:', e);
             }
-        } catch (e) {
-            console.error('Achievement #66 grant error:', e);
-        }
+        })().catch(() => {});
 
         broadcastNotificationByPresence({
             offline: {
@@ -555,11 +561,15 @@ exports.contributeToBridge = async (req, res) => {
             bridge.status = 'completed';
         }
 
-        const contributorIndex = bridge.contributors.findIndex(c => String(c.user) === String(user._id));
+        const contributorNickname = String(userRow?.nickname || getUserData(userRow).nickname || '').trim() || 'Игрок';
+        const contributorIndex = bridge.contributors.findIndex(c => {
+            const uid = typeof c.user === 'object' ? c.user._id : c.user;
+            return String(uid) === String(user._id);
+        });
         if (contributorIndex > -1) {
             bridge.contributors[contributorIndex].stones += parsedStones;
         } else {
-            bridge.contributors.push({ user: user._id, stones: parsedStones });
+            bridge.contributors.push({ user: { _id: user._id, nickname: contributorNickname }, stones: parsedStones });
         }
 
         const contributionAtIso = new Date().toISOString();
@@ -600,74 +610,91 @@ exports.contributeToBridge = async (req, res) => {
             units: parsedStones,
         });
 
-        // Ачивка #66. Строитель будущего (Сразу после победы)
-        try {
-            const stats = user.achievementStats || {};
-            const lastBattleAt = stats.lastBattleFinishedAt;
-            const lastBattleWon = stats.lastBattleWon;
-            if (lastBattleAt && lastBattleWon === true) {
-                const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-                if (new Date(lastBattleAt) >= tenMinsAgo) {
+        // Ачивки — в фоне, не блокируют ответ юзеру
+        const _achievementUserId = user._id;
+        const _achievementStats = { ...user.achievementStats };
+        const _bridgeData = { ...bridge };
+        const _wasCompleted = wasCompleted;
+
+        (async () => {
+            try {
+                // Ачивка #66. Строитель будущего (Сразу после победы)
+                const stats66 = _achievementStats || {};
+                const lastBattleAt = stats66.lastBattleFinishedAt;
+                const lastBattleWon = stats66.lastBattleWon;
+                if (lastBattleAt && lastBattleWon === true) {
+                    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+                    if (new Date(lastBattleAt) >= tenMinsAgo) {
+                        const { grantAchievement } = require('../services/achievementService');
+                        await grantAchievement({ userId: _achievementUserId, achievementId: 66 });
+                    }
+                }
+
+                if (!_wasCompleted && _bridgeData.status === 'completed') {
+                    // Ачивка #68. Финальный камень
                     const { grantAchievement } = require('../services/achievementService');
-                    await grantAchievement({ userId: user._id, achievementId: 66 });
-                }
-            }
-        } catch (e) {
-            console.error('Achievement #66 grant error:', e);
-        }
+                    await grantAchievement({ userId: _achievementUserId, achievementId: 68 });
 
-        if (!wasCompleted && bridge.status === 'completed') {
-            // Ачивка #68. Финальный камень
-            try {
-                const { grantAchievement } = require('../services/achievementService');
-                await grantAchievement({ userId: user._id, achievementId: 68 });
+                    const nextTotalFinal = (Number(stats66.totalFinalStones) || 0) + 1;
+                    const nextStats68 = { ...stats66, totalFinalStones: nextTotalFinal };
+                    await updateUserDataById(_achievementUserId, { achievementStats: nextStats68 });
 
-                const stats = user.achievementStats || {};
-                const nextTotalFinal = (Number(stats.totalFinalStones) || 0) + 1;
-                const nextStats = { ...stats, totalFinalStones: nextTotalFinal };
-                await updateUserDataById(user._id, { achievementStats: nextStats });
-
-                if (nextTotalFinal >= 3) {
-                    await grantAchievement({ userId: user._id, achievementId: 71 });
-                }
-            } catch (e) {
-                console.error('Bridge final stone achievement error:', e);
-            }
-
-            // Ачивки для всех участников при завершении моста
-            try {
-                const { grantAchievement } = require('../services/achievementService');
-                const sortedContributors = [...bridge.contributors].sort((a, b) => b.stones - a.stones);
-
-                for (let i = 0; i < sortedContributors.length; i++) {
-                    const c = sortedContributors[i];
-                    const pid = c.user;
-
-                    const pidStr = toId(pid);
-                    if (!pidStr) continue;
-                    const row = await getUserRowById(pidStr);
-                    if (!row) continue;
-                    const data = getUserData(row);
-                    const stats = data.achievementStats && typeof data.achievementStats === 'object' ? data.achievementStats : {};
-                    const count = (Number(stats.totalBridgesCompleted) || 0) + 1;
-                    await updateUserDataById(pidStr, { achievementStats: { ...stats, totalBridgesCompleted: count } });
-
-                    // #74. Неутомимый строитель (50 мостов)
-                    if (count >= 50) await grantAchievement({ userId: pid, achievementId: 74 });
-
-                    // #69. Главный строитель (Топ-1 на мосту)
-                    if (i === 0) {
-                        await grantAchievement({ userId: pid, achievementId: 69 });
+                    if (nextTotalFinal >= 3) {
+                        await grantAchievement({ userId: _achievementUserId, achievementId: 71 });
                     }
-                    // #70. Тройка мастеров (Топ-3 на мосту)
-                    if (i < 3) {
-                        await grantAchievement({ userId: pid, achievementId: 70 });
+
+                    // Ачивки для всех участников при завершении моста
+                    const sortedContributors = [..._bridgeData.contributors].sort((a, b) => b.stones - a.stones);
+
+                    for (let i = 0; i < sortedContributors.length; i++) {
+                        const c = sortedContributors[i];
+                        const pid = typeof c.user === 'object' ? c.user._id : c.user;
+                        const pidStr = toId(pid);
+                        if (!pidStr) continue;
+                        const row = await getUserRowById(pidStr);
+                        if (!row) continue;
+                        const data = getUserData(row);
+                        const cStats = data.achievementStats && typeof data.achievementStats === 'object' ? data.achievementStats : {};
+                        const count = (Number(cStats.totalBridgesCompleted) || 0) + 1;
+                        await updateUserDataById(pidStr, { achievementStats: { ...cStats, totalBridgesCompleted: count } });
+
+                        if (count >= 50) await grantAchievement({ userId: pid, achievementId: 74 });
+                        if (i === 0) await grantAchievement({ userId: pid, achievementId: 69 });
+                        if (i < 3) await grantAchievement({ userId: pid, achievementId: 70 });
                     }
                 }
-            } catch (e) {
-                console.error('Bridge contributors achievement error:', e);
-            }
 
+                // Ачивки за количество камней
+                const nextBridgeStones = (Number(_achievementStats.totalBridgeStones) || 0) + parsedStones;
+                const nextStatsStones = { ..._achievementStats, totalBridgeStones: nextBridgeStones };
+                await updateUserDataById(_achievementUserId, { achievementStats: nextStatsStones });
+
+                // #75. Мостовой рекордсмен (Топ-1 на 3 активных мостах)
+                const { bridges: activeBridges } = await listBridges({ status: 'building' }, { limit: 5000, offset: 0 });
+                let top1Count = 0;
+                for (const b of activeBridges) {
+                    const bContributors = [...b.contributors].sort((a, b) => b.stones - a.stones);
+                    if (bContributors[0]) {
+                        const topId = typeof bContributors[0].user === 'object' ? bContributors[0].user._id : bContributors[0].user;
+                        if (String(topId) === String(_achievementUserId)) top1Count++;
+                    }
+                }
+                if (top1Count >= 3) {
+                    const { grantAchievement } = require('../services/achievementService');
+                    await grantAchievement({ userId: _achievementUserId, achievementId: 75 });
+                }
+
+                // #92. Мастер трех путей
+                if ((Number(nextStatsStones.totalChatMinutes) || 0) >= 600 && (Number(nextStatsStones.totalBattlesParticipated) || 0) >= 2 && (Number(nextStatsStones.totalBridgeStones) || 0) >= 20) {
+                    const { grantAchievement } = require('../services/achievementService');
+                    await grantAchievement({ userId: _achievementUserId, achievementId: 92 });
+                }
+            } catch (e) {
+                console.error('Bridge achievement background error:', e);
+            }
+        })().catch(() => {});
+
+        if (!_wasCompleted && bridge.status === 'completed') {
             broadcastNotificationByPresence({
                 offline: {
                     type: 'event',
@@ -683,36 +710,6 @@ exports.contributeToBridge = async (req, res) => {
                     link: '/bridges',
                 },
             }).catch(() => { });
-        }
-
-        // Ачивки за количество камней
-        try {
-            const { grantAchievement } = require('../services/achievementService');
-
-            const stats = user.achievementStats || {};
-            const nextBridgeStones = (Number(stats.totalBridgeStones) || 0) + parsedStones;
-            const nextStats = { ...stats, totalBridgeStones: nextBridgeStones };
-            await updateUserDataById(user._id, { achievementStats: nextStats });
-
-            // #75. Мостовой рекордсмен (Топ-1 на 3 активных мостах)
-            const { bridges: activeBridges } = await listBridges({ status: 'building' }, { limit: 5000, offset: 0 });
-            let top1Count = 0;
-            for (const b of activeBridges) {
-                const contributors = [...b.contributors].sort((a, b) => b.stones - a.stones);
-                if (contributors[0] && String(contributors[0].user) === String(user._id)) {
-                    top1Count++;
-                }
-            }
-            if (top1Count >= 3) {
-                await grantAchievement({ userId: user._id, achievementId: 75 });
-            }
-
-            // #92. Мастер трех путей (2 боя, 10 ч чата, 20 камней)
-            if ((Number(nextStats.totalChatMinutes) || 0) >= 600 && (Number(nextStats.totalBattlesParticipated) || 0) >= 2 && (Number(nextStats.totalBridgeStones) || 0) >= 20) {
-                await grantAchievement({ userId: user._id, achievementId: 92 });
-            }
-        } catch (e) {
-            console.error('Bridge stones achievement error:', e);
         }
 
         res.json({

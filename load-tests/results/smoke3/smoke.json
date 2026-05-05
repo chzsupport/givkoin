@@ -1,0 +1,68 @@
+[
+  {
+    "routePath": "/health",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/info",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/page?path=/news",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/page?path=/battle",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/page?path=/tree",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/action/news_full",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/action/chat_full",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/action/battle_full",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/action/night_shift",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/action/crystal",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  },
+  {
+    "routePath": "/bench/action/meditation_collective",
+    "ok": true,
+    "statusCode": 200,
+    "error": ""
+  }
+]

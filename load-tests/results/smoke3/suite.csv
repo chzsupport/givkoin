@@ -1,0 +1,2 @@
+scenario,users,risk,requests,ok,failed,errRatePct,rps,avgMs,p95Ms,p99Ms,cpuAvgPct,cpuMaxPct,memAvailMinMb,serverRssMb,serverHeapMb,worstRoute
+community_mix,10,ok,13,13,0,0,1.3,6,16,16,4.2,5.3,4485,56,14,GET /bench/action/news_full

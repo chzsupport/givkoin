@@ -1,0 +1,242 @@
+[
+  {
+    "scenario": "project_uniform",
+    "users": 10,
+    "summary": {
+      "total": 16,
+      "ok": 16,
+      "failed": 0,
+      "rps": 1.6,
+      "avgMs": 4,
+      "p95Ms": 17,
+      "p99Ms": 17,
+      "routes": {
+        "GET /bench/page?path=%2Fcabinet%2Fnotifications": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/action/night_shift": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fpractice": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Ffriends": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Factivity%2Fnight-shift": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Fwarehouse": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fbridges": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Ffortune%2Froulette": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Fnews": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/action/news_full": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fshop": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fpractice%2Fmeditation%2Fme": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Ffeedback": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fsolar": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        }
+      }
+    },
+    "requests": 16,
+    "ok": 16,
+    "failed": 0,
+    "errRatePct": 0,
+    "rps": 1.6,
+    "avgMs": 4,
+    "p95Ms": 17,
+    "p99Ms": 17,
+    "cpuAvgPct": 3.7,
+    "cpuMaxPct": 6,
+    "memAvailMinMb": 4508,
+    "serverRssMb": 55,
+    "serverHeapMb": 14,
+    "worstRoute": "GET /bench/page?path=%2Fcabinet%2Fnews",
+    "risk": "ok"
+  },
+  {
+    "scenario": "project_uniform",
+    "users": 20,
+    "summary": {
+      "total": 30,
+      "ok": 30,
+      "failed": 0,
+      "rps": 3,
+      "avgMs": 3,
+      "p95Ms": 9,
+      "p99Ms": 15,
+      "routes": {
+        "GET /bench/page?path=%2Ffeedback": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Ffortune%2Flottery": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fevil-root": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Freferrals": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fabout": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fbridges": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fforgot-password": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/action/chat_full": {
+          "total": 3,
+          "ok": 3,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Fnotifications": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Fnews": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Fsettings": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/action/meditation_collective": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Factivity%2Fcollect": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/action/news_full": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fchat": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fref%2F%5Busername%5D": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fchronicle": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fpractice%2Fmeditation": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fgalaxy": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fregister": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Ffriends": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/page?path=%2Fcabinet%2Factivity": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        }
+      }
+    },
+    "requests": 30,
+    "ok": 30,
+    "failed": 0,
+    "errRatePct": 0,
+    "rps": 3,
+    "avgMs": 3,
+    "p95Ms": 9,
+    "p99Ms": 15,
+    "cpuAvgPct": 3.9,
+    "cpuMaxPct": 8.5,
+    "memAvailMinMb": 4550,
+    "serverRssMb": 58,
+    "serverHeapMb": 15,
+    "worstRoute": "GET /bench/action/chat_full",
+    "risk": "ok"
+  }
+]

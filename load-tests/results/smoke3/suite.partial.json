@@ -1,0 +1,62 @@
+[
+  {
+    "scenario": "community_mix",
+    "users": 10,
+    "summary": {
+      "total": 13,
+      "ok": 13,
+      "failed": 0,
+      "rps": 1.3,
+      "avgMs": 6,
+      "p95Ms": 16,
+      "p99Ms": 16,
+      "routes": {
+        "GET /bench/action/meditation_collective": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/action/battle_full": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/action/crystal": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        },
+        "GET /bench/action/news_full": {
+          "total": 4,
+          "ok": 4,
+          "failed": 0
+        },
+        "GET /bench/action/night_shift": {
+          "total": 1,
+          "ok": 1,
+          "failed": 0
+        },
+        "GET /bench/action/chat_full": {
+          "total": 2,
+          "ok": 2,
+          "failed": 0
+        }
+      }
+    },
+    "requests": 13,
+    "ok": 13,
+    "failed": 0,
+    "errRatePct": 0,
+    "rps": 1.3,
+    "avgMs": 6,
+    "p95Ms": 16,
+    "p99Ms": 16,
+    "cpuAvgPct": 4.2,
+    "cpuMaxPct": 5.3,
+    "memAvailMinMb": 4485,
+    "serverRssMb": 56,
+    "serverHeapMb": 14,
+    "worstRoute": "GET /bench/action/news_full",
+    "risk": "ok"
+  }
+]

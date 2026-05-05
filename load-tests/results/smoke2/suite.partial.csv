@@ -1,0 +1,3 @@
+scenario,users,risk,requests,ok,failed,errRatePct,rps,avgMs,p95Ms,p99Ms,cpuAvgPct,cpuMaxPct,memAvailMinMb,serverRssMb,serverHeapMb,worstRoute
+project_uniform,10,ok,16,16,0,0,1.6,4,17,17,3.7,6,4508,55,14,GET /bench/page?path=%2Fcabinet%2Fnews
+project_uniform,20,ok,30,30,0,0,3,3,9,15,3.9,8.5,4550,58,15,GET /bench/action/chat_full

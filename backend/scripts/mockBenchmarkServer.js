@@ -17,6 +17,16 @@ const BATTLE_EXPIRING_BOOST_USERS = Math.max(0, Math.min(USER_COUNT - BATTLE_PEN
 const BENCH_BATTLE_DURATION_SECONDS = Math.max(60, Number(process.env.BENCH_BATTLE_DURATION_SECONDS || 3600));
 const BENCH_BATTLE_PLAN_MINUTES = Math.max(1, Number(process.env.BENCH_BATTLE_PLAN_MINUTES || Math.ceil(BENCH_BATTLE_DURATION_SECONDS / 60)));
 const BENCH_BATTLE_TAIL_USER_COUNT = Math.max(0, Math.min(USER_COUNT, Number(process.env.BENCH_BATTLE_TAIL_USER_COUNT || 0)));
+const RealDate = Date;
+const BENCH_NIGHT_SHIFT_CLOCK_OFFSET_MS = (() => {
+  if (String(process.env.BENCH_FORCE_NIGHT_SHIFT_OPEN || '1') === '0') return 0;
+  const now = new RealDate();
+  const hour = now.getHours();
+  if (hour >= 19 || hour < 6) return 0;
+  const target = new RealDate(now);
+  target.setHours(20, 0, 0, 0);
+  return target.getTime() - now.getTime();
+})();
 const state = {
   users: [],
   battle: null,
@@ -59,6 +69,37 @@ function mockModule(resolvedPath, exportsValue) {
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function withBenchNightShiftClock(fn) {
+  if (!BENCH_NIGHT_SHIFT_CLOCK_OFFSET_MS) return fn();
+  class BenchNightShiftDate extends RealDate {
+    constructor(...args) {
+      if (args.length) {
+        super(...args);
+      } else {
+        super(RealDate.now() + BENCH_NIGHT_SHIFT_CLOCK_OFFSET_MS);
+      }
+    }
+
+    static now() {
+      return RealDate.now() + BENCH_NIGHT_SHIFT_CLOCK_OFFSET_MS;
+    }
+
+    static parse(value) {
+      return RealDate.parse(value);
+    }
+
+    static UTC(...args) {
+      return RealDate.UTC(...args);
+    }
+  }
+  global.Date = BenchNightShiftDate;
+  try {
+    return await fn();
+  } finally {
+    global.Date = RealDate;
+  }
 }
 
 function getBenchUserIndex(user) {
@@ -569,6 +610,19 @@ mockModule(path.resolve(__dirname, '../src/services/emailService.js'), {
 });
 mockModule(path.resolve(__dirname, '../src/services/notificationService.js'), {
   broadcastNotificationByPresence: async () => {},
+});
+mockModule(path.resolve(__dirname, '../src/services/chatTranscriptService.js'), {
+  appendMessage: async () => {},
+  captureSnapshot: async () => [],
+  cleanupExpiredTranscripts: async () => ({ cleaned: 0 }),
+  cleanupTranscript: async () => {},
+  ensureTranscriptState: async (chatId) => ({ chatId: String(chatId), status: 'active' }),
+  flushBufferedMessages: async () => ({ flushed: 0 }),
+  getTranscriptState: async () => null,
+  listMessages: async () => [],
+  markForAppeal: async () => {},
+  persistTranscript: async () => ({ persisted: false, messages: 0 }),
+  touchChatActivity: async () => {},
 });
 mockModule(path.resolve(__dirname, '../src/socket.js'), {
   getIO: () => null,
@@ -1270,7 +1324,7 @@ async function handleMeditationCollectiveCycle(req, res, next) {
 }
 
 async function handleNightShiftCycle(req, res, next) {
-  try {
+  return withBenchNightShiftClock(async () => {
     const pooledUserId = state.nightShiftUsers.length && Math.random() < 0.8
       ? state.nightShiftUsers[randomInt(0, state.nightShiftUsers.length - 1)]
       : null;
@@ -1370,9 +1424,7 @@ async function handleNightShiftCycle(req, res, next) {
       heartbeat: heartbeatRes.body,
       end: endRes?.body || null,
     });
-  } catch (error) {
-    return next(error);
-  }
+  }).catch((error) => next(error));
 }
 
 async function handleCrystalCycle(req, res, next) {
