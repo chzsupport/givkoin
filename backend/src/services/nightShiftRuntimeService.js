@@ -153,6 +153,15 @@ function getShiftWindowByKey(shiftKey) {
   };
 }
 
+function getShiftScheduleSnapshot(now = new Date()) {
+  const shiftWindow = getShiftWindow(now);
+  return {
+    isOpen: Boolean(shiftWindow?.isOpen),
+    startAt: toIso(shiftWindow?.startAt || now),
+    endAt: toIso(shiftWindow?.endAt || now),
+  };
+}
+
 function normalizeResolvedAnomalies(value) {
   if (!Array.isArray(value)) return [];
   const seen = new Set();
@@ -1025,17 +1034,25 @@ async function getNightShiftStatusForUser(userId) {
 
   const userData = getUserData(userRow);
   const storedNightShift = getNightShiftFromUserData(userData);
+  const shiftWindow = getShiftScheduleSnapshot();
   if (!storedNightShift.isServing || !storedNightShift.sessionId) {
-    return storedNightShift;
+    return {
+      ...storedNightShift,
+      shiftWindow,
+    };
   }
 
   const runtime = await getRuntimeSession(storedNightShift.sessionId);
   if (!runtime || runtime.status !== 'active' || String(runtime.userId) !== String(userRow.id)) {
-    return storedNightShift;
+    return {
+      ...storedNightShift,
+      shiftWindow,
+    };
   }
 
   return {
     ...mergeRuntimeIntoNightShift(storedNightShift, runtime),
+    shiftWindow,
     currentWindow: buildWindowPlan(runtime, runtime.issuedWindowIndex),
   };
 }
@@ -1475,6 +1492,7 @@ async function startShiftForUser(userId) {
       runtime: runtimeDoc,
       nightShift: {
         ...getNightShiftFromUserData(getUserData(updatedUserRow || userRow)),
+        shiftWindow: getShiftScheduleSnapshot(now),
         currentWindow: buildWindowPlan(runtimeDoc, 0),
       },
     };

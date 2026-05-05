@@ -43,6 +43,11 @@ interface NightShiftStatus {
     isServing: boolean;
     sessionId?: string | null;
     startTime: string | null;
+    shiftWindow?: {
+        isOpen: boolean;
+        startAt?: string | null;
+        endAt?: string | null;
+    } | null;
     pendingSettlement?: { dueAt?: string } | null;
     acceptedAnomaliesCurrentSession?: number;
     payableHoursCurrent?: number;
@@ -70,6 +75,9 @@ interface EndShiftResult {
     closeReason?: string | null;
 }
 
+const NIGHT_SHIFT_START_HOUR = 19;
+const NIGHT_SHIFT_END_HOUR = 6;
+
 export default function NightShiftPage() {
     const { isAuthenticated } = useAuth();
     const { t, localePath } = useI18n();
@@ -79,6 +87,7 @@ export default function NightShiftPage() {
     const [radarTargetId, setRadarTargetId] = useState<string | null>(null);
     const [radarTargetUrl, setRadarTargetUrl] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState(0);
+    const [shiftCountdownMs, setShiftCountdownMs] = useState(0);
 
     const [endShiftData, setEndShiftData] = useState<EndShiftResult | null>(null);
     const [windowWidth, setWindowWidth] = useState(0);
@@ -114,6 +123,28 @@ export default function NightShiftPage() {
             anomalyAudioBusyRef.current = false;
         }
     }, []);
+
+    const getNextShiftStartMs = useCallback((nowMs = Date.now()) => {
+        const shiftWindow = status?.shiftWindow;
+        if (shiftWindow?.isOpen) return nowMs;
+
+        const serverStartMs = shiftWindow?.startAt ? new Date(shiftWindow.startAt).getTime() : NaN;
+        if (Number.isFinite(serverStartMs) && serverStartMs > nowMs) {
+            return serverStartMs;
+        }
+
+        const now = new Date(nowMs);
+        if (now.getHours() >= NIGHT_SHIFT_START_HOUR || now.getHours() < NIGHT_SHIFT_END_HOUR) {
+            return nowMs;
+        }
+
+        const nextStart = new Date(now);
+        nextStart.setHours(NIGHT_SHIFT_START_HOUR, 0, 0, 0);
+        if (nextStart.getTime() <= nowMs) {
+            nextStart.setDate(nextStart.getDate() + 1);
+        }
+        return nextStart.getTime();
+    }, [status?.shiftWindow]);
 
     const fetchStatus = useCallback(async () => {
         if (!isAuthenticated) {
@@ -201,6 +232,22 @@ export default function NightShiftPage() {
         }
         return () => clearInterval(interval);
     }, [status?.isServing, runtime]);
+
+    useEffect(() => {
+        if (status?.isServing) {
+            setShiftCountdownMs(0);
+            return;
+        }
+
+        const syncCountdown = () => {
+            const nowMs = Date.now();
+            setShiftCountdownMs(Math.max(0, getNextShiftStartMs(nowMs) - nowMs));
+        };
+
+        syncCountdown();
+        const interval = setInterval(syncCountdown, 1000);
+        return () => clearInterval(interval);
+    }, [getNextShiftStartMs, status?.isServing]);
 
     useEffect(() => {
         if (!status?.isServing || !radarTargetId) {
@@ -320,9 +367,10 @@ export default function NightShiftPage() {
     };
 
     const formatTime = (ms: number) => {
-        const seconds = Math.floor((ms / 1000) % 60);
-        const minutes = Math.floor((ms / (1000 * 60)) % 60);
-        const hours = Math.floor((ms / (1000 * 60 * 60)));
+        const safeMs = Math.max(0, Number.isFinite(ms) ? ms : 0);
+        const seconds = Math.floor((safeMs / 1000) % 60);
+        const minutes = Math.floor((safeMs / (1000 * 60)) % 60);
+        const hours = Math.floor((safeMs / (1000 * 60 * 60)));
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     };
 
@@ -470,6 +518,21 @@ export default function NightShiftPage() {
                                 {t('night_shift.post_handed_over')}
                             </button>
                         </div>
+
+                        {!status?.isServing && (
+                            <div className="w-full max-w-[360px] rounded-2xl border border-purple-400/20 bg-black/35 px-5 py-4 text-center shadow-[0_0_24px_rgba(168,85,247,0.12)] backdrop-blur-md">
+                                <div className="flex flex-wrap items-center justify-center gap-2 text-tiny uppercase tracking-[0.2em] text-purple-200/80">
+                                    <Clock className="h-4 w-4 text-purple-300" />
+                                    <span>{shiftCountdownMs <= 0 ? t('night_shift.shift_available') : t('night_shift.until_shift_start')}</span>
+                                </div>
+                                <div className="mt-2 font-mono text-3xl font-bold text-white">
+                                    {formatTime(shiftCountdownMs)}
+                                </div>
+                                <div className="mt-1 text-xs text-white/45">
+                                    {t('night_shift.shift_start_time')}
+                                </div>
+                            </div>
+                        )}
 
                         {status?.isServing && (
                             <div className="font-mono text-xl text-purple-300 animate-pulse">
