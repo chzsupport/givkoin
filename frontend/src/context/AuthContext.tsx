@@ -209,8 +209,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const data = await apiGet<{ user: User }>('/auth/me');
             if (data.user) {
-                setUser(data.user);
-                localStorage.setItem('givkoin_user', JSON.stringify(data.user));
+                setUser((prev) => {
+                    const next = { ...data.user };
+                    if (prev?.entity && !next.entity) next.entity = prev.entity;
+                    if (prev?.luckyDayAvailable !== undefined && next.luckyDayAvailable === undefined) next.luckyDayAvailable = prev.luckyDayAvailable;
+                    if (prev?.newsCard && !next.newsCard) next.newsCard = prev.newsCard;
+                    localStorage.setItem('givkoin_user', JSON.stringify(next));
+                    return next;
+                });
                 scheduleUserSessionWarmup(String(data.user._id || data.user.id || ''));
             }
         } catch (e) {
