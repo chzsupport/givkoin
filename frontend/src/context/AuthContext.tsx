@@ -209,15 +209,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const data = await apiGet<{ user: User }>('/auth/me');
             if (data.user) {
-                setUser((prev) => {
-                    const next = { ...data.user };
-                    if (prev?.entity && !next.entity) next.entity = prev.entity;
-                    if (prev?.luckyDayAvailable !== undefined && next.luckyDayAvailable === undefined) next.luckyDayAvailable = prev.luckyDayAvailable;
-                    if (prev?.newsCard && !next.newsCard) next.newsCard = prev.newsCard;
-                    localStorage.setItem('givkoin_user', JSON.stringify(next));
-                    return next;
-                });
-                scheduleUserSessionWarmup(String(data.user._id || data.user.id || ''));
+                const userId = data.user._id || data.user.id || '';
+                // Читаем сущность из сохранённого юзера
+                let entity: User['entity'] | undefined = undefined;
+                try {
+                    const saved = localStorage.getItem('givkoin_user');
+                    if (saved) {
+                        const parsed = JSON.parse(saved) as User;
+                        if (parsed?.entity) entity = parsed.entity;
+                    }
+                } catch {}
+                // Если сущности нет — запрашиваем один раз
+                if (!entity && userId) {
+                    try {
+                        const entityRes = await apiGet<{ entity: User['entity'] }>('/entity/me');
+                        if (entityRes?.entity) entity = entityRes.entity;
+                    } catch {}
+                }
+                const next = { ...data.user };
+                if (entity) next.entity = entity;
+                setUser(next);
+                localStorage.setItem('givkoin_user', JSON.stringify(next));
+                scheduleUserSessionWarmup(userId);
             }
         } catch (e) {
             console.error("Failed to refresh user data", e);

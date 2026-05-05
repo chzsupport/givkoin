@@ -44,6 +44,7 @@ export default function EntityProfilePage() {
         updatedAt: string;
         history: { message: string; createdAt: string }[];
     } | null>(null);
+    const [entityLoading, setEntityLoading] = useState(true);
 
     useEffect(() => {
         apiGet<{ entity: typeof entityData }>('/entity/me')
@@ -53,14 +54,15 @@ export default function EntityProfilePage() {
                     if (user) updateUser({ ...user, entity: r.entity } as typeof user);
                 }
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => setEntityLoading(false));
     }, []);
 
     useEffect(() => {
-        if (user && !entityData) {
+        if (user && !entityLoading && !entityData) {
             router.replace(localePath('/entity/create'));
         }
-    }, [user, entityData, router, localePath]);
+    }, [user, entityLoading, entityData, router, localePath]);
     const entity = entityData;
     const entityId = entity?._id;
 
