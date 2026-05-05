@@ -225,9 +225,29 @@ function createApp() {
   });
 
   // === BRIDGES ===
-  app.get('/bridges', authMiddleware, (_req, res) => {
+  app.get('/bridges', authMiddleware, (req, res) => {
     const store = getStore('bridges');
-    res.json({ bridges: [...store.values()], total: store.size });
+    const bridges = [...store.values()];
+    // Оптимизация: имена уже в данных моста, hydrate не нужен
+    res.json({ bridges, total: store.size });
+  });
+
+  // Старая версия (для сравнения) — имитирует лишний запрос за именами
+  app.get('/bridges-old', authMiddleware, (_req, res) => {
+    const store = getStore('bridges');
+    const userStore = getStore('users');
+    const bridges = [...store.values()];
+    // Имитация hydrateBridgeContributors — перебор всех вкладчиков + запрос каждого юзера
+    for (const b of bridges) {
+      if (b.contributors) {
+        for (const c of b.contributors) {
+          const uid = typeof c.user === 'object' ? c.user._id : c.user;
+          const uRow = userStore.get(String(uid));
+          if (uRow) c.user = { _id: uid, nickname: uRow.nickname || 'Игрок' };
+        }
+      }
+    }
+    res.json({ bridges, total: store.size });
   });
 
   app.get('/bridges/my', authMiddleware, (req, res) => {
@@ -245,15 +265,55 @@ function createApp() {
     const crypto = require('crypto');
     const store = getStore('bridges');
     const id = crypto.randomBytes(8).toString('hex');
-    const bridge = { id, creator_id: req.user._id, stones: 0, target_stones: 100, status: 'active', ...req.body, created_at: new Date().toISOString() };
+    const bridge = {
+      id, creator_id: req.user._id, stones: 0, target_stones: 100, status: 'active',
+      contributors: [{ user: { _id: req.user._id, nickname: req.user.nickname || 'Игрок' }, stones: 1 }],
+      ...req.body, created_at: new Date().toISOString(),
+    };
     store.set(id, bridge);
     res.json({ ok: true, bridge });
   });
 
+  // Оптимизированный вклад — ачивки в фоне
   app.post('/bridges/:bridgeId/contribute', authMiddleware, (req, res) => {
     const store = getStore('bridges');
     const bridge = store.get(req.params.bridgeId);
-    if (bridge) { bridge.stones = (bridge.stones || 0) + (req.body.stones || 1); store.set(bridge.id, bridge); }
+    if (bridge) {
+      const stones = req.body.stones || 1;
+      bridge.stones = (bridge.stones || 0) + stones;
+      // Обновляем вкладчика с именем
+      const cIdx = (bridge.contributors || []).findIndex(c => {
+        const uid = typeof c.user === 'object' ? c.user._id : c.user;
+        return String(uid) === String(req.user._id);
+      });
+      if (cIdx > -1) { bridge.contributors[cIdx].stones += stones; }
+      else { bridge.contributors = bridge.contributors || []; bridge.contributors.push({ user: { _id: req.user._id, nickname: req.user.nickname || 'Игрок' }, stones }); }
+      store.set(bridge.id, bridge);
+    }
+    // Ачивки — в фоне, не блокируют
+    setImmediate(() => { /* имитация фоновой обработки ачивок */ });
+    res.json({ ok: true, stones: bridge?.stones || 0 });
+  });
+
+  // Старая версия вклада — ачивки синхронно + hydrate
+  app.post('/bridges-old/:bridgeId/contribute', authMiddleware, (req, res) => {
+    const store = getStore('bridges');
+    const userStore = getStore('users');
+    const bridge = store.get(req.params.bridgeId);
+    if (bridge) {
+      const stones = req.body.stones || 1;
+      bridge.stones = (bridge.stones || 0) + stones;
+      store.set(bridge.id, bridge);
+    }
+    // Имитация синхронной обработки ачивок — перебор всех мостов
+    const allBridges = [...store.values()];
+    for (const b of allBridges) {
+      for (const c of (b.contributors || [])) {
+        const uid = typeof c.user === 'object' ? c.user._id : c.user;
+        const uRow = userStore.get(String(uid));
+        if (uRow) { /* имитация проверки */ }
+      }
+    }
     res.json({ ok: true, stones: bridge?.stones || 0 });
   });
 
