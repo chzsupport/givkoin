@@ -43,7 +43,7 @@ export default function EntityProfilePage() {
         createdAt: string;
         updatedAt: string;
         history: unknown[];
-    } | null>(user?.entity || null);
+    } | null>(null);
 
     useEffect(() => {
         apiGet<{ entity: typeof entityData }>('/entity/me')
