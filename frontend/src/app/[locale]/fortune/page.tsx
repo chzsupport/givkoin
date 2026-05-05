@@ -132,7 +132,7 @@ export default function FortunePage() {
             const spinStatus = await apiGet<unknown>('/fortune/status');
             if (isObj(spinStatus)) {
                 setSpinsLeft(Number(spinStatus.spinsLeft) || 0);
-                if (typeof spinStatus.luckyDayAvailable === 'boolean') {
+                if (typeof spinStatus.luckyDayAvailable === 'boolean' && user) {
                     updateUser({ ...user, luckyDayAvailable: spinStatus.luckyDayAvailable } as typeof user);
                 }
             }
