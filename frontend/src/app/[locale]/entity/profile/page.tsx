@@ -14,7 +14,7 @@ import Image from 'next/image';
 import { useI18n } from '@/context/I18nContext';
 
 export default function EntityProfilePage() {
-    const { user, refreshUser } = useAuth();
+    const { user, refreshUser, updateUser } = useAuth();
     const router = useRouter();
     const { localePath, t } = useI18n();
     const [windowWidth, setWindowWidth] = useState(0);
@@ -42,7 +42,7 @@ export default function EntityProfilePage() {
         satietyUntil: string | null;
         createdAt: string;
         updatedAt: string;
-        history: unknown[];
+        history: { message: string; createdAt: string }[];
     } | null>(null);
 
     useEffect(() => {
