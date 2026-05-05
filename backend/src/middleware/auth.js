@@ -1,70 +1,31 @@
 const jwt = require('jsonwebtoken');
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const {
   extractClientMeta,
   decodeTokenUnsafe,
   getTokenFromRequest,
   writeAuthEvent,
-  isSessionActive,
   touchSession,
   revokeSession,
-  enforceSingleDeviceSession,
 } = require('../services/authTrackingService');
 const { evaluateAccessRestriction } = require('../services/securityService');
 const {
   isActiveRestriction,
   isUserFrozen,
-  handleAuthenticatedSessionMultiAccount,
 } = require('../services/multiAccountService');
 const { isAdminEmail } = require('../utils/accountRole');
 const { getRequestLanguage, pickRequestLanguage } = require('../utils/requestLanguage');
 const { JWT_SECRET } = require('../config/auth');
+const { getCachedUser, invalidateUser } = require('../services/userCache');
+const { isSessionActiveCached } = require('../services/sessionCache');
+const { isBanned } = require('../services/banBlacklist');
+const { queueOnlineUpdate, queueSecurityCheck } = require('../services/backgroundSecurity');
 
 const SESSION_MULTI_ACCOUNT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-
-async function fetchUserById(userId) {
-  if (!userId) return null;
-  try {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', String(userId))
-      .maybeSingle();
-    if (error) return null;
-    if (!data) return null;
-    const extra = data.data && typeof data.data === 'object' ? data.data : {};
-    const base = {
-      _id: data.id,
-      id: data.id,
-      email: data.email,
-      role: data.role,
-      nickname: data.nickname,
-      status: data.status,
-      emailConfirmed: Boolean(data.email_confirmed),
-      emailConfirmedAt: data.email_confirmed_at,
-      accessRestrictedUntil: data.access_restricted_until,
-      accessRestrictionReason: data.access_restriction_reason,
-      language: data.language,
-      lastSeenAt: data.last_seen_at,
-      lastOnlineAt: data.last_online_at,
-      lastIp: data.last_ip,
-      lastDeviceId: data.last_device_id,
-      lastFingerprint: data.last_fingerprint,
-      lastWeakFingerprint: extra.lastWeakFingerprint || '',
-      lastIpIntel: extra.lastIpIntel || null,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    };
-    return { ...extra, ...base, data: extra };
-  } catch (_err) {
-    return null;
-  }
-}
 
 async function updateUserById(userId, update) {
   if (!userId || !update || typeof update !== 'object') return false;
   try {
+    const { getSupabaseClient } = require('../lib/supabaseClient');
     const supabase = getSupabaseClient();
     const nowIso = new Date().toISOString();
     const payload = { ...update, updated_at: nowIso };
@@ -76,26 +37,6 @@ async function updateUserById(userId, update) {
   } catch (_err) {
     return false;
   }
-}
-
-function normalizeIdentityString(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/gi, '');
-}
-
-function normalizeEmailForAntiFarm(email) {
-  const e = String(email || '').toLowerCase().trim();
-  const at = e.indexOf('@');
-  if (at <= 0) return '';
-  let local = e.slice(0, at);
-  const domain = e.slice(at + 1);
-  if (domain === 'gmail.com' || domain === 'googlemail.com') {
-    const plus = local.indexOf('+');
-    if (plus > 0) local = local.slice(0, plus);
-    local = local.replace(/\./g, '');
-  }
-  return `${local}@${domain}`;
 }
 
 const auth = async (req, res, next) => {
@@ -110,7 +51,15 @@ const auth = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const client = extractClientMeta(req);
 
-    const user = await fetchUserById(decoded.userId);
+    // 1. Проверка бана — мгновенная, из памяти (без запроса к базе)
+    if (isBanned(decoded.userId)) {
+      return res.status(403).json({
+        message: pickRequestLanguage(req, 'Аккаунт заблокирован', 'Account is blocked'),
+      });
+    }
+
+    // 2. Загрузка юзера — из кеша (без запроса к базе если кеш актуален)
+    const user = await getCachedUser(decoded.userId);
 
     if (!user) {
       return res.status(401).json({
@@ -124,9 +73,10 @@ const auth = async (req, res, next) => {
       });
     }
 
+    // 3. Блокировки по IP/устройству — кеш уже есть в securityService (30 сек)
     const accessCheck = await evaluateAccessRestriction(client);
     if (accessCheck.blocked && user.role !== 'admin') {
-      await writeAuthEvent({
+      writeAuthEvent({
         user: user._id,
         email: user.email,
         eventType: 'session_revoked',
@@ -134,18 +84,20 @@ const auth = async (req, res, next) => {
         reason: `blocked:${accessCheck.reason || 'rule'}`,
         req,
         sessionId: decoded?.sid || '',
-      });
+      }).catch(() => {});
       return res.status(403).json({
         message: pickRequestLanguage(req, 'Доступ ограничен', 'Access is restricted'),
       });
     }
 
+    // 4. Проверка бана из данных юзера (на случай если кеш устарел)
     if (user.status === 'banned') {
       return res.status(403).json({
         message: pickRequestLanguage(req, 'Аккаунт заблокирован', 'Account is blocked'),
       });
     }
 
+    // 5. Ограничения доступа / заморозка — из кешированных данных юзера
     if ((isActiveRestriction(user.accessRestrictedUntil) || isUserFrozen(user)) && user.role !== 'admin') {
       if (decoded?.sid) {
         await revokeSession({
@@ -154,7 +106,7 @@ const auth = async (req, res, next) => {
           reason: isUserFrozen(user) ? 'multi_account_group_frozen' : 'multi_account_restriction',
         });
       }
-      await writeAuthEvent({
+      writeAuthEvent({
         user: user._id,
         email: user.email,
         eventType: 'session_revoked',
@@ -162,7 +114,7 @@ const auth = async (req, res, next) => {
         reason: isUserFrozen(user) ? 'multi_account_group_frozen' : 'multi_account_restriction',
         req,
         sessionId: decoded?.sid || '',
-      });
+      }).catch(() => {});
       return res.status(403).json({
         message: pickRequestLanguage(
           req,
@@ -177,17 +129,20 @@ const auth = async (req, res, next) => {
       });
     }
 
+    // Снятие устаревшего ограничения — в фоне
     if (user.accessRestrictedUntil && (!isActiveRestriction(user.accessRestrictedUntil) || user.role === 'admin')) {
       updateUserById(user._id, {
         access_restricted_until: null,
         access_restriction_reason: '',
-      }).catch(() => { });
+      }).catch(() => {});
+      invalidateUser(user._id);
     }
 
+    // 6. Проверка сессии — из кеша (без запроса к базе если кеш актуален)
     if (decoded?.sid) {
-      const active = await isSessionActive({ userId: user._id, sessionId: decoded.sid });
+      const active = await isSessionActiveCached({ userId: user._id, sessionId: decoded.sid });
       if (!active) {
-        await writeAuthEvent({
+        writeAuthEvent({
           user: user._id,
           email: user.email,
           eventType: 'session_revoked',
@@ -195,38 +150,17 @@ const auth = async (req, res, next) => {
           reason: 'session_not_active',
           req,
           sessionId: decoded.sid,
-        });
+        }).catch(() => {});
         return res.status(401).json({
           message: pickRequestLanguage(req, 'Сессия завершена, войдите заново', 'Session expired, please sign in again'),
         });
       }
 
-      const singleDeviceCheck = await enforceSingleDeviceSession({
-        userId: user._id,
-        sessionId: decoded.sid,
-        req,
-        revokedBy: user._id,
-      });
-      if (singleDeviceCheck.conflict) {
-        await writeAuthEvent({
-          user: user._id,
-          email: user.email,
-          eventType: 'session_revoked',
-          result: 'failed',
-          reason: 'single_device_conflict',
-          req,
-          sessionId: decoded.sid,
-        });
-        return res.status(401).json({
-          message: pickRequestLanguage(
-            req,
-            'Обнаружен вход с другого устройства. Все сеансы завершены. Войдите заново только на одном устройстве.',
-            'A sign-in from another device was detected. All sessions were ended. Sign in again on only one device.',
-          ),
-        });
-      }
+      // Проверка одного устройства — УБРАНА из каждого запроса
+      // Теперь делается только при входе (в authTrackingService.createUserSession)
+      // Если нужно мгновенно выкинуть — админка шлёт сигнал через сокет
 
-      touchSession(decoded.sid, req).catch(() => { });
+      touchSession(decoded.sid, req).catch(() => {});
     }
 
     const siteLanguage = getRequestLanguage(req, { fallback: user.language || user?.data?.language || 'ru' });
@@ -236,6 +170,7 @@ const auth = async (req, res, next) => {
     req.user = user;
     req.auth = decoded;
 
+    // 7. Запись last_online_at — в фоне (не блокирует ответ юзеру)
     const now = new Date();
     const { ip, deviceId, fingerprint, weakFingerprint } = client;
     const currentData = user?.data && typeof user.data === 'object' ? user.data : {};
@@ -249,29 +184,25 @@ const auth = async (req, res, next) => {
         || !lastSecurityCheckAtMs
         || (now.getTime() - lastSecurityCheckAtMs) >= SESSION_MULTI_ACCOUNT_CHECK_INTERVAL_MS
       );
-    const nextData = {
-      ...currentData,
+
+    queueOnlineUpdate(user._id, {
+      lastIp: ip || user.lastIp || null,
+      lastDeviceId: deviceId || user.lastDeviceId || null,
+      lastFingerprint: fingerprint || user.lastFingerprint || null,
       lastWeakFingerprint: weakFingerprint || currentData.lastWeakFingerprint || '',
       ...(shouldRunSecurityCheck ? { lastSecuritySignalCheckAt: now.toISOString() } : {}),
-    };
-    const update = {
-      last_online_at: now.toISOString(),
-      last_ip: ip || user.lastIp || null,
-      last_device_id: deviceId || user.lastDeviceId || null,
-      last_fingerprint: fingerprint || user.lastFingerprint || null,
-      data: nextData,
-    };
-    await updateUserById(user._id, update);
+    });
 
+    // 8. Проверка мультиаккаунта — в фоне (не блокирует ответ юзеру)
     if (shouldRunSecurityCheck) {
-      const sessionCheckResult = await handleAuthenticatedSessionMultiAccount({
+      queueSecurityCheck(user._id, {
         user: {
           ...user,
-          lastIp: update.last_ip,
-          lastDeviceId: update.last_device_id,
-          lastFingerprint: update.last_fingerprint,
-          lastWeakFingerprint: nextData.lastWeakFingerprint,
-          data: nextData,
+          lastIp: ip || user.lastIp || null,
+          lastDeviceId: deviceId || user.lastDeviceId || null,
+          lastFingerprint: fingerprint || user.lastFingerprint || null,
+          lastWeakFingerprint: weakFingerprint || currentData.lastWeakFingerprint || '',
+          data: currentData,
         },
         req,
         signals: {
@@ -283,24 +214,6 @@ const auth = async (req, res, next) => {
           userAgent: client.userAgent,
         },
       });
-
-      if (sessionCheckResult?.frozen) {
-        if (decoded?.sid) {
-          await revokeSession({
-            sessionId: decoded.sid,
-            revokedBy: user._id,
-            reason: 'multi_account_group_frozen',
-          });
-        }
-        return res.status(403).json({
-          message: pickRequestLanguage(
-            req,
-            'Аккаунт временно заморожен из-за подозрительных действий. Проверка обычно занимает до 24 часов. Не создавайте новые аккаунты и дождитесь решения модератора.',
-            'This account was temporarily frozen due to suspicious activity. The review usually takes up to 24 hours. Please do not create new accounts and wait for the moderator decision.',
-          ),
-          groupId: sessionCheckResult.groupId || null,
-        });
-      }
     }
 
     return next();
@@ -317,7 +230,7 @@ const auth = async (req, res, next) => {
         reason: error.name,
         req,
         sessionId: unsafe?.sid || '',
-      }).catch(() => { });
+      }).catch(() => {});
       return res.status(401).json({
         message: pickRequestLanguage(req, 'Недействительный токен', 'Invalid token'),
       });

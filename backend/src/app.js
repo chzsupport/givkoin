@@ -308,6 +308,16 @@ const startServer = async () => {
     registerCronJobs();
     ioInstance = await initSocket(server);
     app.set('io', ioInstance);
+
+    // Загрузка бан-листа в память + подписка на изменения
+    const { loadBannedUsers, subscribeToBanChanges } = require('./services/banBlacklist');
+    await loadBannedUsers();
+    subscribeToBanChanges();
+
+    // Запуск фонового сервиса (запись last_online, проверка мультиаккаунта)
+    const { start: startBgSecurity } = require('./services/backgroundSecurity');
+    startBgSecurity();
+
     server.listen(PORT, () => {
       serverStarted = true;
       logger.info('Backend started', { port: PORT });

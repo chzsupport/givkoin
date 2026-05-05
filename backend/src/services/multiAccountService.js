@@ -2786,6 +2786,18 @@ async function applyRiskCaseGroupDecision({
     });
   }
 
+  // При бане — добавляем в чёрный список в памяти + выкидываем через сокет
+  if (safeDecision === 'ban') {
+    try {
+      const { addBan } = require('./banBlacklist');
+      const io = global.io;
+      for (const u of users) {
+        addBan(u._id);
+        if (io) io.to(`user-${String(u._id)}`).emit('auth:force_logout', { reason: 'banned' });
+      }
+    } catch (_err) {}
+  }
+
   return {
     riskCaseId,
     groupId,
