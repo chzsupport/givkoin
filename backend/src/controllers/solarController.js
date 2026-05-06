@@ -5,7 +5,7 @@ const {
     awardReferralBlessingExternal,
     getTotalRewardMultiplier,
     recordTransaction,
-} = require('../services/scService');
+} = require('../services/kService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
@@ -291,7 +291,7 @@ exports.collectSolarCharge = async (req, res) => {
         }
 
         const baseLmAward = 100; // TZ: 100 Lumens
-        const scAward = 10;  // TZ: 10 K
+        const kAward = 10;  // TZ: 10 K
 
         const [userRow, rewardMultiplier] = await Promise.all([
             getUserRowById(req.user._id),
@@ -312,20 +312,20 @@ exports.collectSolarCharge = async (req, res) => {
             baseLmAward
         );
         const finalLmAward = finalBaseLmAward + extraLm;
-        const finalScAward = keepPositiveReward(
-            Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000),
-            scAward
+        const finalKAward = keepPositiveReward(
+            Math.max(0, Math.round(kAward * rewardMultiplier * 1000) / 1000),
+            kAward
         );
 
         const nextLumens = (Number(userData.lumens) || 0) + finalLmAward;
-        const nextSc = (Number(userData.sc) || 0) + finalScAward;
+        const nextK = (Number(userData.k) || 0) + finalKAward;
         const nextShopBoosts = charges > 0
             ? { ...shopBoosts, solarExtraLmCharges: Math.max(0, charges - 1) }
             : shopBoosts;
 
         awardReferralBlessingExternal({
             receiverUserId: userRow.id,
-            amount: finalScAward,
+            amount: finalKAward,
             sourceType: 'solar_collect',
             relatedEntity: charge._id,
         }).catch(() => { });
@@ -335,15 +335,15 @@ exports.collectSolarCharge = async (req, res) => {
 
         const updatedUserRow = await updateUserDataById(userRow.id, {
             lumens: nextLumens,
-            sc: nextSc,
+            k: nextK,
             shopBoosts: nextShopBoosts,
         });
-        if (finalScAward > 0) {
+        if (finalKAward > 0) {
             await recordTransaction({
                 userId: userRow.id,
                 type: 'solar_collect',
                 direction: 'credit',
-                amount: finalScAward,
+                amount: finalKAward,
                 currency: 'K',
                 description: pickLang(userLang, 'Сбор солнечного заряда', 'Solar charge collection'),
                 relatedEntity: charge._id,
@@ -375,7 +375,7 @@ exports.collectSolarCharge = async (req, res) => {
             minutes: 5,
             meta: {
                 earnedLm: finalLmAward,
-                earnedSc: finalScAward,
+                earnedK: finalKAward,
                 baseLmAward,
                 extraLm,
             },
@@ -447,7 +447,7 @@ exports.collectSolarCharge = async (req, res) => {
             description: pickLang(userLang, 'Досмотрите видео, чтобы получить такую же награду ещё раз.', 'Watch the video to receive the same reward again.'),
             reward: {
                 kind: 'currency',
-                sc: finalScAward,
+                k: finalKAward,
                 lumens: finalLmAward,
                 radiance: 10,
                 radianceActivityType: 'solar_collect',
@@ -460,10 +460,10 @@ exports.collectSolarCharge = async (req, res) => {
         res.json({
             message: pickLang(userLang, 'Заряд успешно впитан!', 'Charge successfully absorbed!'),
             lmAward: finalLmAward,
-            scAward: finalScAward,
+            kAward: finalKAward,
             boostOffer,
             user: {
-                sc: updatedUserRow?.data?.sc ?? nextSc,
+                k: updatedUserRow?.data?.k ?? nextK,
                 lumens: updatedUserRow?.data?.lumens ?? nextLumens
             }
         });
@@ -518,16 +518,16 @@ exports.shareSolarLumens = async (req, res) => {
             return res.status(400).json({ message: pickLang(userLang, 'Получатель недоступен', 'Recipient is unavailable') });
         }
 
-        const scAward = 5;
+        const kAward = 5;
 
-        const finalScAward = keepPositiveReward(
-            Math.max(0, Math.round(scAward * rewardMultiplier * 1000) / 1000),
-            scAward
+        const finalKAward = keepPositiveReward(
+            Math.max(0, Math.round(kAward * rewardMultiplier * 1000) / 1000),
+            kAward
         );
         const starsAward = Math.round((Math.random() * (0.01 - 0.001) + 0.001) * 1000) / 1000;
 
         const nextSenderLumens = (Number(senderData.lumens) || 0) - amountLm;
-        const nextSenderSc = (Number(senderData.sc) || 0) + finalScAward;
+        const nextSenderK = (Number(senderData.k) || 0) + finalKAward;
 
         const resStars = await applyStarsDelta({
             userId: senderRow.id,
@@ -545,19 +545,19 @@ exports.shareSolarLumens = async (req, res) => {
         const [updatedSenderRow] = await Promise.all([
             updateUserDataById(senderRow.id, {
                 lumens: nextSenderLumens,
-                sc: nextSenderSc,
+                k: nextSenderK,
                 ...(nextSenderStars != null ? { stars: nextSenderStars } : {}),
             }),
             updateUserDataById(receiverRow.id, {
                 lumens: nextReceiverLumens,
             }),
         ]);
-        if (finalScAward > 0) {
+        if (finalKAward > 0) {
             await recordTransaction({
                 userId: senderRow.id,
                 type: 'solar_share',
                 direction: 'credit',
-                amount: finalScAward,
+                amount: finalKAward,
                 currency: 'K',
                 description: pickLang(userLang, 'Передача Люменов', 'Lumens transfer'),
                 relatedEntity: receiverRow.id,
@@ -595,7 +595,7 @@ exports.shareSolarLumens = async (req, res) => {
 
         awardReferralBlessingExternal({
             receiverUserId: senderRow.id,
-            amount: finalScAward,
+            amount: finalKAward,
             sourceType: 'solar_share',
             relatedEntity: receiverRow.id,
         }).catch(() => { });
@@ -608,7 +608,7 @@ exports.shareSolarLumens = async (req, res) => {
             meta: {
                 amountLm,
                 recipientId: receiverRow.id,
-                scAward: finalScAward,
+                kAward: finalKAward,
                 starsAward,
             },
             createdAt: now,
@@ -701,12 +701,12 @@ exports.shareSolarLumens = async (req, res) => {
         res.json({
             message: pickLang(userLang, 'Свет отправлен!', 'Light sent!'),
             amountLm,
-            scAward: finalScAward,
+            kAward: finalKAward,
             starsAward,
             shareCountToday: shareCountToday + 1,
             shareDailyLimit: DAILY_LIMIT,
             user: {
-                sc: updatedSenderRow?.data?.sc ?? nextSenderSc,
+                k: updatedSenderRow?.data?.k ?? nextSenderK,
                 lumens: updatedSenderRow?.data?.lumens ?? nextSenderLumens,
                 stars: updatedSenderRow?.data?.stars ?? nextSenderStars,
             },

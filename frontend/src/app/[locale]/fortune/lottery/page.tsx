@@ -38,7 +38,7 @@ const formatTicketNumbers = (numbers: number[]) => {
     return numbers.map((n) => n.toString().padStart(2, '0')).join(' ');
 };
 
-const formatUserSc = (value: number) => {
+const formatUserK = (value: number) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return '0';
     const whole = Math.floor(n);
@@ -225,7 +225,7 @@ export default function LotteryPage() {
             return;
         }
         if (!user || ticketsToday >= maxTicketsPerDay) return;
-        if (freeTickets <= 0 && user.sc < ticketCost) return;
+        if (freeTickets <= 0 && user.k < ticketCost) return;
 
         setIsBuying(true);
         try {
@@ -332,7 +332,7 @@ export default function LotteryPage() {
                             <div className="flex gap-2 bg-white/5 border border-white/10 rounded-full px-2 py-1 backdrop-blur-md text-tiny">
                                 <div className="flex items-center gap-1 text-yellow-400 font-bold">
                                     <Coins className="w-3 h-3" />
-                                    <span>{formatUserSc(user?.sc ?? 0)}</span>
+                                    <span>{formatUserK(user?.k ?? 0)}</span>
                                 </div>
                                 <div className="w-px bg-white/10" />
                                 <div className="flex items-center gap-1 text-blue-300">
@@ -418,10 +418,10 @@ export default function LotteryPage() {
                                         </button>
                                         <button
                                             onClick={handleBuyTicket}
-                                            disabled={ticketSlots.filter((value) => value !== null).length !== TICKET_LENGTH || ticketsToday >= maxTicketsPerDay || (freeTickets <= 0 && (user?.sc || 0) < ticketCost) || isBuying || lotteryStatus !== 'open'}
+                                            disabled={ticketSlots.filter((value) => value !== null).length !== TICKET_LENGTH || ticketsToday >= maxTicketsPerDay || (freeTickets <= 0 && (user?.k || 0) < ticketCost) || isBuying || lotteryStatus !== 'open'}
                                             className={`
                                                 px-3 xl:px-4 py-1.5 rounded-lg font-bold text-tiny transition-all
-                                                ${ticketSlots.filter((value) => value !== null).length === TICKET_LENGTH && ticketsToday < maxTicketsPerDay && (freeTickets > 0 || (user?.sc || 0) >= ticketCost) && lotteryStatus === 'open'
+                                                ${ticketSlots.filter((value) => value !== null).length === TICKET_LENGTH && ticketsToday < maxTicketsPerDay && (freeTickets > 0 || (user?.k || 0) >= ticketCost) && lotteryStatus === 'open'
                                                     ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_12px_rgba(37,99,235,0.25)]'
                                                     : 'bg-gray-700 text-gray-500 cursor-not-allowed'}
                                             `}

@@ -72,7 +72,7 @@ export default function FortunePage() {
     const isDesktop = Boolean(sideAdSlot);
     const luckyRequestLockRef = useRef(false);
 
-    const formatUserSc = (value: number) => {
+    const formatUserK = (value: number) => {
         const n = Number(value);
         if (!Number.isFinite(n)) return '0';
         const whole = Math.floor(n);
@@ -234,7 +234,7 @@ export default function FortunePage() {
                             <div className="flex gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1.5 backdrop-blur-md text-tiny">
                                 <div className="flex items-center gap-1 text-yellow-400 font-bold">
                                     <Coins className="w-3.5 h-3.5" />
-                                    <span>{formatUserSc(user?.sc ?? 0)}</span>
+                                    <span>{formatUserK(user?.k ?? 0)}</span>
                                 </div>
                                 <div className="w-px bg-white/10" />
                                 <div className="flex items-center gap-1 text-blue-300">

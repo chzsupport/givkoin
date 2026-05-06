@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useActiveChat } from '@/context/ActiveChatContext';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { useI18n } from '@/context/I18nContext';
-import { formatNumber, formatUserSc } from '@/utils/formatters';
+import { formatNumber, formatUserK } from '@/utils/formatters';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 export function Header() {
@@ -85,7 +85,7 @@ export function Header() {
                                 </div>
                                 <div className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-sm font-medium text-accent-gold" title="GIVKOIN KOIN">
                                     <span>🪙</span>
-                                    <span>{formatUserSc(user?.sc ?? 0)} K</span>
+                                    <span>{formatUserK(user?.k ?? 0)} K</span>
                                 </div>
                                 <div className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-sm font-medium text-glow-blue" title={t('fortune.lumens_energy')}>
                                     <span>✨</span>

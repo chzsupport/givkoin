@@ -8,19 +8,19 @@ const DEFAULT_CONFIG = {
     minSpinsSinceStar: 21,
     minDaysSinceStar: 7,
     sectors: [
-      { label: '1', value: 1, type: 'sc', weight: 200, enabled: true },
-      { label: '5', value: 5, type: 'sc', weight: 150, enabled: true },
-      { label: '10', value: 10, type: 'sc', weight: 120, enabled: true },
-      { label: '15', value: 15, type: 'sc', weight: 100, enabled: true },
-      { label: '20', value: 20, type: 'sc', weight: 80, enabled: true },
-      { label: '30', value: 30, type: 'sc', weight: 60, enabled: true },
-      { label: '40', value: 40, type: 'sc', weight: 40, enabled: true },
-      { label: '50', value: 50, type: 'sc', weight: 30, enabled: true },
-      { label: '60', value: 60, type: 'sc', weight: 20, enabled: true },
-      { label: '70', value: 70, type: 'sc', weight: 15, enabled: true },
-      { label: '80', value: 80, type: 'sc', weight: 10, enabled: true },
-      { label: '90', value: 90, type: 'sc', weight: 5, enabled: true },
-      { label: '100', value: 100, type: 'sc', weight: 2, enabled: true },
+      { label: '1', value: 1, type: 'k', weight: 200, enabled: true },
+      { label: '5', value: 5, type: 'k', weight: 150, enabled: true },
+      { label: '10', value: 10, type: 'k', weight: 120, enabled: true },
+      { label: '15', value: 15, type: 'k', weight: 100, enabled: true },
+      { label: '20', value: 20, type: 'k', weight: 80, enabled: true },
+      { label: '30', value: 30, type: 'k', weight: 60, enabled: true },
+      { label: '40', value: 40, type: 'k', weight: 40, enabled: true },
+      { label: '50', value: 50, type: 'k', weight: 30, enabled: true },
+      { label: '60', value: 60, type: 'k', weight: 20, enabled: true },
+      { label: '70', value: 70, type: 'k', weight: 15, enabled: true },
+      { label: '80', value: 80, type: 'k', weight: 10, enabled: true },
+      { label: '90', value: 90, type: 'k', weight: 5, enabled: true },
+      { label: '100', value: 100, type: 'k', weight: 2, enabled: true },
       { label: '+1', value: 0, type: 'spin', weight: 50, enabled: true },
       { label: '0.5⭐', value: 0.5, type: 'star', weight: 1, enabled: true },
     ],
@@ -62,7 +62,7 @@ function clamp(value, min, max, fallback) {
 function normalizeSector(value, fallback, idx) {
   const source = value && typeof value === 'object' ? value : {};
   const base = fallback || DEFAULT_CONFIG.roulette.sectors[idx] || DEFAULT_CONFIG.roulette.sectors[0];
-  const type = ['sc', 'star', 'spin'].includes(String(source.type || base.type)) ? String(source.type || base.type) : base.type;
+  const type = ['k', 'star', 'spin'].includes(String(source.type || base.type)) ? String(source.type || base.type) : base.type;
   const amountRaw = source.value !== undefined ? source.value : base.value;
   const amount = type === 'spin' ? 0 : Math.max(0, toNumber(amountRaw, toNumber(base.value, 0)));
 

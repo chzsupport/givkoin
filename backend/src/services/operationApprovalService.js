@@ -304,7 +304,7 @@ async function executeApprovalOperation({ approval, req }) {
     const rawUpdates = approval.payload?.updates && typeof approval.payload.updates === 'object'
       ? approval.payload.updates
       : {};
-    const allowedKeys = ['sc', 'lives', 'stars', 'lumens', 'complaintChips'];
+    const allowedKeys = ['k', 'lives', 'stars', 'lumens', 'complaintChips'];
     const normalized = {};
 
     for (const key of allowedKeys) {

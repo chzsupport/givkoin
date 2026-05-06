@@ -21,7 +21,7 @@ const {
     deleteUserTotally,
     deleteFeedbackMessageTotally,
 } = require('../services/adminCleanupService');
-const { recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
+const { recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const battleService = require('../services/battleService');
 const { adminAudit } = require('../middleware/adminAudit');
 const { forEachUserBatch } = require('../services/userBatchService');
@@ -169,9 +169,9 @@ function mapWishRowToAdminDto(row, usersById) {
         text: row.text,
         status: row.status,
         supportCount: row.support_count ?? 0,
-        supportSc: Number(row.support_sc ?? 0),
+        supportK: Number(row.support_k ?? 0),
         language: row.language ?? undefined,
-        costSc: Number(row.cost_sc ?? 0),
+        costK: Number(row.cost_k ?? 0),
         executorContact: row.executor_contact ?? undefined,
         takenAt: row.taken_at ? new Date(row.taken_at) : null,
         fulfilledAt: row.fulfilled_at ? new Date(row.fulfilled_at) : null,
@@ -473,14 +473,14 @@ async function buildBattleMoodForecast() {
         }
     }
 
-    let scEarned7d = 0;
-    let scSpent7d = 0;
+    let kEarned7d = 0;
+    let kSpent7d = 0;
     for (const row of (Array.isArray(transactionRows) ? transactionRows : [])) {
         if (String(row?.currency || 'K') !== 'K') continue;
         const amount = Math.max(0, Number(row?.amount) || 0);
         const direction = String(row?.direction || '').trim();
-        if (direction === 'credit') scEarned7d += amount;
-        if (direction === 'debit') scSpent7d += amount;
+        if (direction === 'credit') kEarned7d += amount;
+        if (direction === 'debit') kSpent7d += amount;
     }
 
     let adRevenue7d = 0;
@@ -543,8 +543,8 @@ async function buildBattleMoodForecast() {
     ) * 100);
     const defenseScore = clampNumber(defenseScoreBase - (latestBattleWasLost ? 10 : 0), 0, 100);
 
-    const flowScore = clamp01((scEarned7d + scSpent7d) / Math.max(500, totalUsers * 25));
-    const balanceScore = clamp01((scEarned7d + 1) / Math.max(1, scSpent7d + 1));
+    const flowScore = clamp01((kEarned7d + kSpent7d) / Math.max(500, totalUsers * 25));
+    const balanceScore = clamp01((kEarned7d + 1) / Math.max(1, kSpent7d + 1));
     const adScore = clamp01(adRevenue7d / 5);
     const economyScore = Math.round((flowScore * 0.5 + balanceScore * 0.35 + adScore * 0.15) * 100);
 
@@ -698,13 +698,13 @@ async function buildBattleMoodForecast() {
         calmReasons.push({
             title: 'В мире есть движение',
             value: economyScore,
-            text: `За 7 дней движение ценностей живое: приход ${round2(scEarned7d)} K, траты ${round2(scSpent7d)} K.`,
+            text: `За 7 дней движение ценностей живое: приход ${round2(kEarned7d)} K, траты ${round2(kSpent7d)} K.`,
         });
     } else {
         darkReasons.push({
             title: 'Мир беднеет и замирает',
             value: Math.round((1 - economyScore / 100) * 100),
-            text: `Слишком слабое движение ценностей: приход ${round2(scEarned7d)} K, траты ${round2(scSpent7d)} K.`,
+            text: `Слишком слабое движение ценностей: приход ${round2(kEarned7d)} K, траты ${round2(kSpent7d)} K.`,
         });
     }
 
@@ -725,8 +725,8 @@ async function buildBattleMoodForecast() {
             usefulActions72h: Math.round(usefulActivityWeight),
             pendingAppeals,
             suspiciousReports7d,
-            scEarned7d: round2(scEarned7d),
-            scSpent7d: round2(scSpent7d),
+            kEarned7d: round2(kEarned7d),
+            kSpent7d: round2(kSpent7d),
             adRevenue7d: round2(adRevenue7d),
             latestBattleResult: latestFinishedBattle
                 ? (latestBattleWasLost ? 'darkness' : Number(latestFinishedBattle.lightDamage || 0) === Number(latestFinishedBattle.darknessDamage || 0) ? 'draw' : 'light')
@@ -1447,7 +1447,7 @@ exports.handleAppeal = async (req, res) => {
         }
 
         if (action === 'cancel' || action === 'decline') {
-            const compensationAmount = await getNumericSettingValue('SC_APPEAL_COMPENSATION', 100);
+            const compensationAmount = await getNumericSettingValue('K_APPEAL_COMPENSATION', 100);
             const COMPENSATION_MONTH_LIMIT = 15;
             const monthAgo = new Date(Date.now() - 24 * 30 * 60 * 60 * 1000);
 
@@ -1465,8 +1465,8 @@ exports.handleAppeal = async (req, res) => {
                     const row = await getUserRowById(userId);
                     if (row) {
                         const data = row.data && typeof row.data === 'object' ? row.data : {};
-                        const nextSc = (Number(data.sc) || 0) + compensationAmount;
-                        await updateUserDataById(userId, { sc: nextSc });
+                        const nextK = (Number(data.k) || 0) + compensationAmount;
+                        await updateUserDataById(userId, { k: nextK });
                         await recordTransaction({
                             userId,
                             type: 'appeal_compensation',
@@ -1520,13 +1520,13 @@ exports.getStats = async (req, res) => {
         const activeAppeals = appeals.filter((row) => String(row?.status || '') === 'pending').length;
 
         // Basic economy stats
-        let totalScValue = 0;
+        let totalKValue = 0;
         await forEachUserBatch({
             pageSize: 500,
-            map: (user) => Number(user?.sc) || 0,
+            map: (user) => Number(user?.k) || 0,
             handler: async (batch) => {
-                for (const sc of batch) {
-                    totalScValue += sc;
+                for (const k of batch) {
+                    totalKValue += k;
                 }
             },
         });
@@ -1556,7 +1556,7 @@ exports.getStats = async (req, res) => {
             totalUsers,
             newUsersToday,
             activeAppeals,
-            totalSC: totalScValue,
+            totalK: totalKValue,
             activityChart: last7Days
         });
     } catch (error) {
@@ -2077,19 +2077,19 @@ exports.finishBattleNow = async (req, res) => {
 // Settings
 exports.getSettings = async (req, res) => {
     try {
-        const [chatScHourlyRate, initialLives, appealCompensation, chatMinutesCap] = await Promise.all([
-            getRegistrySettingValue('CHAT_SC_PER_HOUR'),
+        const [chatKHourlyRate, initialLives, appealCompensation, chatMinutesCap] = await Promise.all([
+            getRegistrySettingValue('CHAT_K_PER_HOUR'),
             getRegistrySettingValue('INITIAL_LIVES'),
-            getRegistrySettingValue('SC_APPEAL_COMPENSATION'),
+            getRegistrySettingValue('K_APPEAL_COMPENSATION'),
             getRegistrySettingValue('CHAT_MINUTES_PER_DAY_CAP'),
         ]);
 
         const settings = {
             // Legacy key for existing admin UI compatibility
-            SC_PER_HOUR_CHAT: chatScHourlyRate,
+            K_PER_HOUR_CHAT: chatKHourlyRate,
             CHAT_MINUTES_PER_DAY_CAP: chatMinutesCap,
             INITIAL_LIVES: initialLives,
-            SC_APPEAL_COMPENSATION: appealCompensation,
+            K_APPEAL_COMPENSATION: appealCompensation,
         };
 
         res.json(settings);
@@ -2242,9 +2242,9 @@ exports.updateWish = async (req, res) => {
         if (Object.prototype.hasOwnProperty.call(body, 'text')) patch.text = String(body.text ?? '');
         if (Object.prototype.hasOwnProperty.call(body, 'status')) patch.status = String(body.status ?? '');
         if (Object.prototype.hasOwnProperty.call(body, 'supportCount')) patch.support_count = Number(body.supportCount) || 0;
-        if (Object.prototype.hasOwnProperty.call(body, 'supportSc')) patch.support_sc = Number(body.supportSc) || 0;
+        if (Object.prototype.hasOwnProperty.call(body, 'supportK')) patch.support_k = Number(body.supportK) || 0;
         if (Object.prototype.hasOwnProperty.call(body, 'language')) patch.language = body.language ? String(body.language) : null;
-        if (Object.prototype.hasOwnProperty.call(body, 'costSc')) patch.cost_sc = Number(body.costSc) || 0;
+        if (Object.prototype.hasOwnProperty.call(body, 'costK')) patch.cost_k = Number(body.costK) || 0;
         if (Object.prototype.hasOwnProperty.call(body, 'executor')) patch.executor_id = body.executor ? String(body.executor) : null;
         if (Object.prototype.hasOwnProperty.call(body, 'executorContact')) patch.executor_contact = body.executorContact ? String(body.executorContact) : null;
         if (Object.prototype.hasOwnProperty.call(body, 'takenAt')) patch.taken_at = body.takenAt ? new Date(body.takenAt).toISOString() : null;

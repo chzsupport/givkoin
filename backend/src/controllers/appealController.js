@@ -2,7 +2,7 @@ const { isComplaintBlocked, applyPenalty } = require('../utils/penalties');
 const { sendComplaintNotification, sendBanOutcomeEmail } = require('../services/emailService');
 const { updateEntityMoodForUser } = require('../services/entityMoodService');
 const { getNumericSettingValue } = require('../services/settingsRegistryService');
-const { recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
+const { recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const chatService = require('../services/chatService');
 
@@ -420,7 +420,7 @@ async function resolveAppeal(req, res, next) {
     }
 
     if (action === 'cancel') {
-      const compensationAmount = await getNumericSettingValue('SC_APPEAL_COMPENSATION', 100);
+      const compensationAmount = await getNumericSettingValue('K_APPEAL_COMPENSATION', 100);
       const monthAgo = hoursFromNow(-24 * 30).toISOString();
       const compensationCount = await countAppeals({
         againstUser: againstUserId,
@@ -428,8 +428,8 @@ async function resolveAppeal(req, res, next) {
         resolvedAt: monthAgo,
       });
       if (compensationCount < COMPENSATION_MONTH_LIMIT) {
-        const nextSc = (Number(againstData.sc) || 0) + compensationAmount;
-        await updateUserDataById(againstUserId, { sc: nextSc });
+        const nextK = (Number(againstData.k) || 0) + compensationAmount;
+        await updateUserDataById(againstUserId, { k: nextK });
         await recordTransaction({
           userId: againstUserId,
           type: 'appeal_compensation',
@@ -469,7 +469,7 @@ async function resolveAppeal(req, res, next) {
       }
       const freshAgainst = await getUserRowById(againstUserId);
       const freshData = getUserData(freshAgainst);
-      return res.json({ ok: true, status: 'rejected', sc: freshData.sc });
+      return res.json({ ok: true, status: 'rejected', k: freshData.k });
     }
   } catch (error) {
     return next(error);

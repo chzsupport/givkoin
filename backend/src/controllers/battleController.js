@@ -385,10 +385,10 @@ function buildBattlePersonalStatePayload(entry, fallbackUserData = null) {
     const safeUserData = fallbackUserData && typeof fallbackUserData === 'object' ? fallbackUserData : null;
     const reported = normalizeBattleReport(safeEntry?.reported, safeEntry?.syncIntervalSeconds || 60);
     const startLumensRaw = safeEntry?.lumensAtBattleStart ?? safeUserData?.lumens ?? null;
-    const startScRaw = safeEntry?.scAtBattleStart ?? safeUserData?.sc ?? null;
+    const startKRaw = safeEntry?.kAtBattleStart ?? safeUserData?.k ?? null;
     const startStarsRaw = safeEntry?.starsAtBattleStart ?? safeUserData?.stars ?? null;
     const startLumens = startLumensRaw == null ? null : Math.max(0, Number(startLumensRaw) || 0);
-    const startSc = startScRaw == null ? null : Math.max(0, Number(startScRaw) || 0);
+    const startK = startKRaw == null ? null : Math.max(0, Number(startKRaw) || 0);
     const startStars = startStarsRaw == null ? null : Math.max(0, Number(startStarsRaw) || 0);
     const confirmedDamage = Math.max(
         0,
@@ -403,7 +403,7 @@ function buildBattlePersonalStatePayload(entry, fallbackUserData = null) {
         confirmedDamage,
         confirmedLumens,
         startLumens,
-        startSc,
+        startK,
         startStars,
         lastAcceptedReportSequence: Math.max(0, Math.floor(Number(safeEntry?.lastAcceptedReportSequence) || 0)),
         lastClientSyncAt: safeEntry?.lastClientSyncAt || null,
@@ -488,7 +488,7 @@ function buildBattleSummaryApiPayload(summary, fallbackBattleId) {
             ? summary.result
             : null,
         userDamage: Math.max(0, Number(summary?.userDamage) || 0),
-        rewardSc: Math.max(0, Number(summary?.rewardSc) || 0),
+        rewardK: Math.max(0, Number(summary?.rewardK) || 0),
         detailsPending,
         detailsRetryAfterMs: detailsPending
             ? Math.max(1000, Math.floor(Number(summary?.detailsRetryAfterMs) || 3000))
@@ -518,8 +518,8 @@ function buildBattleSummaryApiPayload(summary, fallbackBattleId) {
 }
 
 async function attachBattleRewardBoost({ payload, userId, userLang }) {
-    const rewardSc = Math.max(0, Number(payload?.rewardSc) || 0);
-    if (!payload?.isComplete || !payload?.battleId || rewardSc <= 0) return payload;
+    const rewardK = Math.max(0, Number(payload?.rewardK) || 0);
+    if (!payload?.isComplete || !payload?.battleId || rewardK <= 0) return payload;
     const boostOffer = await createAdBoostOffer({
         userId,
         type: 'battle_reward_bonus',
@@ -529,7 +529,7 @@ async function attachBattleRewardBoost({ payload, userId, userLang }) {
         description: pickLang(userLang, 'Досмотрите видео, чтобы получить +10% от награды за бой.', 'Watch the video to receive +10% of your battle reward.'),
         reward: {
             kind: 'currency',
-            sc: Math.round(rewardSc * 0.1 * 1000) / 1000,
+            k: Math.round(rewardK * 0.1 * 1000) / 1000,
             transactionType: 'battle_ad_boost',
             description: pickLang(userLang, 'Дополнительная награда: Бой', 'Extra reward: Battle'),
         },
@@ -736,7 +736,7 @@ async function applyBattleAttendanceUpdateByUser({ battleId, userId, payload }) 
 const BATTLE_USER_SELECT = [
     '_id',
     'lumens',
-    'sc',
+    'k',
     'treeBranch',
     'nightShift.isServing',
     'shopBoosts.battleDamage',
@@ -1566,7 +1566,7 @@ function buildInitialAttendanceRuntimeEntry({
     joinedAt = new Date(),
     sync = null,
     lumensAtBattleStart = null,
-    scAtBattleStart = null,
+    kAtBattleStart = null,
     starsAtBattleStart = null,
 }) {
     const safeSync = sync && typeof sync === 'object' ? sync : null;
@@ -1614,7 +1614,7 @@ function buildInitialAttendanceRuntimeEntry({
         exitedAndReturnedWithSolarCharge: false,
         receivedGiftInBattle: false,
         lumensAtBattleStart: lumensAtBattleStart == null ? null : Math.max(0, Number(lumensAtBattleStart) || 0),
-        scAtBattleStart: scAtBattleStart == null ? null : Math.max(0, Number(scAtBattleStart) || 0),
+        kAtBattleStart: kAtBattleStart == null ? null : Math.max(0, Number(kAtBattleStart) || 0),
         starsAtBattleStart: starsAtBattleStart == null ? null : Math.max(0, Number(starsAtBattleStart) || 0),
         heldComboX2StartAt: null,
         heldComboX2MaxDuration: 0,
@@ -1772,7 +1772,7 @@ async function ensureBattleAttendanceReady({
                 joinedAt: safeJoinedAt,
                 sync: registration?.sync || null,
                 lumensAtBattleStart: safeResources.lumensAtBattleStart ?? null,
-                scAtBattleStart: safeResources.scAtBattleStart ?? null,
+                kAtBattleStart: safeResources.kAtBattleStart ?? null,
                 starsAtBattleStart: safeResources.starsAtBattleStart ?? null,
             });
             entry = await ensureAttendanceRuntimeSyncMetadata({
@@ -1835,7 +1835,7 @@ async function ensureBattleAttendanceReady({
         : {};
     const needsResourcePatch = (
         (entry?.lumensAtBattleStart == null && safeResources.lumensAtBattleStart != null)
-        || (entry?.scAtBattleStart == null && safeResources.scAtBattleStart != null)
+        || (entry?.kAtBattleStart == null && safeResources.kAtBattleStart != null)
         || (entry?.starsAtBattleStart == null && safeResources.starsAtBattleStart != null)
     );
     if (needsResourcePatch) {
@@ -1847,8 +1847,8 @@ async function ensureBattleAttendanceReady({
                     ...(entry?.lumensAtBattleStart == null && safeResources.lumensAtBattleStart != null
                         ? { 'attendance.$.lumensAtBattleStart': Math.max(0, Number(safeResources.lumensAtBattleStart) || 0) }
                         : {}),
-                    ...(entry?.scAtBattleStart == null && safeResources.scAtBattleStart != null
-                        ? { 'attendance.$.scAtBattleStart': Math.max(0, Number(safeResources.scAtBattleStart) || 0) }
+                    ...(entry?.kAtBattleStart == null && safeResources.kAtBattleStart != null
+                        ? { 'attendance.$.kAtBattleStart': Math.max(0, Number(safeResources.kAtBattleStart) || 0) }
                         : {}),
                     ...(entry?.starsAtBattleStart == null && safeResources.starsAtBattleStart != null
                         ? { 'attendance.$.starsAtBattleStart': Math.max(0, Number(safeResources.starsAtBattleStart) || 0) }
@@ -2094,7 +2094,7 @@ function getComboMultiplier(comboHits) {
 
 async function finalizeComboIfExpired({ battleId, userId, at, entry: inputEntry = null }) {
     const entry = inputEntry || await getAttendanceRuntimeSnapshot({ battleId, userId });
-    if (!entry) return { finalized: false, bonusDamage: 0, bonusSc: 0, entry: null };
+    if (!entry) return { finalized: false, bonusDamage: 0, bonusK: 0, entry: null };
 
     const lastHitAt = entry.comboLastHitAt ? new Date(entry.comboLastHitAt) : null;
     const comboHits = Number(entry.comboHits) || 0;
@@ -2102,12 +2102,12 @@ async function finalizeComboIfExpired({ battleId, userId, at, entry: inputEntry 
     const comboMultiplier = Number(entry.comboMultiplier) || 1;
     const phoenixStage = Number(entry.phoenixStage) || 0;
 
-    if (!lastHitAt || comboHits <= 0) return { finalized: false, bonusDamage: 0, bonusSc: 0, entry };
-    if (at.getTime() - lastHitAt.getTime() <= COMBO_GAP_MS) return { finalized: false, bonusDamage: 0, bonusSc: 0, entry };
+    if (!lastHitAt || comboHits <= 0) return { finalized: false, bonusDamage: 0, bonusK: 0, entry };
+    if (at.getTime() - lastHitAt.getTime() <= COMBO_GAP_MS) return { finalized: false, bonusDamage: 0, bonusK: 0, entry };
 
     const mult = Math.max(1, comboMultiplier);
     const bonusDamage = mult > 1 ? Math.max(0, Math.round(comboDamage * (mult - 1))) : 0;
-    const bonusSc = bonusDamage > 0 ? Math.max(0, Math.ceil(bonusDamage / 1000)) : 0;
+    const bonusK = bonusDamage > 0 ? Math.max(0, Math.ceil(bonusDamage / 1000)) : 0;
 
     // Phoenix logic: if it was stage 1 (reached x2 once), and now dropped -> stage 2
     let nextPhoenixStage = phoenixStage;
@@ -2132,7 +2132,7 @@ async function finalizeComboIfExpired({ battleId, userId, at, entry: inputEntry 
         baseState: entry,
     });
 
-    return { finalized: true, bonusDamage, bonusSc, entry: nextEntry };
+    return { finalized: true, bonusDamage, bonusK, entry: nextEntry };
 }
 
 exports.getCurrentBattle = async (req, res) => {
@@ -2529,7 +2529,7 @@ exports.joinBattle = async (req, res) => {
             joinedAt: safeJoinedAt,
             resourceSnapshot: {
                 lumensAtBattleStart: Number(userData?.lumens) || 0,
-                scAtBattleStart: Number(userData?.sc) || 0,
+                kAtBattleStart: Number(userData?.k) || 0,
                 starsAtBattleStart: Number(userData?.stars) || 0,
             },
         });
@@ -2549,7 +2549,7 @@ exports.joinBattle = async (req, res) => {
             battleId: updatedBattle._id,
             userId: req.user._id,
             lumensAtStart: Number(userData?.lumens) || 0,
-            scAtStart: Number(userData?.sc) || 0,
+            kAtStart: Number(userData?.k) || 0,
             starsAtStart: Number(userData?.stars) || 0,
         }).catch(() => {});
         await bindPendingBattleBoosts(req.user._id, updatedBattle._id, new Date(), { userRow });

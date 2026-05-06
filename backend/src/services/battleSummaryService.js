@@ -2,7 +2,7 @@ const { grantAchievement } = require('./achievementService');
 const { createNotification } = require('../controllers/notificationController');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const battleRuntimeStore = require('./battleRuntimeStore');
-const { computeBattleRewardSc } = require('../utils/battleReward');
+const { computeBattleRewardK } = require('../utils/battleReward');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const BATTLE_SUMMARY_DETAILS_BATCH_SIZE = Math.max(1, parseInt(process.env.BATTLE_SUMMARY_DETAILS_BATCH_SIZE || '25', 10) || 25);
@@ -393,7 +393,7 @@ function buildAchievementPreview({
     : (entry?.joinedAt ? new Date(entry.joinedAt) : null);
   const battleStartsAt = battle.startsAt ? new Date(battle.startsAt) : null;
   const inFromStart = joinedAt && battleStartsAt && joinedAt.getTime() <= (battleStartsAt.getTime() + 61000);
-  const earningSc = computeBattleRewardSc({ damage: userDamage });
+  const earningK = computeBattleRewardK({ damage: userDamage });
   const totalCrystals = (Number(stats.totalCrystalsCollected) || 0) + userCrystalsCollected;
   const battleWon = lightDamage > darknessDamage;
   const minutesInBattle = Math.max(
@@ -460,8 +460,8 @@ function buildAchievementPreview({
   maybeAdd(56, nowTime.getDay() === 0 || nowTime.getDay() === 6);
   maybeAdd(57, !!inFromStart);
   maybeAdd(58, !!inFromStart);
-  maybeAdd(59, earningSc >= 100);
-  maybeAdd(60, earningSc >= 1200);
+  maybeAdd(59, earningK >= 100);
+  maybeAdd(60, earningK >= 1200);
   maybeAdd(62, userDamage === 0 && userTotalShots === 0);
   maybeAdd(64, battleWon && recentAppealsCount === 0);
   maybeAdd(67, !!battle.isShrunken);
@@ -481,7 +481,7 @@ function buildAchievementPreview({
     maxComboReached: Math.max(Number(stats.maxComboReached) || 0, Number(entry?.comboHits) || 0),
     lastBattleFinishedAt: new Date().toISOString(),
     lastBattleWon: battleWon,
-    lastBattleScEarned: earningSc,
+    lastBattleKEarned: earningK,
     sharesAfterLastBattle: 0,
   };
 
@@ -542,7 +542,7 @@ async function persistBattleSummarySettlements(rows = []) {
 
 const BATTLE_SUMMARY_LINE_ORDER = [
   'user_damage',
-  'reward_sc',
+  'reward_k',
   'duration',
   'best_player',
   'achievements',
@@ -720,7 +720,7 @@ function buildBattleSummaryLines({
   detailReady = false,
 }) {
   const userDamage = Math.max(0, Number(entry?.damage) || 0);
-  const rewardSc = computeBattleRewardSc({ damage: userDamage });
+  const rewardK = computeBattleRewardK({ damage: userDamage });
   const durationSeconds = Number.isFinite(Number(battle?.durationSeconds))
     ? Math.max(0, Math.floor(Number(battle.durationSeconds) || 0))
     : null;
@@ -735,13 +735,13 @@ function buildBattleSummaryLines({
       en: formatSummaryNumber(userDamage, 'en'),
     },
   }));
-  lines.set('reward_sc', buildBattleSummaryLine({
-    key: 'reward_sc',
+  lines.set('reward_k', buildBattleSummaryLine({
+    key: 'reward_k',
     labelByLocale: { ru: 'Заработок в K', en: 'Earned K' },
     state: 'ready',
     valueTextByLocale: {
-      ru: `${formatSummaryNumber(rewardSc, 'ru')} K`,
-      en: `${formatSummaryNumber(rewardSc, 'en')} K`,
+      ru: `${formatSummaryNumber(rewardK, 'ru')} K`,
+      en: `${formatSummaryNumber(rewardK, 'en')} K`,
     },
   }));
   lines.set('duration', buildBattleSummaryLine({
@@ -841,7 +841,7 @@ function buildBattleSummarySnapshot({
   updatedAt = new Date(),
 }) {
   const userDamage = Math.max(0, Number(entry?.damage) || 0);
-  const rewardSc = computeBattleRewardSc({ damage: userDamage });
+  const rewardK = computeBattleRewardK({ damage: userDamage });
   const safeAttendanceCount = Number.isFinite(Number(attendanceCount))
     ? Math.max(0, Math.floor(Number(attendanceCount) || 0))
     : null;
@@ -890,7 +890,7 @@ function buildBattleSummarySnapshot({
       en: buildBattleSummaryPersonalDataSourceLabel(personalDataSource, 'en'),
     },
     userDamage,
-    rewardSc,
+    rewardK,
     durationSeconds,
     totalLightDamage: isComplete ? safeLightDamage : null,
     totalDarkDamage: isComplete ? safeDarknessDamage : null,

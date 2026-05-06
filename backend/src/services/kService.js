@@ -481,11 +481,13 @@ async function creditK({
   const nextK = round3((Number(data.k) || 0) + debuffedAmount);
   const updated = await updateUserDataById(userId, { k: nextK });
   if (!updated) throw new Error('User not found');
+  const updatedData = getUserDataFromRow(updated);
 
   await createTransaction({ userId, type, direction: 'credit', amount: debuffedAmount, description, relatedEntity });
   await maybeAwardReferralBlessing({ receiverUserId: userId, creditedAmount: debuffedAmount, sourceType: type, relatedEntity });
   return {
     ...updated,
+    ...updatedData,
     k: nextK,
     creditedAmount: debuffedAmount,
     requestedAmount: round3(amount),
@@ -506,9 +508,14 @@ async function debitK({ userId, amount, type = 'other', description, relatedEnti
   const nextK = round3(current - amount);
   const updated = await updateUserDataById(userId, { k: nextK });
   if (!updated) throw new Error('User not found');
+  const updatedData = getUserDataFromRow(updated);
 
   await createTransaction({ userId, type, direction: 'debit', amount, description, relatedEntity });
-  return updated;
+  return {
+    ...updated,
+    ...updatedData,
+    k: nextK,
+  };
 }
 
 async function spendK({ userId, amount, type = 'other', description, relatedEntity }) {

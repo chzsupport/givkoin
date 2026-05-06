@@ -7,7 +7,7 @@ import { apiGet, apiPost } from '@/utils/api';
 import { useToast } from '@/context/ToastContext';
 import { useAuth } from '@/context/AuthContext';
 import { ShoppingBag } from 'lucide-react';
-import { formatUserSc } from '@/utils/formatters';
+import { formatUserK } from '@/utils/formatters';
 import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
@@ -18,7 +18,7 @@ type ShopItem = {
   category: 'entity' | 'boost';
   title: string;
   description?: string;
-  priceSc: number;
+  priceK: number;
 };
 
 export default function ShopPage() {
@@ -140,7 +140,7 @@ export default function ShopPage() {
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-3">
-                    <div className="text-xs text-white/60">K: <span className="text-white font-bold">{formatUserSc(user?.sc ?? 0)}</span></div>
+                    <div className="text-xs text-white/60">K: <span className="text-white font-bold">{formatUserK(user?.k ?? 0)}</span></div>
                     <Link
                       href={localePath('/cabinet/warehouse')}
                       className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-tiny font-bold text-amber-200 hover:bg-amber-500/20 transition-colors"
@@ -188,7 +188,7 @@ export default function ShopPage() {
                         <div className="text-sm font-bold text-white">{it.title}</div>
                         {it.description && <div className="text-xs text-white/60 mt-1 flex-1">{it.description}</div>}
                         <div className="flex items-center justify-between mt-4 gap-3">
-                          <div className="text-xs text-white/60">{t('shop.price')}: <span className="text-white font-bold">{it.priceSc}</span> K</div>
+                          <div className="text-xs text-white/60">{t('shop.price')}: <span className="text-white font-bold">{it.priceK}</span> K</div>
                           <button
                             onClick={() => buy(it.key)}
                             disabled={isBuying}

@@ -2,7 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { applyStarsDelta } = require('../utils/stars');
-const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const { applyTreeBlessingToReward, claimTreeBlessingForUser, getTreeBlessingStatusForUser } = require('../services/treeBlessingService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
@@ -13,7 +13,7 @@ const router = express.Router();
 
 const GRATITUDE_MODEL = 'PracticeGratitudeDaily';
 const GRATITUDE_COUNT = 3;
-const GRATITUDE_SC_REWARD = 5;
+const GRATITUDE_K_REWARD = 5;
 const GRATITUDE_STARS_REWARD = 0.001;
 
 function getDayKeyLocal(now = new Date()) {
@@ -43,7 +43,7 @@ function getUserData(row) {
   return row?.data && typeof row.data === 'object' ? row.data : {};
 }
 
-async function updateUserSc(userId, nextSc) {
+async function updateUserK(userId, nextK) {
   const supabase = getSupabaseClient();
   const currentRow = await getUserRowById(userId);
   if (!currentRow) {
@@ -51,7 +51,7 @@ async function updateUserSc(userId, nextSc) {
   }
   const { data, error } = await supabase
     .from('users')
-    .update({ data: { ...getUserData(currentRow), sc: nextSc }, updated_at: new Date().toISOString() })
+    .update({ data: { ...getUserData(currentRow), k: nextK }, updated_at: new Date().toISOString() })
     .eq('id', String(userId))
     .select('id,email,nickname,data')
     .maybeSingle();
@@ -97,7 +97,7 @@ router.get('/gratitude/today', auth, async (req, res) => {
       rewardedCount: completedIndexes.length,
       totalSlots: GRATITUDE_COUNT,
       rewards: {
-        scRewardPerEntry: GRATITUDE_SC_REWARD,
+        kRewardPerEntry: GRATITUDE_K_REWARD,
         starsPerEntry: GRATITUDE_STARS_REWARD,
         radiancePerEntry: 10,
       },
@@ -171,7 +171,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
         index,
         serverDay: dayKey,
         completedIndexes,
-        awardedSc: 0,
+        awardedK: 0,
         awardedStars: 0,
         radianceAward: null,
       });
@@ -186,12 +186,12 @@ router.post('/gratitude/complete', auth, async (req, res) => {
     const baseMultiplier = await getBaseRewardMultiplier(userId);
     const blessingReward = await applyTreeBlessingToReward({
       userId,
-      sc: GRATITUDE_SC_REWARD,
+      k: GRATITUDE_K_REWARD,
       now,
       baseMultiplier,
     });
-    const awardedSc = blessingReward.sc;
-    const nextSc = (Number(userData.sc) || 0) + awardedSc;
+    const awardedK = blessingReward.k;
+    const nextK = (Number(userData.k) || 0) + awardedK;
     const savedIndexes = [...completedIndexes, index];
 
     await saveGratitudeDailyState(userId, dayKey, savedIndexes, now);
@@ -203,12 +203,12 @@ router.post('/gratitude/complete', auth, async (req, res) => {
       relatedEntity: `${dayKey}:${index}`,
       occurredAt: now,
     });
-    const updatedUser = await updateUserSc(userId, nextSc);
+    const updatedUser = await updateUserK(userId, nextK);
     await recordTransaction({
       userId,
       type: 'gratitude_write',
       direction: 'credit',
-      amount: awardedSc,
+      amount: awardedK,
       currency: 'K',
       description: userLang === 'en' ? 'Gratitude' : 'Благодарность',
       relatedEntity: `${dayKey}:${index}`,
@@ -216,7 +216,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
     }).catch(() => null);
     awardReferralBlessingExternal({
       receiverUserId: userId,
-      amount: awardedSc,
+      amount: awardedK,
       sourceType: 'gratitude_write',
       relatedEntity: `${dayKey}:${index}`,
     }).catch(() => null);
@@ -238,7 +238,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
         : 'Досмотрите видео, чтобы получить такую же награду ещё раз.',
       reward: {
         kind: 'currency',
-        sc: awardedSc,
+        k: awardedK,
         stars: GRATITUDE_STARS_REWARD,
         radiance: radianceAward?.granted || radianceAward?.amount || 0,
         radianceActivityType: 'gratitude_write',
@@ -254,7 +254,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
         index,
         serverDay: dayKey,
         completedIndexes: savedIndexes.sort((a, b) => a - b),
-        awardedSc,
+        awardedK,
         awardedStars: GRATITUDE_STARS_REWARD,
         radianceAward: radianceAward && radianceAward.ok
         ? {
@@ -268,7 +268,7 @@ router.post('/gratitude/complete', auth, async (req, res) => {
         id: String(updatedUser?.id || userId),
         email: updatedUser?.email || req.user.email,
         nickname: updatedUser?.nickname || req.user.nickname,
-        sc: nextSc,
+        k: nextK,
         stars: Number(starsResult?.stars ?? ((Number(userData.stars) || 0) + GRATITUDE_STARS_REWARD).toFixed(3)),
       },
       boostOffer,

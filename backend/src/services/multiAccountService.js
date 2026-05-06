@@ -2567,7 +2567,7 @@ async function getRiskCaseGroupUsers(riskCaseId) {
   return { riskCase, users };
 }
 
-async function updateUserRewardRollbackState(userId, { sc, rewardRollbackDebtSc }) {
+async function updateUserRewardRollbackState(userId, { k, rewardRollbackDebtK }) {
   const row = await getUsersByIdsDetailed([userId]);
   const user = Array.isArray(row) ? row[0] : null;
   if (!user) return null;
@@ -2576,8 +2576,8 @@ async function updateUserRewardRollbackState(userId, { sc, rewardRollbackDebtSc 
   const nowIso = new Date().toISOString();
   const nextData = {
     ...data,
-    sc: round(Math.max(0, safeNumber(sc)), 3),
-    rewardRollbackDebtSc: round(Math.max(0, safeNumber(rewardRollbackDebtSc)), 3),
+    k: round(Math.max(0, safeNumber(k)), 3),
+    rewardRollbackDebtK: round(Math.max(0, safeNumber(rewardRollbackDebtK)), 3),
   };
   const { data: updated, error } = await supabase
     .from('users')
@@ -2662,19 +2662,19 @@ async function applyPendingBattleRewardRollback({
 
     const userData = getUserData(user);
     const amount = round(Math.max(0, safeNumber(row?.amount)), 3);
-    const currentSc = round(Math.max(0, safeNumber(userData?.sc)), 3);
-    const previousDebt = round(Math.max(0, safeNumber(userData?.rewardRollbackDebtSc)), 3);
-    const rolledBackAmount = round(Math.min(currentSc, amount), 3);
+    const currentK = round(Math.max(0, safeNumber(userData?.k)), 3);
+    const previousDebt = round(Math.max(0, safeNumber(userData?.rewardRollbackDebtK)), 3);
+    const rolledBackAmount = round(Math.min(currentK, amount), 3);
     const shortfall = round(Math.max(0, amount - rolledBackAmount), 3);
-    const nextSc = round(Math.max(0, currentSc - rolledBackAmount), 3);
+    const nextK = round(Math.max(0, currentK - rolledBackAmount), 3);
     const nextDebt = round(previousDebt + shortfall, 3);
     const nowIso = new Date().toISOString();
 
     if (rolledBackAmount > 0 || shortfall > 0) {
       // eslint-disable-next-line no-await-in-loop
       const updatedUser = await updateUserRewardRollbackState(userId, {
-        sc: nextSc,
-        rewardRollbackDebtSc: nextDebt,
+        k: nextK,
+        rewardRollbackDebtK: nextDebt,
       });
       if (updatedUser) userMap.set(userId, updatedUser);
 

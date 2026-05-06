@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { creditSc } = require('../services/scService');
+const { creditK } = require('../services/kService');
 const { recordActivity } = require('../services/activityService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
@@ -575,7 +575,7 @@ function queueNewsDeferredTask(task, delayMs = 0) {
   }, safeDelay);
 }
 
-async function updateNewsAchievementStats({ userId, type, scAwarded }) {
+async function updateNewsAchievementStats({ userId, type, kAwarded }) {
   const userRow = await getUserRowById(userId);
   if (!userRow) return;
 
@@ -588,7 +588,7 @@ async function updateNewsAchievementStats({ userId, type, scAwarded }) {
     totalNewsLikes: (Number(stats.totalNewsLikes) || 0) + (type === 'like' ? 1 : 0),
     totalNewsComments: (Number(stats.totalNewsComments) || 0) + (type === 'comment' ? 1 : 0),
     totalNewsReposts: (Number(stats.totalNewsReposts) || 0) + (type === 'repost' ? 1 : 0),
-    totalNewsScEarned: (Number(stats.totalNewsScEarned) || 0) + (Number(scAwarded) || 0),
+    totalNewsKEarned: (Number(stats.totalNewsKEarned) || 0) + (Number(kAwarded) || 0),
   };
 
   await updateUserDataById(userId, { achievementStats: nextStats });
@@ -599,12 +599,12 @@ async function updateNewsAchievementStats({ userId, type, scAwarded }) {
   if ((Number(nextStats.totalNewsComments) || 0) >= 100) {
     scheduleAchievementGrant({ userId, achievementId: 30 });
   }
-  if ((Number(nextStats.totalNewsScEarned) || 0) >= 1000) {
+  if ((Number(nextStats.totalNewsKEarned) || 0) >= 1000) {
     scheduleAchievementGrant({ userId, achievementId: 94 });
   }
 }
 
-function scheduleNewsInteractionSideEffects({ userId, postId, type, scAwarded }) {
+function scheduleNewsInteractionSideEffects({ userId, postId, type, kAwarded }) {
   if (!userId || !type) return;
 
   queueNewsDeferredTask(async () => {
@@ -612,7 +612,7 @@ function scheduleNewsInteractionSideEffects({ userId, postId, type, scAwarded })
   }, 5000);
 
   queueNewsDeferredTask(async () => {
-    await updateNewsAchievementStats({ userId, type, scAwarded });
+    await updateNewsAchievementStats({ userId, type, kAwarded });
   }, 60000);
 }
 
@@ -1505,7 +1505,7 @@ async function interact(req, res, next) {
           }),
         ]);
         updateCachedNewsFeedPostStats(postId, { likes: 1 });
-        const user = await creditSc({ userId, amount: NEWS_LIKE_REWARD, type: 'news', description: pickLang(userLang, 'Лайк новости', 'News like'), relatedEntity: postId });
+        const user = await creditK({ userId, amount: NEWS_LIKE_REWARD, type: 'news', description: pickLang(userLang, 'Лайк новости', 'News like'), relatedEntity: postId });
         awardRadianceForActivity({
           userId,
           amount: 2,
@@ -1517,9 +1517,9 @@ async function interact(req, res, next) {
           userId,
           postId,
           type: 'like',
-          scAwarded: NEWS_LIKE_REWARD,
+          kAwarded: NEWS_LIKE_REWARD,
         });
-        return res.json({ ok: true, liked: true, awarded: NEWS_LIKE_REWARD, sc: user.sc });
+        return res.json({ ok: true, liked: true, awarded: NEWS_LIKE_REWARD, k: user.k });
       } catch (err) {
         if (dailyCounterApplied) {
           await adjustNewsDailyCounter({ userId, type: 'like', dateKey: today, delta: -1, now: new Date() }).catch(() => { });
@@ -1586,7 +1586,7 @@ async function interact(req, res, next) {
           }),
         ]);
         updateCachedNewsFeedPostStats(postId, { comments: 1 });
-        const user = await creditSc({ userId, amount: NEWS_COMMENT_REWARD, type: 'news', description: pickLang(userLang, 'Комментарий к новости', 'News comment'), relatedEntity: postId });
+        const user = await creditK({ userId, amount: NEWS_COMMENT_REWARD, type: 'news', description: pickLang(userLang, 'Комментарий к новости', 'News comment'), relatedEntity: postId });
         awardRadianceForActivity({
           userId,
           amount: 3,
@@ -1598,12 +1598,12 @@ async function interact(req, res, next) {
           userId,
           postId,
           type: 'comment',
-          scAwarded: NEWS_COMMENT_REWARD,
+          kAwarded: NEWS_COMMENT_REWARD,
         });
         return res.json({
           ok: true,
           awarded: NEWS_COMMENT_REWARD,
-          sc: user.sc,
+          k: user.k,
           comment: {
             id: String(interaction._id),
             postId: String(postId),
@@ -1681,7 +1681,7 @@ async function interact(req, res, next) {
           }),
         ]);
         updateCachedNewsFeedPostStats(postId, { reposts: 1 });
-        const user = await creditSc({ userId, amount: NEWS_REPOST_REWARD, type: 'news', description: pickLang(userLang, 'Репост новости', 'News repost'), relatedEntity: postId });
+        const user = await creditK({ userId, amount: NEWS_REPOST_REWARD, type: 'news', description: pickLang(userLang, 'Репост новости', 'News repost'), relatedEntity: postId });
         awardRadianceForActivity({
           userId,
           amount: 3,
@@ -1693,9 +1693,9 @@ async function interact(req, res, next) {
           userId,
           postId,
           type: 'repost',
-          scAwarded: NEWS_REPOST_REWARD,
+          kAwarded: NEWS_REPOST_REWARD,
         });
-        return res.json({ ok: true, awarded: NEWS_REPOST_REWARD, sc: user.sc, isReposted: true });
+        return res.json({ ok: true, awarded: NEWS_REPOST_REWARD, k: user.k, isReposted: true });
       } catch (err) {
         if (dailyCounterApplied) {
           await adjustNewsDailyCounter({ userId, type: 'repost', dateKey: today, delta: -1, now: new Date() }).catch(() => { });

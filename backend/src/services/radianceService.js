@@ -74,7 +74,7 @@ async function saveTree(tree) {
 
 function resetInjuryRuntimeCaches() {
   try {
-    require('./scService').__resetInjuryDebuffCache?.();
+    require('./kService').__resetInjuryDebuffCache?.();
   } catch (e) {
     // ignore
   }
@@ -136,7 +136,7 @@ function applyRadianceToInjuries(tree, amount) {
   return remaining;
 }
 
-async function addRadiance(amount, { source = 'sc', meta } = {}) {
+async function addRadiance(amount, { source = 'k', meta } = {}) {
   ensurePositive(amount);
   const tree = await getTree();
   const injuriesBefore = Array.isArray(tree.injuries) ? tree.injuries.length : 0;
@@ -151,7 +151,7 @@ async function addRadiance(amount, { source = 'sc', meta } = {}) {
   return { tree, consumed: amount - leftover, addedToPool: toPool, source, meta };
 }
 
-async function addRadianceFromSc({ amount, source = 'sc', meta }) {
+async function addRadianceFromK({ amount, source = 'k', meta }) {
   return addRadiance(amount, { source, meta });
 }
 
@@ -175,7 +175,7 @@ async function getRadianceState() {
 
 module.exports = {
   addRadiance,
-  addRadianceFromSc,
+  addRadianceFromK,
   addRadianceFromLumens,
   getRadianceState,
 };

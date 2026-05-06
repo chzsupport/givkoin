@@ -636,8 +636,8 @@ function registerCronJobs() {
           type: 'system',
           title: userLang === 'en' ? 'Night Shift payout' : 'Оплата за Ночную Смену',
           message: userLang === 'en'
-            ? `You have been credited ${item.reward.sc} K, ${item.reward.lm} LM and ${item.reward.stars} Stars for the night shift.`
-            : `Вам начислено ${item.reward.sc} K, ${item.reward.lm} LM и ${item.reward.stars} Stars за ночную смену.`,
+            ? `You have been credited ${item.reward.k} K, ${item.reward.lm} LM and ${item.reward.stars} Stars for the night shift.`
+            : `Вам начислено ${item.reward.k} K, ${item.reward.lm} LM и ${item.reward.stars} Stars за ночную смену.`,
           link: '/activity/night-shift',
           io,
         });

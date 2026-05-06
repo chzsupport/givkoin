@@ -286,10 +286,10 @@ async function answerEntityQuestion({ question, model, baseUrl, mood, context })
 
   const normalized = (question || '').toString().trim().toLowerCase();
   if (
-    normalized === 'что такое sc?' ||
-    normalized === 'что такое sc' ||
-    normalized === 'sc?' ||
-    normalized === 'sc'
+    normalized === 'что такое k?' ||
+    normalized === 'что такое k' ||
+    normalized === 'k?' ||
+    normalized === 'k'
   ) {
     return 'K — это Givkoin koins, внутренняя валюта проекта GIVKOIN. K начисляются за активности внутри платформы (например, чат, рефералы, бои — в зависимости от настроек сервера). Точные начисления и лимиты зависят от текущих правил и настроек проекта.';
   }

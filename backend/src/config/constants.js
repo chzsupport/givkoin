@@ -4,7 +4,7 @@ const toNumber = (value, fallback) => {
 };
 
 module.exports = {
-  CHAT_SC_PER_HOUR: toNumber(process.env.CHAT_SC_PER_HOUR, 12),
+  CHAT_K_PER_HOUR: toNumber(process.env.CHAT_K_PER_HOUR, 12),
   CHAT_MINUTES_PER_DAY_CAP: toNumber(process.env.CHAT_MINUTES_PER_DAY_CAP, 600), // 10 часов
 
   NEWS_LIKE_LIMIT_PER_DAY: toNumber(process.env.NEWS_LIKE_LIMIT_PER_DAY, 24),

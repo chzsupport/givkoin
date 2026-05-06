@@ -25,7 +25,7 @@ type WarehouseItem = {
   category: 'entity' | 'boost';
   title: string;
   description?: string;
-  priceSc: number;
+  priceK: number;
   status: 'stored' | 'used';
   purchasedAt?: string;
   usedAt?: string;

@@ -13,7 +13,7 @@ import {
 import api from '../../api/client';
 
 interface SalarySettings {
-  sc: number;
+  k: number;
   lm: number;
   stars: number;
 }
@@ -39,7 +39,7 @@ interface RecentShift {
   anomaliesCleared: number;
   payableHours: number;
   reward?: {
-    sc: number;
+    k: number;
     lm: number;
     stars: number;
   };
@@ -73,7 +73,7 @@ interface SuspiciousShift {
   endedAt: string | null;
   closeReason?: string | null;
   reward?: {
-    sc: number;
+    k: number;
     lm: number;
     stars: number;
   };
@@ -163,7 +163,7 @@ function getErrorMessage(error: unknown, fallback = 'Ошибка') {
   return fallback;
 }
 
-function formatAdminSc(value: unknown) {
+function formatAdminK(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '0';
   return new Intl.NumberFormat('ru-RU', {
@@ -295,7 +295,7 @@ export default function NightGuardiansPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
 
-  const [settings, setSettings] = useState<SalarySettings>({ sc: 0, lm: 0, stars: 0 });
+  const [settings, setSettings] = useState<SalarySettings>({ k: 0, lm: 0, stars: 0 });
   const [activeGuardians, setActiveGuardians] = useState<ActiveGuardian[]>([]);
   const [recentShifts, setRecentShifts] = useState<RecentShift[]>([]);
   const [suspiciousShifts, setSuspiciousShifts] = useState<SuspiciousShift[]>([]);
@@ -325,7 +325,7 @@ export default function NightGuardiansPage() {
       ]);
 
       setSettings({
-        sc: Number(settingsRes.data?.settings?.sc) || 0,
+        k: Number(settingsRes.data?.settings?.k) || 0,
         lm: Number(settingsRes.data?.settings?.lm) || 0,
         stars: Number(settingsRes.data?.settings?.stars) || 0,
       });
@@ -350,7 +350,7 @@ export default function NightGuardiansPage() {
     setError(null);
     try {
       await api.post('/night-shift/admin/settings', {
-        sc: Number(settings.sc) || 0,
+        k: Number(settings.k) || 0,
         lm: Number(settings.lm) || 0,
         stars: Number(settings.stars) || 0,
       });
@@ -469,8 +469,8 @@ export default function NightGuardiansPage() {
               <label className="mb-1 block text-sm font-medium text-slate-400">K за час</label>
               <Input
                 type="number"
-                value={settings.sc}
-                onChange={(event) => setSettings((prev) => ({ ...prev, sc: Number(event.target.value) }))}
+                value={settings.k}
+                onChange={(event) => setSettings((prev) => ({ ...prev, k: Number(event.target.value) }))}
               />
             </div>
             <div>
@@ -567,9 +567,9 @@ export default function NightGuardiansPage() {
           ) : (
             <div className="space-y-5">
               {suspiciousShifts.map((shift) => {
-                const reward = shift.reward || { sc: 0, lm: 0, stars: 0 };
+                const reward = shift.reward || { k: 0, lm: 0, stars: 0 };
                 const penaltyPreview = {
-                  sc: Math.floor((Number(reward.sc) || 0) * 0.8),
+                  k: Math.floor((Number(reward.k) || 0) * 0.8),
                   lm: Math.floor((Number(reward.lm) || 0) * 0.8),
                   stars: Number(((Number(reward.stars) || 0) * 0.8).toFixed(4)),
                 };
@@ -611,13 +611,13 @@ export default function NightGuardiansPage() {
                       />
                       <StatTile
                         label="Награда за смену"
-                        value={`${formatAdminSc(reward.sc)} K`}
+                        value={`${formatAdminK(reward.k)} K`}
                         hint={`${Number(reward.lm) || 0} люменов и ${formatStars(reward.stars)} звезды`}
                         accent="text-yellow-300"
                       />
                       <StatTile
                         label="Штраф 80%"
-                        value={`${formatAdminSc(penaltyPreview.sc)} K`}
+                        value={`${formatAdminK(penaltyPreview.k)} K`}
                         hint={`${penaltyPreview.lm} люменов и ${formatStars(penaltyPreview.stars)} звезды`}
                         accent="text-rose-300"
                       />
@@ -734,7 +734,7 @@ export default function NightGuardiansPage() {
                   </tr>
                 ) : (
                   recentShifts.map((shift) => {
-                    const reward = shift.reward || { sc: 0, lm: 0, stars: 0 };
+                    const reward = shift.reward || { k: 0, lm: 0, stars: 0 };
                     return (
                       <tr key={shift.sessionId} className="border-b border-white/5 hover:bg-white/5">
                         <td className="p-3 text-slate-300">{formatDateTime(shift.endedAt)}</td>
@@ -750,7 +750,7 @@ export default function NightGuardiansPage() {
                           <div className="text-xs text-slate-500">Часов к оплате: {shift.payableHours}</div>
                         </td>
                         <td className="p-3">
-                          <div className="text-yellow-300">{formatAdminSc(reward.sc)} K</div>
+                          <div className="text-yellow-300">{formatAdminK(reward.k)} K</div>
                           <div className="text-xs text-slate-500">
                             {Number(reward.lm) || 0} люменов, {formatStars(reward.stars)} звезды
                           </div>

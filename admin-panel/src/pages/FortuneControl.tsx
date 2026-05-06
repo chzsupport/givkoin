@@ -42,7 +42,7 @@ function parseDrawTime(input: string) {
 }
 
 function getSectorReadableName(row: any) {
-  if (row?.type === 'sc') return `${toNum(row?.value, 0)} K`;
+  if (row?.type === 'k') return `${toNum(row?.value, 0)} K`;
   if (row?.type === 'star') return `${toNum(row?.value, 0)} ⭐`;
   if (row?.type === 'spin') return '+1 бесплатный спин';
   return String(row?.label || 'Приз');
@@ -152,7 +152,7 @@ export default function FortuneControl() {
         minDaysSinceStar: Math.max(0, Math.round(toNum(rouletteDraft.minDaysSinceStar, 7))),
         sectors: Array.isArray(rouletteDraft.sectors) ? rouletteDraft.sectors.map((s: any) => ({
           label: String(s.label || ''),
-          type: String(s.type || 'sc'),
+          type: String(s.type || 'k'),
           value: toNum(s.value, 0),
           weight: Math.max(1, Math.round(toNum(s.weight, 1))),
           enabled: Boolean(s.enabled),
@@ -461,7 +461,7 @@ export default function FortuneControl() {
             </select>
             <select className="input-field" value={winsFilter.rewardType} onChange={(e) => setWinsFilter({ ...winsFilter, rewardType: e.target.value })}>
               <option value="">Все награды</option>
-              <option value="sc">K</option>
+              <option value="k">K</option>
               <option value="star">Star</option>
               <option value="spin">Spin</option>
             </select>

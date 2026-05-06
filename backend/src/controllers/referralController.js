@@ -151,7 +151,7 @@ async function createReferralRow(payload) {
   return data || null;
 }
 
-async function sumReferralEarningsSc({ userId }) {
+async function sumReferralEarningsK({ userId }) {
   if (!userId) return 0;
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -202,7 +202,7 @@ async function getReferralInfo(req, res, next) {
     }
 
     const activeCount = list.filter((r) => String(r?.status) === 'active').length;
-    const totalEarned = await sumReferralEarningsSc({ userId });
+    const totalEarned = await sumReferralEarningsK({ userId });
 
     return res.json({
       code,

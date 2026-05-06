@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { formatDate, formatNumber, formatUserSc } from '@/utils/formatters';
+import { formatDate, formatNumber, formatUserK } from '@/utils/formatters';
 import { useI18n } from '@/context/I18nContext';
 
 export default function CabinetPage() {
@@ -31,7 +31,7 @@ export default function CabinetPage() {
                 <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="rounded-2xl bg-white/5 border border-white/5 p-4 transition-colors hover:bg-white/10">
                     <div className="text-tiny uppercase tracking-wider text-white/40 mb-1">{t('cabinet.koin_label')}</div>
-                    <div className="text-h3 text-amber-400">{formatUserSc(user?.sc ?? 0)}</div>
+                    <div className="text-h3 text-amber-400">{formatUserK(user?.k ?? 0)}</div>
                   </div>
 
                   <div className="rounded-2xl bg-white/5 border border-white/5 p-4 transition-colors hover:bg-white/10">

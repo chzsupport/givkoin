@@ -1,6 +1,6 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, upsertDoc, deleteDoc } = require('../services/documentStore');
-const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const { getNightShiftStatusForUser } = require('../services/nightShiftRuntimeService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
 const { createAdBoostOffer } = require('../services/adBoostService');
@@ -369,7 +369,7 @@ async function applyCrystalCompletionReward(userId) {
     const baseMultiplier = await getBaseRewardMultiplier(userId);
     const blessingReward = await applyTreeBlessingToReward({
         userId,
-        sc: 12,
+        k: 12,
         lumens: 12,
         now: new Date(),
         baseMultiplier,
@@ -383,7 +383,7 @@ async function applyCrystalCompletionReward(userId) {
         .update({
             data: {
                 ...userData,
-                sc: (Number(userData.sc) || 0) + blessingReward.sc,
+                k: (Number(userData.k) || 0) + blessingReward.k,
                 lumens: (Number(userData.lumens) || 0) + blessingReward.lumens,
                 stars: (Number(userData.stars) || 1) + starsAward,
             },
@@ -394,14 +394,14 @@ async function applyCrystalCompletionReward(userId) {
     if (error) return null;
     awardReferralBlessingExternal({
         receiverUserId: userId,
-        amount: blessingReward.sc,
+        amount: blessingReward.k,
         sourceType: 'crystal',
         relatedEntity: toIsoDayKey(new Date()),
     }).catch(() => null);
     return {
         rewardGrantedAt: nowIso,
         reward: {
-            sc: blessingReward.sc,
+            k: blessingReward.k,
             lumens: blessingReward.lumens,
             stars: starsAward,
         },
@@ -700,7 +700,7 @@ exports.completeCollection = async (req, res) => {
             description: 'Досмотрите видео, чтобы получить такую же награду за коллекцию ещё раз.',
             reward: {
                 kind: 'currency',
-                sc: rewardResult.reward.sc,
+                k: rewardResult.reward.k,
                 lumens: rewardResult.reward.lumens,
                 stars: rewardResult.reward.stars,
                 transactionType: 'crystal_ad_boost',
@@ -728,7 +728,7 @@ async function flushCrystalRewardHistory(progress, sessionStart) {
         return progress;
     }
 
-    const scRow = await recordTransaction({
+    const kRow = await recordTransaction({
         userId: progress.userId,
         type: 'crystal',
         direction: 'credit',
@@ -748,7 +748,7 @@ async function flushCrystalRewardHistory(progress, sessionStart) {
         relatedEntity: toIsoDayKey(sessionStart),
     }).catch(() => null);
 
-    if (!scRow || !starRow) {
+    if (!kRow || !starRow) {
         return progress;
     }
 

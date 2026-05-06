@@ -36,9 +36,9 @@ type DailyStreakStateResponse = {
 type DailyStreakActionResponse = {
   ok: boolean;
   already?: boolean;
-  scReward?: number;
+  kReward?: number;
   user?: {
-    sc?: number;
+    k?: number;
   };
   state: DailyStreakStateResponse;
 };
@@ -211,8 +211,8 @@ export function DailyStreakCalendar({
     try {
       const response = await apiPost<DailyStreakActionResponse>("/daily-streak/quest/complete", {});
       setState(response.state);
-      if (typeof response?.user?.sc === "number" && user) {
-        updateUser({ ...user, sc: response.user.sc });
+      if (typeof response?.user?.k === "number" && user) {
+        updateUser({ ...user, k: response.user.k });
       }
       if (userId) {
         setCachedDailyStreakState(userId, response.state);
@@ -228,8 +228,8 @@ export function DailyStreakCalendar({
     try {
       const response = await apiPost<DailyStreakActionResponse>("/daily-streak/claim", {});
       setState(response.state);
-      if (typeof response?.user?.sc === "number" && user) {
-        updateUser({ ...user, sc: response.user.sc });
+      if (typeof response?.user?.k === "number" && user) {
+        updateUser({ ...user, k: response.user.k });
       }
       if (userId) {
         setCachedDailyStreakState(userId, response.state);

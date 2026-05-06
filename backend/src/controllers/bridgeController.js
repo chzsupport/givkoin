@@ -1,6 +1,6 @@
 const bridgesData = require('../config/bridges.json');
 
-const { debitSc } = require('../services/scService');
+const { debitK } = require('../services/kService');
 
 const { recordActivity } = require('../services/activityService');
 
@@ -40,7 +40,7 @@ const NEW_BRIDGE_DAILY_LIMIT = 3;
 
 const EXISTING_BRIDGE_DAILY_LIMIT = 10;
 
-const NEW_BRIDGE_COST_SC = 10;
+const NEW_BRIDGE_COST_K = 10;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -800,11 +800,11 @@ exports.createBridge = async (req, res) => {
 
         const userId = String(req.user._id);
 
-        const user = { _id: userId, achievementStats: userData.achievementStats || {}, sc: Number(userData.sc) || 0 };
+        const user = { _id: userId, achievementStats: userData.achievementStats || {}, k: Number(userData.k) || 0 };
 
-        const creationCost = NEW_BRIDGE_COST_SC; // Cost to start a bridge project
+        const creationCost = NEW_BRIDGE_COST_K; // Cost to start a bridge project
 
-        if (user.sc < creationCost) {
+        if (user.k < creationCost) {
 
             return res.status(400).json({
 
@@ -854,7 +854,7 @@ exports.createBridge = async (req, res) => {
 
         // 5. Deduct K with proper transaction (debit, positive amount, valid type)
 
-        const updatedUser = await debitSc({
+        const updatedUser = await debitK({
 
             userId: user._id,
 
@@ -1056,7 +1056,7 @@ exports.contributeToBridge = async (req, res) => {
 
             _id: String(req.user._id),
 
-            sc: Number(userData.sc) || 0,
+            k: Number(userData.k) || 0,
 
             achievementStats: userData.achievementStats && typeof userData.achievementStats === 'object' ? userData.achievementStats : {},
 
@@ -1086,7 +1086,7 @@ exports.contributeToBridge = async (req, res) => {
 
 
 
-        if (user.sc < parsedStones) {
+        if (user.k < parsedStones) {
 
             return res.status(400).json({ message: pickLang(userLang, 'Недостаточно K', 'Not enough K') });
 
@@ -1146,7 +1146,7 @@ exports.contributeToBridge = async (req, res) => {
 
         // Debit K from user using the service
 
-        const updatedUser = await debitSc({
+        const updatedUser = await debitK({
 
             userId: user._id,
 

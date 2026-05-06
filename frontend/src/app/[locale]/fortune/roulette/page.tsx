@@ -9,24 +9,24 @@ import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { apiGet, apiPost } from '@/utils/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import { formatUserSc } from '@/utils/formatters';
+import { formatUserK } from '@/utils/formatters';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { useI18n } from '@/context/I18nContext';
 
 const ROULETTE_SECTORS = [
-    { label: '1', value: 1, type: 'sc', color: '#3b82f6' },
-    { label: '5', value: 5, type: 'sc', color: '#6366f1' },
-    { label: '10', value: 10, type: 'sc', color: '#8b5cf6' },
-    { label: '15', value: 15, type: 'sc', color: '#a855f7' },
-    { label: '20', value: 20, type: 'sc', color: '#d946ef' },
-    { label: '30', value: 30, type: 'sc', color: '#ec4899' },
-    { label: '40', value: 40, type: 'sc', color: '#f43f5e' },
-    { label: '50', value: 50, type: 'sc', color: '#ef4444' },
-    { label: '60', value: 60, type: 'sc', color: '#f97316' },
-    { label: '70', value: 70, type: 'sc', color: '#f59e0b' },
-    { label: '80', value: 80, type: 'sc', color: '#eab308' },
-    { label: '90', value: 90, type: 'sc', color: '#84cc16' },
-    { label: '100', value: 100, type: 'sc', color: '#22c55e' },
+    { label: '1', value: 1, type: 'k', color: '#3b82f6' },
+    { label: '5', value: 5, type: 'k', color: '#6366f1' },
+    { label: '10', value: 10, type: 'k', color: '#8b5cf6' },
+    { label: '15', value: 15, type: 'k', color: '#a855f7' },
+    { label: '20', value: 20, type: 'k', color: '#d946ef' },
+    { label: '30', value: 30, type: 'k', color: '#ec4899' },
+    { label: '40', value: 40, type: 'k', color: '#f43f5e' },
+    { label: '50', value: 50, type: 'k', color: '#ef4444' },
+    { label: '60', value: 60, type: 'k', color: '#f97316' },
+    { label: '70', value: 70, type: 'k', color: '#f59e0b' },
+    { label: '80', value: 80, type: 'k', color: '#eab308' },
+    { label: '90', value: 90, type: 'k', color: '#84cc16' },
+    { label: '100', value: 100, type: 'k', color: '#22c55e' },
     { label: '+1', value: 'spin', type: 'bonus', color: '#06b6d4' },
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
@@ -149,7 +149,7 @@ const SpinButton = ({
 type RouletteGlobalStats = {
     roulette?: {
         activeUsers?: number;
-        totalScIssued?: number;
+        totalKIssued?: number;
         totalSpins?: number;
     };
 };
@@ -335,8 +335,8 @@ export default function RoulettePage() {
                     : null;
             if (typeof roulette === 'object' && roulette !== null) {
                 setTodayWins({
-                    total: Number((roulette as { scEarned?: unknown }).scEarned) || 0,
-                    best: Number((roulette as { scEarned?: unknown }).scEarned) || 0,
+                    total: Number((roulette as { kEarned?: unknown }).kEarned) || 0,
+                    best: Number((roulette as { kEarned?: unknown }).kEarned) || 0,
                     count: Number((roulette as { totalSpins?: unknown }).totalSpins) || 0
                 });
             }
@@ -382,7 +382,7 @@ export default function RoulettePage() {
             const serverResult = (res as { result?: unknown }).result as { label?: string; type?: string; value?: number | string };
             const remainingSpins = Number((res as { spinsLeft?: unknown }).spinsLeft);
             const resultLabel = typeof serverResult?.label === 'string' ? serverResult.label : '';
-            const resultType = typeof serverResult?.type === 'string' ? serverResult.type : 'sc';
+            const resultType = typeof serverResult?.type === 'string' ? serverResult.type : 'k';
             const resultValue =
                 typeof serverResult?.value === 'number' || typeof serverResult?.value === 'string'
                     ? serverResult.value
@@ -425,7 +425,7 @@ export default function RoulettePage() {
                     return newHistory;
                 });
 
-                if (resultType === 'sc') {
+                if (resultType === 'k') {
                     setTodayWins(prev => ({
                         total: prev.total + (Number(resultValue) || 0),
                         best: Math.max(prev.best, Number(resultValue) || 0),
@@ -503,7 +503,7 @@ export default function RoulettePage() {
                                 <div className="flex gap-2 bg-white/5 border border-white/10 rounded-full px-3 py-1.5 backdrop-blur-md text-tiny 2xl:text-base 2xl:px-5 2xl:py-2">
                                     <div className="flex items-center gap-1 text-yellow-400 font-bold">
                                         <Coins className="w-3.5 h-3.5 2xl:w-5 2xl:h-5" />
-                                        <span>{formatUserSc(user?.sc ?? 0)}</span>
+                                        <span>{formatUserK(user?.k ?? 0)}</span>
                                     </div>
                                     <div className="w-px bg-white/10" />
                                     <div className="flex items-center gap-1 text-blue-300">
@@ -586,7 +586,7 @@ export default function RoulettePage() {
                                     <div className="flex items-center gap-1 mb-1 2xl:mb-2"><Target className="w-3 h-3 xl:w-4 xl:h-4 2xl:w-5 2xl:h-5 text-emerald-400" /><span className="text-caption xl:text-xs 2xl:text-sm uppercase text-emerald-400/70 font-bold">{t('fortune.summary')}</span></div>
                                     <div className="space-y-1 text-xs xl:text-sm 2xl:text-base">
                                         <div className="flex justify-between"><span className="text-gray-400">{t('fortune.players')}:</span><span className="text-white font-bold">{globalStats?.roulette?.activeUsers || 0}</span></div>
-                                        <div className="flex justify-between"><span className="text-gray-400">{t('fortune.paid_out')}:</span><span className="text-yellow-400 font-bold">{(globalStats?.roulette?.totalScIssued || 0).toLocaleString()}</span></div>
+                                        <div className="flex justify-between"><span className="text-gray-400">{t('fortune.paid_out')}:</span><span className="text-yellow-400 font-bold">{(globalStats?.roulette?.totalKIssued || 0).toLocaleString()}</span></div>
                                         <div className="flex justify-between"><span className="text-gray-400">{t('fortune.spins')}:</span><span className="text-cyan-400 font-bold">{(globalStats?.roulette?.totalSpins || 0).toLocaleString()}</span></div>
                                     </div>
                                 </div>
@@ -655,7 +655,7 @@ export default function RoulettePage() {
                         <div className="flex gap-2 bg-white/5 border border-white/10 rounded-full px-2 py-1 backdrop-blur-md text-tiny">
                             <div className="flex items-center gap-1 text-yellow-400 font-bold">
                                 <Coins className="w-3 h-3" />
-                                <span>{formatUserSc(user?.sc ?? 0)}</span>
+                                <span>{formatUserK(user?.k ?? 0)}</span>
                             </div>
                             <div className="w-px bg-white/10" />
                             <div className="flex items-center gap-1 text-blue-300">
@@ -732,7 +732,7 @@ export default function RoulettePage() {
                             <div className="flex items-center gap-1.5 mb-2"><Target className="w-3 h-3 text-emerald-400" /><span className="text-xs uppercase text-emerald-400/70 font-bold">{t('fortune.summary')}</span></div>
                             <div className="space-y-1.5 text-xs">
                                 <div className="flex justify-between"><span className="text-gray-400">{t('fortune.players')}:</span><span className="text-white font-bold">{globalStats?.roulette?.activeUsers || 0}</span></div>
-                                <div className="flex justify-between"><span className="text-gray-400">{t('fortune.paid_out')}:</span><span className="text-yellow-400 font-bold">{(globalStats?.roulette?.totalScIssued || 0).toLocaleString()}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-400">{t('fortune.paid_out')}:</span><span className="text-yellow-400 font-bold">{(globalStats?.roulette?.totalKIssued || 0).toLocaleString()}</span></div>
                                 <div className="flex justify-between"><span className="text-gray-400">{t('fortune.spins')}:</span><span className="text-cyan-400 font-bold">{(globalStats?.roulette?.totalSpins || 0).toLocaleString()}</span></div>
                                 <div className="flex justify-between"><span className="text-gray-400">{t('fortune.my')}:</span><span className="text-white font-bold">{todayWins.count}</span></div>
                             </div>

@@ -297,41 +297,41 @@ function buildProgressProfileForUser(user, { activitiesByUser, transactionsByUse
   );
 
   const earnedByActivity = {
-    solarCollectSc: 0,
+    solarCollectK: 0,
     solarCollectLm: 0,
-    nightShiftSc: 0,
+    nightShiftK: 0,
     nightShiftLm: 0,
     battleSparkLm: 0,
-    fruitSc: 0,
+    fruitK: 0,
     fruitLm: 0,
-    solarShareSc: 0,
+    solarShareK: 0,
   };
   let profitableActivityCount = 0;
   for (const row of activityRows) {
     if (PROFIT_ACTIVITY_TYPES.has(String(row?.type || '').trim())) profitableActivityCount += 1;
     const earnings = extractActivityEarnings(row);
     if (row.type === 'solar_collect') {
-      earnedByActivity.solarCollectSc += earnings.sc;
+      earnedByActivity.solarCollectK += earnings.k;
       earnedByActivity.solarCollectLm += earnings.lm;
     } else if (row.type === 'night_shift') {
-      earnedByActivity.nightShiftSc += earnings.sc;
+      earnedByActivity.nightShiftK += earnings.k;
       earnedByActivity.nightShiftLm += earnings.lm;
     } else if (row.type === 'battle_spark') {
       earnedByActivity.battleSparkLm += earnings.lm;
     } else if (row.type === 'fruit_collect') {
-      earnedByActivity.fruitSc += earnings.sc;
+      earnedByActivity.fruitK += earnings.k;
       earnedByActivity.fruitLm += earnings.lm;
     } else if (row.type === 'solar_share') {
-      earnedByActivity.solarShareSc += earnings.sc;
+      earnedByActivity.solarShareK += earnings.k;
     }
   }
 
   const transactionCredits = {
-    battleSc: 0,
-    fortuneSc: 0,
-    chatSc: 0,
-    referralSc: 0,
-    otherSc: 0,
+    battleK: 0,
+    fortuneK: 0,
+    chatK: 0,
+    referralK: 0,
+    otherK: 0,
     lm: 0,
   };
   for (const row of transactionRows) {
@@ -345,11 +345,11 @@ function buildProgressProfileForUser(user, { activitiesByUser, transactionsByUse
       continue;
     }
     if (currency !== 'K') continue;
-    if (type === 'battle') transactionCredits.battleSc += amount;
-    else if (type === 'fortune' || type === 'lottery') transactionCredits.fortuneSc += amount;
-    else if (type === 'chat' || type === 'chat_compensation') transactionCredits.chatSc += amount;
-    else if (type === 'referral' || type === 'referral_blessing') transactionCredits.referralSc += amount;
-    else transactionCredits.otherSc += amount;
+    if (type === 'battle') transactionCredits.battleK += amount;
+    else if (type === 'fortune' || type === 'lottery') transactionCredits.fortuneK += amount;
+    else if (type === 'chat' || type === 'chat_compensation') transactionCredits.chatK += amount;
+    else if (type === 'referral' || type === 'referral_blessing') transactionCredits.referralK += amount;
+    else transactionCredits.otherK += amount;
   }
 
   const structureVector = normalizeVector([
@@ -365,11 +365,11 @@ function buildProgressProfileForUser(user, { activitiesByUser, transactionsByUse
   ]);
 
   const earningsVector = normalizeVector([
-    transactionCredits.battleSc,
-    transactionCredits.fortuneSc,
-    transactionCredits.chatSc,
-    transactionCredits.referralSc,
-    transactionCredits.otherSc + earnedByActivity.solarCollectSc + earnedByActivity.nightShiftSc + earnedByActivity.fruitSc + earnedByActivity.solarShareSc,
+    transactionCredits.battleK,
+    transactionCredits.fortuneK,
+    transactionCredits.chatK,
+    transactionCredits.referralK,
+    transactionCredits.otherK + earnedByActivity.solarCollectK + earnedByActivity.nightShiftK + earnedByActivity.fruitK + earnedByActivity.solarShareK,
     earnedByActivity.solarCollectLm,
     earnedByActivity.nightShiftLm,
     earnedByActivity.battleSparkLm,
@@ -380,15 +380,15 @@ function buildProgressProfileForUser(user, { activitiesByUser, transactionsByUse
     Math.log1p(achievementIds.size),
     Math.log1p(profitableActivityCount),
     Math.log1p(
-      transactionCredits.battleSc
-      + transactionCredits.fortuneSc
-      + transactionCredits.chatSc
-      + transactionCredits.referralSc
-      + transactionCredits.otherSc
-      + earnedByActivity.solarCollectSc
-      + earnedByActivity.nightShiftSc
-      + earnedByActivity.fruitSc
-      + earnedByActivity.solarShareSc
+      transactionCredits.battleK
+      + transactionCredits.fortuneK
+      + transactionCredits.chatK
+      + transactionCredits.referralK
+      + transactionCredits.otherK
+      + earnedByActivity.solarCollectK
+      + earnedByActivity.nightShiftK
+      + earnedByActivity.fruitK
+      + earnedByActivity.solarShareK
     ),
     Math.log1p(
       transactionCredits.lm
@@ -538,11 +538,11 @@ function jaccardSimilarity(leftSet = new Set(), rightSet = new Set()) {
 function extractActivityEarnings(row) {
   const type = String(row?.type || '').trim();
   const meta = row?.meta && typeof row.meta === 'object' ? row.meta : {};
-  if (!type) return { sc: 0, lm: 0, stars: 0 };
+  if (!type) return { k: 0, lm: 0, stars: 0 };
 
   if (type === 'solar_collect') {
     return {
-      sc: safeNumber(meta.earnedSc, 10),
+      k: safeNumber(meta.earnedK, 10),
       lm: safeNumber(meta.earnedLm, 100),
       stars: 0,
     };
@@ -550,7 +550,7 @@ function extractActivityEarnings(row) {
 
   if (type === 'night_shift') {
     return {
-      sc: Math.max(0, safeNumber(meta.earnedSc)),
+      k: Math.max(0, safeNumber(meta.earnedK)),
       lm: Math.max(0, safeNumber(meta.earnedLm)),
       stars: Math.max(0, safeNumber(meta.earnedStars)),
     };
@@ -558,7 +558,7 @@ function extractActivityEarnings(row) {
 
   if (type === 'battle_spark') {
     return {
-      sc: Math.max(0, safeNumber(meta.rewardSc)),
+      k: Math.max(0, safeNumber(meta.rewardK)),
       lm: Math.max(0, safeNumber(meta.rewardLumens)),
       stars: 0,
     };
@@ -568,7 +568,7 @@ function extractActivityEarnings(row) {
     const reward = Math.max(0, safeNumber(meta.reward));
     const rewardType = String(meta.rewardType || '').trim();
     return {
-      sc: rewardType === 'sc' ? reward : 0,
+      k: rewardType === 'k' ? reward : 0,
       lm: rewardType === 'lumens' ? reward : 0,
       stars: rewardType === 'stars' ? reward : 0,
     };
@@ -576,13 +576,13 @@ function extractActivityEarnings(row) {
 
   if (type === 'solar_share') {
     return {
-      sc: Math.max(0, safeNumber(meta.scAward, 5)),
+      k: Math.max(0, safeNumber(meta.kAward, 5)),
       lm: 0,
       stars: Math.max(0, safeNumber(meta.starsAward)),
     };
   }
 
-  return { sc: 0, lm: 0, stars: 0 };
+  return { k: 0, lm: 0, stars: 0 };
 }
 
 function buildTransferGraph(activities = []) {

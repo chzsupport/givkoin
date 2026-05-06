@@ -266,11 +266,11 @@ export default function NewsPage() {
         return next;
     };
 
-    const syncUserNewsCard = (nextCard: NewsCard | null, sc?: number) => {
+    const syncUserNewsCard = (nextCard: NewsCard | null, k?: number) => {
         if (!user || !nextCard) return;
         updateUser({
             ...user,
-            ...(typeof sc === 'number' ? { sc } : {}),
+            ...(typeof k === 'number' ? { k } : {}),
             newsCard: nextCard,
         });
     };
@@ -950,7 +950,7 @@ export default function NewsPage() {
         });
 
         try {
-            const res = await apiPost<{ awarded?: number; sc?: number; liked?: boolean; isReposted?: boolean; removed?: boolean }>(
+            const res = await apiPost<{ awarded?: number; k?: number; liked?: boolean; isReposted?: boolean; removed?: boolean }>(
                 `/news/${postId}/actions`,
                 {
                     type,
@@ -983,10 +983,10 @@ export default function NewsPage() {
                 return next;
             });
 
-            if (typeof res.sc === 'number' && grantedCard) {
-                syncUserNewsCard(grantedCard, res.sc);
-            } else if (typeof res.sc === 'number' && user) {
-                updateUser({ ...user, sc: res.sc });
+            if (typeof res.k === 'number' && grantedCard) {
+                syncUserNewsCard(grantedCard, res.k);
+            } else if (typeof res.k === 'number' && user) {
+                updateUser({ ...user, k: res.k });
             } else {
                 refreshUser().catch(() => { });
             }
@@ -1086,7 +1086,7 @@ export default function NewsPage() {
         try {
             const res = await apiPost<{
                 awarded?: number;
-                sc?: number;
+                k?: number;
                 comment?: NewsComment;
             }>(`/news/${postId}/actions`, { type: 'comment', content });
             const awarded =
@@ -1097,10 +1097,10 @@ export default function NewsPage() {
             const grantedCard = Number.isFinite(awarded) && awarded > 0
                 ? buildNextNewsCard('comment', 1)
                 : newsCard;
-            if (typeof res?.sc === 'number' && grantedCard) {
-                syncUserNewsCard(grantedCard, res.sc);
-            } else if (typeof res?.sc === 'number' && user) {
-                updateUser({ ...user, sc: res.sc });
+            if (typeof res?.k === 'number' && grantedCard) {
+                syncUserNewsCard(grantedCard, res.k);
+            } else if (typeof res?.k === 'number' && user) {
+                updateUser({ ...user, k: res.k });
             } else {
                 refreshUser().catch(() => { });
             }

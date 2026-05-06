@@ -166,7 +166,7 @@ async function upsertStaticPage({ slug, title, content, userId = null }) {
   const existing = await findContentPageBySlug(slug);
 
   if (!existing) {
-    const id = `sc_${slug}_${Date.now()}`;
+    const id = `k_${slug}_${Date.now()}`;
     const doc = {
       title,
       slug,

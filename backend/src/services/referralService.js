@@ -8,8 +8,8 @@ const MIN_SOLAR = 1;
 const MIN_SEARCH = 1;
 const MIN_BRIDGE_STONES = 3;
 const MONTHLY_TARGET = 300;
-const MONTHLY_BONUS_SC = 2000;
-const MONTHLY_TOP_BONUS_SC = 5000;
+const MONTHLY_BONUS_K = 2000;
+const MONTHLY_TOP_BONUS_K = 5000;
 
 async function getUserForReferral(userId) {
   if (!userId) return null;
@@ -210,10 +210,10 @@ async function awardMonthlyTopReferrer() {
 
   if (alreadyAwarded) return { awarded: false, key, userId: winnerUserId, activeReferrals: winnerActive };
 
-  const { creditSc } = require('./scService');
-  await creditSc({
+  const { creditK } = require('./kService');
+  await creditK({
     userId: winnerUserId,
-    amount: MONTHLY_TOP_BONUS_SC,
+    amount: MONTHLY_TOP_BONUS_K,
     type: 'referral',
     description,
   });
@@ -391,7 +391,7 @@ function buildReferralDecision({ invitee, inviter, summary, duplicateIp = 0, dup
 async function applyReferralActivationSideEffects(referral, prevStatus) {
   try {
     const { grantAchievement } = require('./achievementService');
-    const { creditSc } = require('./scService');
+    const { creditK } = require('./kService');
 
     const supabase = getSupabaseClient();
     const { count: activeCountRaw } = await supabase
@@ -451,9 +451,9 @@ async function applyReferralActivationSideEffects(referral, prevStatus) {
         occurredSince: since30d,
       });
       if (!alreadyMonthlyBonus) {
-        await creditSc({
+        await creditK({
           userId: referral.inviter,
-          amount: MONTHLY_BONUS_SC,
+          amount: MONTHLY_BONUS_K,
           type: 'referral',
           description: 'Бонус за 300 рефералов за 30 дней',
           relatedEntity: String(referral.id),

@@ -2,7 +2,7 @@ const { countActivities, listActivities, recordActivity } = require('../services
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getDocById, upsertDoc } = require('../services/documentStore');
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const { applyTreeBlessingToReward } = require('../services/treeBlessingService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getRequestLanguage } = require('../utils/requestLanguage');
@@ -16,7 +16,7 @@ const STATE_MODEL = 'DailyStreakState';
 const dailyStreakStatusCache = new Map();
 const dailyStreakStatusInflight = new Map();
 const dailyStreakActionInflight = new Map();
-const THIRD_DAY_SC_REWARDS = Object.freeze({
+const THIRD_DAY_K_REWARDS = Object.freeze({
   3: 10,
   6: 20,
   9: 30,
@@ -62,8 +62,8 @@ async function updateUserDataById(userId, patch) {
   return data || null;
 }
 
-function getThirdDayPrizeSc(day) {
-  return Math.max(0, Number(THIRD_DAY_SC_REWARDS[Number(day)] || 0));
+function getThirdDayPrizeK(day) {
+  return Math.max(0, Number(THIRD_DAY_K_REWARDS[Number(day)] || 0));
 }
 
 function pad2(n) {
@@ -344,8 +344,8 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
   if (!ready) {
     return {
       radianceAward: null,
-      scReward: 0,
-      userSc: null,
+      kReward: 0,
+      userK: null,
     };
   }
 
@@ -356,13 +356,13 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
     dedupeKey: `attendance_day:${String(userId)}:${serverDay}`,
   }).catch(() => null);
 
-  let scReward = 0;
-  let userSc = null;
-  const prizeAmount = getThirdDayPrizeSc(currentDayIndex);
+  let kReward = 0;
+  let userK = null;
+  const prizeAmount = getThirdDayPrizeK(currentDayIndex);
   if (prizeAmount > 0) {
     const prizeLog = await ensureDailyActionLog({
       userId,
-      type: 'daily_streak_bonus_sc',
+      type: 'daily_streak_bonus_k',
       now,
     });
 
@@ -373,18 +373,18 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
         const baseMultiplier = await getBaseRewardMultiplier(userId);
         const blessingReward = await applyTreeBlessingToReward({
           userId,
-          sc: prizeAmount,
+          k: prizeAmount,
           now,
           baseMultiplier,
         });
-        const awardedSc = blessingReward.sc;
-        userSc = (Number(userData.sc) || 0) + awardedSc;
-        await updateUserDataById(userId, { sc: userSc });
+        const awardedK = blessingReward.k;
+        userK = (Number(userData.k) || 0) + awardedK;
+        await updateUserDataById(userId, { k: userK });
         await recordTransaction({
           userId,
           type: 'attendance_bonus',
           direction: 'credit',
-          amount: awardedSc,
+          amount: awardedK,
           currency: 'K',
           description: language === 'en'
             ? `Attendance: day ${currentDayIndex}`
@@ -394,11 +394,11 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
         }).catch(() => null);
         awardReferralBlessingExternal({
           receiverUserId: userId,
-          amount: awardedSc,
+          amount: awardedK,
           sourceType: 'attendance_bonus',
           relatedEntity: `attendance_day:${serverDay}`,
         }).catch(() => null);
-        scReward = awardedSc;
+        kReward = awardedK;
       }
     }
   }
@@ -411,8 +411,8 @@ async function maybeAwardAttendanceForDay({ userId, state, serverDay, currentDay
         occurredAt: now.toISOString(),
       }
       : null,
-    scReward,
-    userSc,
+    kReward,
+    userK,
   };
 }
 
@@ -500,8 +500,8 @@ async function claimToday(req, res) {
     return res.json({
       ok: true,
       already: claimLog.already || state.claimedDays.includes(currentDayIndex),
-      scReward: reward.scReward || 0,
-      user: reward.userSc != null ? { sc: reward.userSc } : undefined,
+      kReward: reward.kReward || 0,
+      user: reward.userK != null ? { k: reward.userK } : undefined,
       state: buildStateResponse({
         state: nextState,
         serverDay,
@@ -553,8 +553,8 @@ async function completeQuestToday(req, res) {
     return res.json({
       ok: true,
       already: questLog.already || state.questDoneDays.includes(currentDayIndex),
-      scReward: reward.scReward || 0,
-      user: reward.userSc != null ? { sc: reward.userSc } : undefined,
+      kReward: reward.kReward || 0,
+      user: reward.userK != null ? { k: reward.userK } : undefined,
       state: buildStateResponse({
         state: nextState,
         serverDay,

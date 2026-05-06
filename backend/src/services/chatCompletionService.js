@@ -1,5 +1,5 @@
 const friendService = require('./friendService');
-const scService = require('./scService');
+const kService = require('./kService');
 const { recordActivity } = require('./activityService');
 const { grantAchievement } = require('./achievementService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
@@ -172,7 +172,7 @@ async function applyChatCompletionEffects({ chatId, durationSeconds, leftEarlyUs
     : await friendService.areUsersFriends(a, b).catch(() => false);
 
   try {
-    await scService.awardChatRewardsForChat(chatId);
+    await kService.awardChatRewardsForChat(chatId);
   } catch (error) {
     console.error('Error awarding chat K:', error);
   }

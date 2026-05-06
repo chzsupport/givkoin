@@ -1,4 +1,4 @@
-const { spendSc } = require('../services/scService');
+const { spendK } = require('../services/kService');
 const { SHOP_ITEMS, listLocalizedShopItems, localizeShopItem } = require('../config/shopCatalog');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { createAdBoostOffer } = require('../services/adBoostService');
@@ -52,16 +52,16 @@ exports.buyItem = async (req, res) => {
     }
     const userData = userRow.data && typeof userRow.data === 'object' ? userRow.data : {};
 
-    const price = Number(item.priceSc) || 0;
+    const price = Number(item.priceK) || 0;
     if (price <= 0) {
       return res.status(400).json({ message: pickRequestLanguage(req, 'Некорректная цена', 'Invalid price') });
     }
 
-    if ((Number(userData.sc) || 0) < price) {
+    if ((Number(userData.k) || 0) < price) {
       return res.status(400).json({ message: pickRequestLanguage(req, 'Недостаточно K', 'Not enough K') });
     }
 
-    const updatedUser = await spendSc({
+    const updatedUser = await spendK({
       userId,
       amount: price,
       type: 'shop',
@@ -74,7 +74,7 @@ exports.buyItem = async (req, res) => {
       category: item.category,
       title: localizedItem.title,
       description: localizedItem.description,
-      priceSc: price,
+      priceK: price,
       status: 'stored',
       purchasedAt: new Date().toISOString(),
     });
@@ -102,7 +102,7 @@ exports.buyItem = async (req, res) => {
 
     return res.json({
       ok: true,
-      user: { sc: updatedUser.sc, lumens: updatedUser.lumens, stars: updatedUser.stars },
+      user: { k: updatedUser.k, lumens: updatedUser.lumens, stars: updatedUser.stars },
       item: {
         ...warehouseItem,
         title: localizedItem.title,

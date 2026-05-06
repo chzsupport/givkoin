@@ -35,7 +35,7 @@ const LINE_LABEL_TYPE_STEP = 4;
 
 const DISPLAY_LINE_ORDER = [
     'user_damage',
-    'reward_sc',
+    'reward_k',
     'duration',
     'best_player',
     'achievements',

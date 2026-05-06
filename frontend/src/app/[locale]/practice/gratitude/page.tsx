@@ -21,7 +21,7 @@ type GratitudeTodayResponse = {
   rewardedCount: number;
   totalSlots: number;
   rewards?: {
-    scRewardPerEntry?: number;
+    kRewardPerEntry?: number;
     starsPerEntry?: number;
     radiancePerEntry?: number;
   };
@@ -33,14 +33,14 @@ type GratitudeCompleteResponse = {
   index: number;
   serverDay: string;
   completedIndexes: number[];
-  awardedSc: number;
+  awardedK: number;
   awardedStars: number;
   user?: {
     _id?: string;
     id?: string;
     email?: string;
     nickname?: string;
-    sc?: number;
+    k?: number;
     stars?: number;
   };
 };
@@ -76,8 +76,8 @@ export default function PracticeGratitudePage() {
   const [rewarded, setRewarded] = useState<boolean[]>(Array(GRATITUDE_COUNT).fill(false));
   const [isLoading, setIsLoading] = useState(true);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
-  const [rewardConfig, setRewardConfig] = useState<{ scRewardPerEntry: number; starsPerEntry: number }>({
-    scRewardPerEntry: 5,
+  const [rewardConfig, setRewardConfig] = useState<{ kRewardPerEntry: number; starsPerEntry: number }>({
+    kRewardPerEntry: 5,
     starsPerEntry: 0.001,
   });
 
@@ -93,7 +93,7 @@ export default function PracticeGratitudePage() {
         setRewarded(nextRewarded);
         setEntries(loadDrafts(response.serverDay));
         setRewardConfig({
-          scRewardPerEntry: Number(response.rewards?.scRewardPerEntry) || 5,
+          kRewardPerEntry: Number(response.rewards?.kRewardPerEntry) || 5,
           starsPerEntry: Number(response.rewards?.starsPerEntry) || 0.001,
         });
       } catch {
@@ -143,7 +143,7 @@ export default function PracticeGratitudePage() {
         toast.success(
           t('practice_gratitude.saved_title'),
           t('practice_gratitude.reward_format')
-            .replace('{sc}', String(response.awardedSc))
+            .replace('{k}', String(response.awardedK))
             .replace('{stars}', String(response.awardedStars.toFixed(3)))
         );
       }
@@ -263,7 +263,7 @@ export default function PracticeGratitudePage() {
                           {isSaved && (
                             <div className="text-label text-emerald-300/80">
                               {t('practice_gratitude.reward_saved_format')
-                                .replace('{sc}', String(rewardConfig.scRewardPerEntry))
+                                .replace('{k}', String(rewardConfig.kRewardPerEntry))
                                 .replace('{stars}', String(rewardConfig.starsPerEntry.toFixed(3)))}
                             </div>
                           )}

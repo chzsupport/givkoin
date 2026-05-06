@@ -115,7 +115,7 @@ const NightGuardiansPage = lazy(() => import('./pages/NightGuardians'));
 const CmsOperations = lazy(() => import('./pages/CmsOperations'));
 const FortuneControl = lazy(() => import('./pages/FortuneControl'));
 
-const formatAdminSc = (value: any) => {
+const formatAdminK = (value: any) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return '0';
   return new Intl.NumberFormat('ru-RU', {
@@ -608,7 +608,7 @@ function MeditationSettings() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <div className="text-sm text-slate-400">Выдано сияния</div>
-              <div className="mt-2 text-2xl font-bold text-white">{formatAdminSc(summary.totalRadianceGranted || 0)}</div>
+              <div className="mt-2 text-2xl font-bold text-white">{formatAdminK(summary.totalRadianceGranted || 0)}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <div className="text-sm text-slate-400">Среднее входов на медитацию</div>
@@ -639,7 +639,7 @@ function MeditationSettings() {
                       <div className="mt-2 grid gap-2 sm:grid-cols-3 text-sm">
                         <div className="text-slate-300">Вошло: <span className="text-white font-semibold">{session.participantsCount || 0}</span></div>
                         <div className="text-slate-300">Награда: <span className="text-white font-semibold">{session.rewardedCount || 0}</span></div>
-                        <div className="text-slate-300">Сияние: <span className="text-white font-semibold">{formatAdminSc(session.totalRadiance || 0)}</span></div>
+                        <div className="text-slate-300">Сияние: <span className="text-white font-semibold">{formatAdminK(session.totalRadiance || 0)}</span></div>
                       </div>
                     </div>
                   ))}
@@ -665,7 +665,7 @@ function MeditationSettings() {
                         </div>
                         <div className="text-right">
                           <div className="text-sm font-semibold text-cyan-300">{participant.meditations || 0} медитаций</div>
-                          <div className="text-xs text-slate-500">{formatAdminSc(participant.radiance || 0)} сияния</div>
+                          <div className="text-xs text-slate-500">{formatAdminK(participant.radiance || 0)} сияния</div>
                         </div>
                       </div>
                       <div className="mt-2 text-xs text-slate-500">
@@ -2218,18 +2218,18 @@ function UsersSection() {
   });
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState<{
-    sc: number;
+    k: number;
     lives: number;
     stars: number;
     lumens: number;
     complaintChips: number;
     status: 'active' | 'banned' | 'pending';
-  }>({ sc: 0, lives: 0, stars: 0, lumens: 0, complaintChips: 0, status: 'active' });
+  }>({ k: 0, lives: 0, stars: 0, lumens: 0, complaintChips: 0, status: 'active' });
   const [showChats, setShowChats] = useState<any>(null);
   const [userChats, setUserChats] = useState<any[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
 
-  const formatAdminSc = (value: any) => {
+  const formatAdminK = (value: any) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return '0';
     return new Intl.NumberFormat('ru-RU', {
@@ -2264,7 +2264,7 @@ function UsersSection() {
   useEffect(() => {
     if (editingUser) {
       setEditForm({
-        sc: editingUser.sc,
+        k: editingUser.k,
         lives: editingUser.lives,
         stars: editingUser.stars,
         lumens: editingUser.lumens,
@@ -2277,7 +2277,7 @@ function UsersSection() {
   const handleUpdate = async () => {
     if (!editingUser) return;
     try {
-      const resourceFields = ['sc', 'lives', 'stars', 'lumens', 'complaintChips'];
+      const resourceFields = ['k', 'lives', 'stars', 'lumens', 'complaintChips'];
       const resourceUpdates: Record<string, number> = {};
       for (const field of resourceFields) {
         const nextValue = Number((editForm as any)[field]);
@@ -2407,7 +2407,7 @@ function UsersSection() {
 
   const exportCSV = () => {
     const headers = ['ID', 'Никнейм', 'Email', 'Статус', 'K', 'Жизни', 'Звёзды', 'Люмены'];
-    const rows = users.map(u => [u._id, u.nickname, u.email, u.status, u.sc, u.lives, u.stars, u.lumens]);
+    const rows = users.map(u => [u._id, u.nickname, u.email, u.status, u.k, u.lives, u.stars, u.lumens]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -2580,7 +2580,7 @@ function UsersSection() {
                     <div className="flex flex-wrap gap-2">
                       <div className="flex items-center gap-1 text-amber-400">
                         <Coins size={14} />
-                        <span className="font-medium">{formatAdminSc(user.sc)}</span>
+                        <span className="font-medium">{formatAdminK(user.k)}</span>
                       </div>
                       <div className="flex items-center gap-1 text-rose-400">
                         <Heart size={14} />
@@ -2661,8 +2661,8 @@ function UsersSection() {
                   <input
                     type="number"
                     className="input-field"
-                    value={editForm.sc}
-                    onChange={(e) => setEditForm({ ...editForm, sc: Number(e.target.value) })}
+                    value={editForm.k}
+                    onChange={(e) => setEditForm({ ...editForm, k: Number(e.target.value) })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -3638,7 +3638,7 @@ function WishesSection() {
     text: '',
     status: 'open',
     supportCount: 0,
-    supportSc: 0
+    supportK: 0
   });
 
   const loadWishes = async () => {
@@ -3663,7 +3663,7 @@ function WishesSection() {
         text: editingWish.text,
         status: editingWish.status,
         supportCount: editingWish.supportCount,
-        supportSc: editingWish.supportSc
+        supportK: editingWish.supportK
       });
     }
   }, [editingWish]);
@@ -3768,7 +3768,7 @@ function WishesSection() {
                         <Heart size={12} /> {wish.supportCount}
                       </div>
                       <div className="flex items-center gap-1 text-amber-400 text-xs">
-                        <Coins size={12} /> {formatAdminSc(wish.supportSc)} K
+                        <Coins size={12} /> {formatAdminK(wish.supportK)} K
                       </div>
                     </div>
                   </td>
@@ -3842,8 +3842,8 @@ function WishesSection() {
                     <input
                       type="number"
                       className="input-field"
-                      value={editForm.supportSc}
-                      onChange={(e) => setEditForm({ ...editForm, supportSc: Number(e.target.value) })}
+                      value={editForm.supportK}
+                      onChange={(e) => setEditForm({ ...editForm, supportK: Number(e.target.value) })}
                     />
                   </div>
                 </div>
@@ -3895,10 +3895,10 @@ function SettingsSection() {
   const handleSaveEconomy = async () => {
     try {
       const payload = {
-        SC_PER_HOUR_CHAT: settings?.SC_PER_HOUR_CHAT,
+        K_PER_HOUR_CHAT: settings?.K_PER_HOUR_CHAT,
         CHAT_MINUTES_PER_DAY_CAP: settings?.CHAT_MINUTES_PER_DAY_CAP,
         INITIAL_LIVES: settings?.INITIAL_LIVES,
-        SC_APPEAL_COMPENSATION: settings?.SC_APPEAL_COMPENSATION,
+        K_APPEAL_COMPENSATION: settings?.K_APPEAL_COMPENSATION,
       };
       await updateSettings(payload);
       alert('Настройки экономики сохранены');
@@ -3970,8 +3970,8 @@ function SettingsSection() {
                       <input
                         type="number"
                         className="input-field"
-                        value={settings?.SC_PER_HOUR_CHAT || ''}
-                        onChange={(e) => setSettings({ ...settings, SC_PER_HOUR_CHAT: e.target.value })}
+                        value={settings?.K_PER_HOUR_CHAT || ''}
+                        onChange={(e) => setSettings({ ...settings, K_PER_HOUR_CHAT: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
@@ -3979,8 +3979,8 @@ function SettingsSection() {
                       <input
                         type="number"
                         className="input-field"
-                        value={settings?.SC_APPEAL_COMPENSATION || ''}
-                        onChange={(e) => setSettings({ ...settings, SC_APPEAL_COMPENSATION: e.target.value })}
+                        value={settings?.K_APPEAL_COMPENSATION || ''}
+                        onChange={(e) => setSettings({ ...settings, K_APPEAL_COMPENSATION: e.target.value })}
                       />
                     </div>
                   </div>
@@ -4987,7 +4987,7 @@ function BattlesSection() {
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-slate-400"><Coins size={16} /> Доход и траты</div>
-                  <div className="mt-3 text-sm text-white">За 7 дней мир получил {battleMood?.stats?.scEarned7d ?? 0} K и потратил {battleMood?.stats?.scSpent7d ?? 0} K.</div>
+                  <div className="mt-3 text-sm text-white">За 7 дней мир получил {battleMood?.stats?.kEarned7d ?? 0} K и потратил {battleMood?.stats?.kSpent7d ?? 0} K.</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-2 text-slate-400"><Sparkles size={16} /> Рекламная жила</div>

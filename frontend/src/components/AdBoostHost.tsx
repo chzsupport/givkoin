@@ -20,7 +20,6 @@ type ShopBoosts = {
   battleDamage?: { pending?: boolean; battleId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
   battleLumensDiscount?: { pending?: boolean; battleId?: string; activatedAt?: string; discountPercent?: number; adBoosted?: boolean };
   weakZoneDamage?: { pending?: boolean; battleId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
-  chatSc?: { pending?: boolean; chatId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
   chatK?: { pending?: boolean; chatId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
   solarExtraLmCharges?: number;
   solarExtraLmAmount?: number;
@@ -60,7 +59,7 @@ type CompleteResponse = {
   offerType?: string;
   title?: string;
   result?: {
-    sc?: number;
+    k?: number;
     lumens?: number;
     stars?: number;
     shopBoosts?: ShopBoosts;
@@ -228,7 +227,7 @@ export function AdBoostHost() {
       if (user && response?.result) {
         updateUser({
           ...user,
-          ...(typeof response.result.sc === 'number' ? { sc: response.result.sc } : {}),
+          ...(typeof response.result.k === 'number' ? { k: response.result.k } : {}),
           ...(typeof response.result.lumens === 'number' ? { lumens: response.result.lumens } : {}),
           ...(typeof response.result.stars === 'number' ? { stars: response.result.stars } : {}),
           ...(response.result.shopBoosts ? { shopBoosts: response.result.shopBoosts } : {}),

@@ -1,7 +1,7 @@
 const matchingService = require('./matchingService');
 const chatService = require('./chatService');
 const crypto = require('crypto');
-const scService = require('./scService');
+const kService = require('./kService');
 const emailService = require('./emailService');
 const { isComplaintBlocked } = require('../utils/penalties');
 const { awardRadianceForActivity } = require('./activityRadianceService');
@@ -1819,8 +1819,8 @@ function initSocketService(io) {
                         console.error('Error updating chat like achievements:', err);
                     }
 
-                    const scService = require('./scService');
-                    await scService.creditSc({
+                    const kService = require('./kService');
+                    await kService.creditK({
                         userId: currentUserId,
                         amount: 5,
                         type: 'chat_rating',

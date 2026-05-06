@@ -23,14 +23,13 @@ interface User {
     complaintChips: number;
     stars: number;
     starsMilestonesAwarded?: number[];
-    sc: number;
+    k: number;
     lumens: number;
     treeBranch?: string;
     shopBoosts?: {
         battleDamage?: { pending?: boolean; battleId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
         battleLumensDiscount?: { pending?: boolean; battleId?: string; activatedAt?: string; discountPercent?: number; adBoosted?: boolean };
         weakZoneDamage?: { pending?: boolean; battleId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
-        chatSc?: { pending?: boolean; chatId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
         chatK?: { pending?: boolean; chatId?: string; activatedAt?: string; bonusPercent?: number; adBoosted?: boolean };
         solarExtraLmCharges?: number;
         solarExtraLmAmount?: number;

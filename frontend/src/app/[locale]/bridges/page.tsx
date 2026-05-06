@@ -9,7 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost } from '@/utils/api';
 import { useToast } from '@/context/ToastContext';
 import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
-import { formatUserSc } from '@/utils/formatters';
+import { formatUserK } from '@/utils/formatters';
 import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
@@ -59,8 +59,8 @@ interface BridgeStatsResponse {
 
 type BridgeTab = 'building' | 'my' | 'completed';
 
-const NEW_BRIDGE_COST_SC = 10;
-const STONE_COST_SC = 1;
+const NEW_BRIDGE_COST_K = 10;
+const STONE_COST_K = 1;
 const DAILY_NEW_BRIDGE_LIMIT = 3;
 const DAILY_EXISTING_STONE_LIMIT = 10;
 
@@ -454,11 +454,11 @@ export default function BridgesPage() {
     if (pendingBridgeIds[bridgeId]) {
       return;
     }
-    if (user.sc < STONE_COST_SC) {
-      toast.error(t('bridges.not_enough_k'), `${t('bridges.need_min_k_prefix')} ${STONE_COST_SC} K`);
+    if (user.k < STONE_COST_K) {
+      toast.error(t('bridges.not_enough_k'), `${t('bridges.need_min_k_prefix')} ${STONE_COST_K} K`);
       return;
     }
-    if (stonesToday + STONE_COST_SC > existingStoneLimit) {
+    if (stonesToday + STONE_COST_K > existingStoneLimit) {
       toast.error(t('bridges.limit'), `${t('bridges.existing_stone_limit_prefix')} ${existingStoneLimit} ${t('bridges.existing_stone_limit_suffix')}`);
       return;
     }
@@ -472,11 +472,11 @@ export default function BridgesPage() {
       return;
     }
 
-    const optimisticBridge = applyContributionToBridge(targetBridge, userId, user.nickname || t('cabinet.player'), STONE_COST_SC);
+    const optimisticBridge = applyContributionToBridge(targetBridge, userId, user.nickname || t('cabinet.player'), STONE_COST_K);
     const optimisticBridges = bridges.map((bridge) => bridge._id === bridgeId ? optimisticBridge : bridge);
     const optimisticStats: BridgeStatsResponse = {
       createdToday,
-      stonesToday: stonesToday + STONE_COST_SC,
+      stonesToday: stonesToday + STONE_COST_K,
       limits: {
         newBridgesPerDay: newBridgeLimit,
         existingBridgeStonesPerDay: existingStoneLimit,
@@ -493,13 +493,13 @@ export default function BridgesPage() {
     }
     updateUser({
       ...user,
-      sc: Math.max(0, Number(user.sc || 0) - STONE_COST_SC),
+      k: Math.max(0, Number(user.k || 0) - STONE_COST_K),
     });
     persistBridgeStats(optimisticStats);
     toast.success(t('bridges.radiance_plus_5'), t('bridges.stone_laid'));
 
     try {
-      const response = await apiPost<{ bridge?: Bridge; user?: typeof user }>(`/bridges/${bridgeId}/contribute`, { stones: STONE_COST_SC });
+      const response = await apiPost<{ bridge?: Bridge; user?: typeof user }>(`/bridges/${bridgeId}/contribute`, { stones: STONE_COST_K });
       if (response.user) {
         updateUser(response.user);
       } else {
@@ -569,8 +569,8 @@ export default function BridgesPage() {
       toast.error(t('common.error'), t('bridges.choose_two_countries'));
       return;
     }
-    if (user.sc < NEW_BRIDGE_COST_SC) {
-      toast.error(t('bridges.not_enough_k'), `${t('bridges.need_k_for_start_prefix')} ${NEW_BRIDGE_COST_SC} K ${t('bridges.need_k_for_start_suffix')}`);
+    if (user.k < NEW_BRIDGE_COST_K) {
+      toast.error(t('bridges.not_enough_k'), `${t('bridges.need_k_for_start_prefix')} ${NEW_BRIDGE_COST_K} K ${t('bridges.need_k_for_start_suffix')}`);
       return;
     }
     if (isCreatingBridge) {
@@ -624,7 +624,7 @@ export default function BridgesPage() {
     setShowCreateModal(false);
     updateUser({
       ...user,
-      sc: Math.max(0, Number(user.sc || 0) - NEW_BRIDGE_COST_SC),
+      k: Math.max(0, Number(user.k || 0) - NEW_BRIDGE_COST_K),
     });
     persistBridgeStats(optimisticStats);
     toast.success(t('bridges.radiance_plus_10'), t('bridges.bridge_creating'));
@@ -732,7 +732,7 @@ export default function BridgesPage() {
                 <div className="flex items-center justify-between lg:justify-start gap-2 sm:gap-0 bg-white/5 border border-white/10 rounded-2xl p-0.5 backdrop-blur-xl shadow-lg max-w-full">
                   <div className="flex flex-col items-center px-3 py-0.5 lg:py-1.5 rounded-xl hover:bg-white/5 transition-colors flex-1 lg:flex-none">
                     <span className="text-tiny uppercase tracking-wider text-neutral-500 font-bold whitespace-nowrap">{t('bridges.balance')}</span>
-                    <span className="text-secondary font-mono font-black text-blue-300">{formatUserSc(user?.sc ?? 0)} <span className="text-tiny text-blue-500/50">K</span></span>
+                    <span className="text-secondary font-mono font-black text-blue-300">{formatUserK(user?.k ?? 0)} <span className="text-tiny text-blue-500/50">K</span></span>
                   </div>
 
                   <div className="w-px h-5 lg:h-6 bg-white/10" />
@@ -933,10 +933,10 @@ export default function BridgesPage() {
                           </div>
                           <button
                             onClick={() => handleLayStone(selectedBridge._id)}
-                            disabled={!user || user.sc < STONE_COST_SC || Boolean(pendingBridgeIds[selectedBridge._id]) || stonesToday >= existingStoneLimit}
+                            disabled={!user || user.k < STONE_COST_K || Boolean(pendingBridgeIds[selectedBridge._id]) || stonesToday >= existingStoneLimit}
                             className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 disabled:opacity-50 rounded-xl font-bold text-secondary shadow-lg active:scale-[0.98] transition-all"
                           >
-                            {pendingBridgeIds[selectedBridge._id] ? t('bridges.saving') : `🪨 ${t('bridges.lay_stone')} (${STONE_COST_SC} K)`}
+                            {pendingBridgeIds[selectedBridge._id] ? t('bridges.saving') : `🪨 ${t('bridges.lay_stone')} (${STONE_COST_K} K)`}
                           </button>
                         </div>
                       )}
@@ -1131,10 +1131,10 @@ export default function BridgesPage() {
                 </button>
                 <button
                   onClick={handleCreateBridge}
-                  disabled={!user || user.sc < NEW_BRIDGE_COST_SC || countryFrom === countryTo || isCreatingBridge || createdToday >= newBridgeLimit || !selectedBridgeDistance}
+                  disabled={!user || user.k < NEW_BRIDGE_COST_K || countryFrom === countryTo || isCreatingBridge || createdToday >= newBridgeLimit || !selectedBridgeDistance}
                   className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 disabled:opacity-50 rounded-xl font-bold text-secondary uppercase tracking-widest shadow-lg transition-all active:scale-95"
                 >
-                  {isCreatingBridge ? t('bridges.creating') : `${t('bridges.create')} (${NEW_BRIDGE_COST_SC} K)`}
+                  {isCreatingBridge ? t('bridges.creating') : `${t('bridges.create')} (${NEW_BRIDGE_COST_K} K)`}
                 </button>
               </div>
             </motion.div>

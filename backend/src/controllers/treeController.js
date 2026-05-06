@@ -2,9 +2,9 @@ const { getRadianceState } = require('../services/radianceService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { applyStarsDelta } = require('../utils/stars');
 const { recordActivity } = require('../services/activityService');
-const { awardReferralBlessingExternal } = require('../services/scService');
-const { getTotalRewardMultiplier } = require('../services/scService');
-const { recordTransaction } = require('../services/scService');
+const { awardReferralBlessingExternal } = require('../services/kService');
+const { getTotalRewardMultiplier } = require('../services/kService');
+const { recordTransaction } = require('../services/kService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
@@ -279,7 +279,7 @@ exports.healTree = async (req, res) => {
             starsAward,
             radianceAmount,
             radiance: radianceResult,
-            user: { sc: userData.sc, stars: nextStars, lumens: nextLumens },
+            user: { k: userData.k, stars: nextStars, lumens: nextLumens },
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -322,30 +322,30 @@ exports.collectFruit = async (req, res) => {
 
         // Award reward (PLAN.md): random 10–50 K OR 0.005 stars OR 10–50 Lm
         const roll = Math.floor(Math.random() * 3); // 0..2
-        let rewardType = 'sc';
+        let rewardType = 'k';
         let reward = 0;
 
         const rewardMultiplier = await getTotalRewardMultiplier(userId);
 
-        let nextSc = Number(userData.sc) || 0;
+        let nextK = Number(userData.k) || 0;
         let nextStars = Number(userData.stars) || 0;
         let nextLumens = Number(userData.lumens) || 0;
 
         if (roll === 0) {
-            rewardType = 'sc';
+            rewardType = 'k';
             const baseReward = Math.floor(Math.random() * 41) + 10; // 10-50 K
             reward = baseReward;
-            const finalSc = keepPositiveReward(
+            const finalK = keepPositiveReward(
                 Math.max(0, Math.round(baseReward * rewardMultiplier * 1000) / 1000),
                 baseReward
             );
-            reward = finalSc;
-            nextSc += finalSc;
+            reward = finalK;
+            nextK += finalK;
             await recordTransaction({
                 userId,
                 type: 'fruit_collect',
                 direction: 'credit',
-                amount: finalSc,
+                amount: finalK,
                 currency: 'K',
                 description: pickLang(userLang, 'Сбор плода', 'Fruit collection'),
                 relatedEntity: tree._id,
@@ -353,7 +353,7 @@ exports.collectFruit = async (req, res) => {
             }).catch(() => null);
             awardReferralBlessingExternal({
                 receiverUserId: userId,
-                amount: finalSc,
+                amount: finalK,
                 sourceType: 'fruit_collect',
                 relatedEntity: tree._id,
             }).catch(() => { });
@@ -382,7 +382,7 @@ exports.collectFruit = async (req, res) => {
         }
 
         await updateUserDataById(userId, {
-            sc: nextSc,
+            k: nextK,
             stars: nextStars,
             lumens: nextLumens,
             lastFruitCollectedAt: now.toISOString(),
@@ -410,7 +410,7 @@ exports.collectFruit = async (req, res) => {
 
         const rewardPayload = {
             kind: 'currency',
-            sc: rewardType === 'sc' ? reward : 0,
+            k: rewardType === 'k' ? reward : 0,
             lumens: rewardType === 'lumens' ? reward : 0,
             stars: rewardType === 'stars' ? reward : 0,
             radiance: 2,
@@ -436,7 +436,7 @@ exports.collectFruit = async (req, res) => {
             isFruitAvailable: false,
             radianceAwarded: 2,
             boostOffer,
-            user: { sc: nextSc, stars: nextStars, lumens: nextLumens }
+            user: { k: nextK, stars: nextStars, lumens: nextLumens }
         });
     } catch (error) {
         res.status(500).json({ message: error.message });

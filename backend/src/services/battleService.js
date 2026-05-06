@@ -1,12 +1,12 @@
 const { sendBattleResultEmail, sendGenericEventEmail } = require('./emailService');
 const { broadcastNotificationByPresence } = require('./notificationService');
-const { awardBattleSc } = require('./scService');
+const { awardBattleK } = require('./kService');
 const { getFrontendBaseUrl } = require('../config/env');
 const { forEachUserBatch } = require('./userBatchService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const battleRuntimeStore = require('./battleRuntimeStore');
 const { prepareBattleSummaries } = require('./battleSummaryService');
-const { computeBattleRewardSc } = require('../utils/battleReward');
+const { computeBattleRewardK } = require('../utils/battleReward');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
@@ -902,7 +902,7 @@ async function ensureAttendanceSyncState({ battleId, userId }) {
   return syncState;
 }
 
-async function ensureAttendanceInitForUser({ battleId, userId, lumensAtStart, scAtStart = null, starsAtStart = null }) {
+async function ensureAttendanceInitForUser({ battleId, userId, lumensAtStart, kAtStart = null, starsAtStart = null }) {
   if (!battleId || !userId) return;
   const battle = await getModelDocById('Battle', battleId);
   if (!battle) return;
@@ -916,8 +916,8 @@ async function ensureAttendanceInitForUser({ battleId, userId, lumensAtStart, sc
     nextEntry.lumensAtBattleStart = Math.max(0, Number(lumensAtStart) || 0);
     changed = true;
   }
-  if ((nextEntry.scAtBattleStart === null || nextEntry.scAtBattleStart === undefined) && scAtStart != null) {
-    nextEntry.scAtBattleStart = Math.max(0, Number(scAtStart) || 0);
+  if ((nextEntry.kAtBattleStart === null || nextEntry.kAtBattleStart === undefined) && kAtStart != null) {
+    nextEntry.kAtBattleStart = Math.max(0, Number(kAtStart) || 0);
     changed = true;
   }
   if ((nextEntry.starsAtBattleStart === null || nextEntry.starsAtBattleStart === undefined) && starsAtStart != null) {
@@ -1808,10 +1808,10 @@ async function finishBattle(
         await Promise.all(finalAttendance.slice(offset, offset + batchSize).map(async (row) => {
           const userId = row?.user;
           if (!userId) return;
-          const amount = computeBattleRewardSc({
+          const amount = computeBattleRewardK({
             damage: Number(row?.damage) || 0,
           });
-          const scUpdatedRow = await awardBattleSc({
+          const kUpdatedRow = await awardBattleK({
             userId,
             amount,
             relatedEntity: battle._id,
@@ -1819,11 +1819,11 @@ async function finishBattle(
             skipDebuff: true,
           }).catch((error) => {
             // eslint-disable-next-line no-console
-            console.error('finishBattle: awardBattleSc failed', { battleId, userId, error });
+            console.error('finishBattle: awardBattleK failed', { battleId, userId, error });
             return null;
           });
 
-          const userData = getUserData(scUpdatedRow);
+          const userData = getUserData(kUpdatedRow);
           const startLumens = row?.lumensAtBattleStart == null
             ? Math.max(0, Number(userData?.lumens) || 0)
             : Math.max(0, Math.floor(Number(row.lumensAtBattleStart) || 0));
@@ -1838,7 +1838,7 @@ async function finishBattle(
             await updateUserDataById(
               userId,
               { lumens: nextLumens },
-              { userRow: scUpdatedRow || null },
+              { userRow: kUpdatedRow || null },
             ).catch((error) => {
               // eslint-disable-next-line no-console
               console.error('finishBattle: update battle lumens failed', { battleId, userId, error });
@@ -2412,7 +2412,7 @@ async function finalizeBattleWithReports(battleId) {
     next.suspiciousReasons = [];
     next.suspiciousEvidence = null;
 
-    next.rewardSc = computeBattleRewardSc({
+    next.rewardK = computeBattleRewardK({
       damage: next.damage,
     });
 

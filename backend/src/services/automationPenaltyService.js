@@ -56,11 +56,11 @@ function round3(value) {
 function extractActivityEarnings(row) {
   const type = String(row?.type || '').trim();
   const meta = row?.meta && typeof row.meta === 'object' ? row.meta : {};
-  if (!type) return { sc: 0, lm: 0, stars: 0 };
+  if (!type) return { k: 0, lm: 0, stars: 0 };
 
   if (type === 'solar_collect') {
     return {
-      sc: Math.max(0, safeNumber(meta.earnedSc, 10)),
+      k: Math.max(0, safeNumber(meta.earnedK, 10)),
       lm: Math.max(0, safeNumber(meta.earnedLm, 100)),
       stars: 0,
     };
@@ -68,7 +68,7 @@ function extractActivityEarnings(row) {
 
   if (type === 'night_shift') {
     return {
-      sc: Math.max(0, safeNumber(meta.earnedSc)),
+      k: Math.max(0, safeNumber(meta.earnedK)),
       lm: Math.max(0, safeNumber(meta.earnedLm)),
       stars: Math.max(0, safeNumber(meta.earnedStars)),
     };
@@ -76,7 +76,7 @@ function extractActivityEarnings(row) {
 
   if (type === 'battle_spark') {
     return {
-      sc: Math.max(0, safeNumber(meta.rewardSc)),
+      k: Math.max(0, safeNumber(meta.rewardK)),
       lm: Math.max(0, safeNumber(meta.rewardLumens)),
       stars: 0,
     };
@@ -86,7 +86,7 @@ function extractActivityEarnings(row) {
     const reward = Math.max(0, safeNumber(meta.reward));
     const rewardType = String(meta.rewardType || '').trim();
     return {
-      sc: rewardType === 'sc' ? reward : 0,
+      k: rewardType === 'k' ? reward : 0,
       lm: rewardType === 'lumens' ? reward : 0,
       stars: rewardType === 'stars' ? reward : 0,
     };
@@ -94,13 +94,13 @@ function extractActivityEarnings(row) {
 
   if (type === 'solar_share') {
     return {
-      sc: Math.max(0, safeNumber(meta.scAward, 5)),
+      k: Math.max(0, safeNumber(meta.kAward, 5)),
       lm: 0,
       stars: Math.max(0, safeNumber(meta.starsAward)),
     };
   }
 
-  return { sc: 0, lm: 0, stars: 0 };
+  return { k: 0, lm: 0, stars: 0 };
 }
 
 async function buildPenaltyBase({ userId, relatedUserIds = [], since, until }) {
@@ -160,20 +160,20 @@ async function buildPenaltyBase({ userId, relatedUserIds = [], since, until }) {
     })(),
   ]);
 
-  let scFromTransactions = 0;
+  let kFromTransactions = 0;
   let lumensFromTransactions = 0;
   for (const row of transactionRows) {
     const amount = Math.max(0, safeNumber(row?.amount));
     if (!amount) continue;
     if (String(row?.currency || 'K') === 'LM') lumensFromTransactions += amount;
-    else if (String(row?.currency || 'K') === 'K') scFromTransactions += amount;
+    else if (String(row?.currency || 'K') === 'K') kFromTransactions += amount;
   }
 
-  let scFromActivities = 0;
+  let kFromActivities = 0;
   let lumensFromActivities = 0;
   for (const row of activities) {
     const earnings = extractActivityEarnings(row);
-    scFromActivities += earnings.sc;
+    kFromActivities += earnings.k;
     lumensFromActivities += earnings.lm;
   }
 
@@ -187,28 +187,28 @@ async function buildPenaltyBase({ userId, relatedUserIds = [], since, until }) {
   }
 
   return {
-    scFromTransactions: round3(scFromTransactions),
-    scFromActivities: round3(scFromActivities),
+    kFromTransactions: round3(kFromTransactions),
+    kFromActivities: round3(kFromActivities),
     lumensFromTransactions: round3(lumensFromTransactions),
     lumensFromActivities: round3(lumensFromActivities),
     lumensFromRelatedTransfers: round3(lumensFromRelatedTransfers),
-    totalSc: round3(scFromTransactions + scFromActivities),
+    totalK: round3(kFromTransactions + kFromActivities),
     totalLumens: round3(lumensFromTransactions + lumensFromActivities + lumensFromRelatedTransfers),
   };
 }
 
-async function createPenaltyTransactions({ userId, riskCaseId, confiscatedSc, confiscatedLumens, penaltyPercent }) {
+async function createPenaltyTransactions({ userId, riskCaseId, confiscatedK, confiscatedLumens, penaltyPercent }) {
   const supabase = getSupabaseClient();
   const nowIso = new Date().toISOString();
   const created = [];
   
-  if (confiscatedSc > 0) {
+  if (confiscatedK > 0) {
     const id = `tx_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
     const txData = {
       user: userId,
       type: 'admin',
       direction: 'debit',
-      amount: round3(confiscatedSc),
+      amount: round3(confiscatedK),
       currency: 'K',
       description: `Штраф ${penaltyPercent}% за подтвержденную автоматизацию`,
       relatedEntity: riskCaseId,
@@ -307,30 +307,30 @@ async function applyRiskPenalty({
   });
 
   const targetConfiscation = {
-    sc: round3((penaltyBase.totalSc * safePercent) / 100),
+    k: round3((penaltyBase.totalK * safePercent) / 100),
     lumens: round3((penaltyBase.totalLumens * safePercent) / 100),
   };
   const currentBalancesBefore = {
-    sc: round3(userData.sc || 0),
+    k: round3(userData.k || 0),
     lumens: round3(userData.lumens || 0),
   };
   const confiscated = {
-    sc: round3(Math.min(currentBalancesBefore.sc, targetConfiscation.sc)),
+    k: round3(Math.min(currentBalancesBefore.k, targetConfiscation.k)),
     lumens: round3(Math.min(currentBalancesBefore.lumens, targetConfiscation.lumens)),
   };
   const shortfall = {
-    sc: round3(Math.max(0, targetConfiscation.sc - confiscated.sc)),
+    k: round3(Math.max(0, targetConfiscation.k - confiscated.k)),
     lumens: round3(Math.max(0, targetConfiscation.lumens - confiscated.lumens)),
   };
 
-  const nextSc = round3(Math.max(0, currentBalancesBefore.sc - confiscated.sc));
+  const nextK = round3(Math.max(0, currentBalancesBefore.k - confiscated.k));
   const nextLumens = round3(Math.max(0, currentBalancesBefore.lumens - confiscated.lumens));
-  await updateUserDataById(userId, { sc: nextSc, lumens: nextLumens });
+  await updateUserDataById(userId, { k: nextK, lumens: nextLumens });
 
   await createPenaltyTransactions({
     userId,
     riskCaseId: riskCase._id,
-    confiscatedSc: confiscated.sc,
+    confiscatedK: confiscated.k,
     confiscatedLumens: confiscated.lumens,
     penaltyPercent: safePercent,
   });
@@ -350,7 +350,7 @@ async function applyRiskPenalty({
     targetConfiscation,
     currentBalancesBefore,
     currentBalancesAfter: {
-      sc: nextSc,
+      k: nextK,
       lumens: nextLumens,
     },
     confiscated,
@@ -364,7 +364,7 @@ async function applyRiskPenalty({
     },
     meta: {
       projectReserve: {
-        sc: confiscated.sc,
+        k: confiscated.k,
         lumens: confiscated.lumens,
       },
       userStatusAtPenalty: userRow.status || 'user',
@@ -390,9 +390,9 @@ async function applyRiskPenalty({
     meta: {
       penaltyId: penalty._id,
       forceApplied: Boolean(force),
-      confiscatedSc: confiscated.sc,
+      confiscatedK: confiscated.k,
       confiscatedLumens: confiscated.lumens,
-      shortfallSc: shortfall.sc,
+      shortfallK: shortfall.k,
       shortfallLumens: shortfall.lumens,
     },
   };
@@ -406,9 +406,9 @@ async function applyRiskPenalty({
       appliedBy: actorId,
       forceApplied: Boolean(force),
       penaltyPercent: safePercent,
-      confiscatedSc: confiscated.sc,
+      confiscatedK: confiscated.k,
       confiscatedLumens: confiscated.lumens,
-      shortfallSc: shortfall.sc,
+      shortfallK: shortfall.k,
       shortfallLumens: shortfall.lumens,
       reason: String(reason || '').trim(),
       ledgerId: penalty._id,
@@ -438,7 +438,7 @@ async function applyRiskPenalty({
       confiscated,
       shortfall,
       currentBalancesAfter: {
-        sc: nextSc,
+        k: nextK,
         lumens: nextLumens,
       },
     },

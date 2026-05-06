@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { recordActivity } = require('./activityService');
 const { awardRadianceForActivity } = require('./activityRadianceService');
-const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('./scService');
+const { getBaseRewardMultiplier, recordTransaction, awardReferralBlessingExternal } = require('./kService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, listDocsByModel, mapDocRow, toIso, upsertDoc } = require('./documentStore');
 const { getActiveUsersCountSnapshot } = require('./battleService');
@@ -28,7 +28,7 @@ const SEAT_LOCK_THRESHOLD_SECONDS = SEAT_LOCK_THRESHOLD_MINUTES * 60;
 
 const ANOMALY_MIN_INTERVAL_SECONDS = 15;
 const ANOMALY_MAX_INTERVAL_SECONDS = 45;
-const NIGHT_SHIFT_DEFAULT_SALARY = Object.freeze({ sc: 100, lm: 100, stars: 0.001 });
+const NIGHT_SHIFT_DEFAULT_SALARY = Object.freeze({ k: 100, lm: 100, stars: 0.001 });
 const WINDOW_SECTORS = Object.freeze([
   { id: 'fortune', name: 'Сектор Фортуны', url: '/fortune' },
   { id: 'bridges', name: 'Сектор Мостов', url: '/bridges' },
@@ -39,20 +39,20 @@ const WINDOW_SECTORS = Object.freeze([
 ]);
 
 function normalizeNightShiftSalary(value) {
-  const sc = Number(value?.sc);
+  const k = Number(value?.k);
   const lm = Number(value?.lm);
   const stars = Number(value?.stars);
 
-  if (sc === 10 && lm === 50 && stars === 0.01) {
+  if (k === 10 && lm === 50 && stars === 0.01) {
     return { ...NIGHT_SHIFT_DEFAULT_SALARY };
   }
 
-  if (!Number.isFinite(sc) || !Number.isFinite(lm) || !Number.isFinite(stars)) {
+  if (!Number.isFinite(k) || !Number.isFinite(lm) || !Number.isFinite(stars)) {
     return { ...NIGHT_SHIFT_DEFAULT_SALARY };
   }
 
   return {
-    sc,
+    k,
     lm,
     stars,
   };
@@ -525,7 +525,7 @@ function getNightShiftFromUserData(userData) {
       totalTimeMs: Number(stats.totalTimeMs) || 0,
       anomaliesCleared: Number(stats.anomaliesCleared) || 0,
       totalEarnings: {
-        sc: Number(totalEarnings.sc) || 0,
+        k: Number(totalEarnings.k) || 0,
         lm: Number(totalEarnings.lm) || 0,
         stars: Number(totalEarnings.stars) || 0,
       },
@@ -1234,7 +1234,7 @@ async function commitShiftStatsIfNeeded({ runtime, userId, totalDurationSeconds,
       totalTimeMs: (Number(currentNightShift.stats?.totalTimeMs) || 0) + (Math.max(0, Number(totalDurationSeconds) || 0) * 1000),
       anomaliesCleared: (Number(currentNightShift.stats?.anomaliesCleared) || 0) + Math.max(0, Number(totalAcceptedAnomalies) || 0),
       totalEarnings: {
-        sc: Number(currentNightShift.stats?.totalEarnings?.sc) || 0,
+        k: Number(currentNightShift.stats?.totalEarnings?.k) || 0,
         lm: Number(currentNightShift.stats?.totalEarnings?.lm) || 0,
         stars: Number(currentNightShift.stats?.totalEarnings?.stars) || 0,
       },
@@ -1299,12 +1299,12 @@ async function finalizeShiftSession({
   const paidHours = Math.max(0, Math.floor(Number(evaluated.payableHours) || 0));
   const salaryRates = normalizeNightShiftSalary(normalizedRuntime.salaryRates);
   const reward = {
-    sc: Math.floor((Number(salaryRates.sc) || 0) * paidHours),
+    k: Math.floor((Number(salaryRates.k) || 0) * paidHours),
     lm: Math.floor((Number(salaryRates.lm) || 0) * paidHours),
     stars: Number(((Number(salaryRates.stars) || 0) * paidHours).toFixed(4)),
   };
 
-  const hasReward = paidHours > 0 && (reward.sc > 0 || reward.lm > 0 || reward.stars > 0);
+  const hasReward = paidHours > 0 && (reward.k > 0 || reward.lm > 0 || reward.stars > 0);
   const delaySeconds = hasReward ? getSettlementDelaySeconds() : 0;
   const settlementDueAt = hasReward ? new Date(now.getTime() + (delaySeconds * 1000)) : null;
 
@@ -1801,7 +1801,7 @@ async function getAdminSnapshot({ recentLimit = 100 } = {}) {
     .slice(0, Math.max(1, Math.min(500, Number(recentLimit) || 100)))
     .map((row) => {
       const user = userMap.get(String(row.userId)) || {};
-      const reward = row.reward || { sc: 0, lm: 0, stars: 0 };
+      const reward = row.reward || { k: 0, lm: 0, stars: 0 };
       return {
         userId: String(row.userId),
         nickname: user.nickname || 'Unknown',
@@ -1836,7 +1836,7 @@ async function getAdminSnapshot({ recentLimit = 100 } = {}) {
         startedAt: row.startedAt || row.finalReport?.startedAt || null,
         endedAt: row.endedAt || row.finalReport?.endedAt || null,
         closeReason: row.closeReason || null,
-        reward: row.reward || { sc: 0, lm: 0, stars: 0 },
+        reward: row.reward || { k: 0, lm: 0, stars: 0 },
         payableHours: Math.max(0, Math.floor(Number(row.payableHours) || 0)),
         totalDurationSeconds: Math.max(0, Math.floor(Number(row.finalReport?.totalDurationSeconds) || 0)),
         totalAcceptedAnomalies: Math.max(0, Math.floor(Number(row.totalAcceptedAnomalies) || 0)),
@@ -1888,26 +1888,26 @@ async function reviewSuspiciousShift({ sessionId, action, adminUserId = null, no
     throw new Error('night_shift_review_user_not_found');
   }
 
-  const reward = runtime.reward || { sc: 0, lm: 0, stars: 0 };
+  const reward = runtime.reward || { k: 0, lm: 0, stars: 0 };
   const requestedPenalty = {
-    sc: Math.floor((Number(reward.sc) || 0) * 0.8),
+    k: Math.floor((Number(reward.k) || 0) * 0.8),
     lm: Math.floor((Number(reward.lm) || 0) * 0.8),
     stars: Number(((Number(reward.stars) || 0) * 0.8).toFixed(4)),
   };
 
   const userData = getUserData(userRow);
   const currentNightShift = getNightShiftFromUserData(userData);
-  const currentSc = Number(userData.sc) || 0;
+  const currentK = Number(userData.k) || 0;
   const currentLm = Number(userData.lumens) || 0;
   const currentStars = Number(userData.stars) || 0;
   const appliedPenalty = {
-    sc: Math.min(currentSc, requestedPenalty.sc),
+    k: Math.min(currentK, requestedPenalty.k),
     lm: Math.min(currentLm, requestedPenalty.lm),
     stars: Number(Math.min(currentStars, requestedPenalty.stars).toFixed(4)),
   };
 
   await updateUserDataById(userRow.id, {
-    sc: Math.max(0, currentSc - appliedPenalty.sc),
+    k: Math.max(0, currentK - appliedPenalty.k),
     lumens: Math.max(0, currentLm - appliedPenalty.lm),
     stars: Number(Math.max(0, currentStars - appliedPenalty.stars).toFixed(4)),
     nightShift: {
@@ -1916,7 +1916,7 @@ async function reviewSuspiciousShift({ sessionId, action, adminUserId = null, no
         totalTimeMs: Number(currentNightShift.stats?.totalTimeMs) || 0,
         anomaliesCleared: Number(currentNightShift.stats?.anomaliesCleared) || 0,
         totalEarnings: {
-          sc: Math.max(0, (Number(currentNightShift.stats?.totalEarnings?.sc) || 0) - appliedPenalty.sc),
+          k: Math.max(0, (Number(currentNightShift.stats?.totalEarnings?.k) || 0) - appliedPenalty.k),
           lm: Math.max(0, (Number(currentNightShift.stats?.totalEarnings?.lm) || 0) - appliedPenalty.lm),
           stars: Number(Math.max(0, (Number(currentNightShift.stats?.totalEarnings?.stars) || 0) - appliedPenalty.stars).toFixed(4)),
         },
@@ -1924,12 +1924,12 @@ async function reviewSuspiciousShift({ sessionId, action, adminUserId = null, no
     },
   });
 
-  if (appliedPenalty.sc > 0) {
+  if (appliedPenalty.k > 0) {
     await recordTransaction({
       userId: userRow.id,
       type: 'night_shift',
       direction: 'debit',
-      amount: appliedPenalty.sc,
+      amount: appliedPenalty.k,
       currency: 'K',
       description: 'Штраф за Ночную Смену',
       relatedEntity: runtime.sessionId,
@@ -2032,7 +2032,7 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
       const dueAtMs = safeMs(row.settlementDueAt);
       if (dueAtMs == null || nowMs < dueAtMs) continue;
 
-      const reward = row.reward || { sc: 0, lm: 0, stars: 0 };
+      const reward = row.reward || { k: 0, lm: 0, stars: 0 };
       const payableHours = Math.max(0, Math.floor(Number(row.payableHours) || 0));
       if (payableHours <= 0) {
         await upsertDoc({
@@ -2057,14 +2057,14 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
       const baseMultiplier = await getBaseRewardMultiplier(userRow.id);
       const blessingReward = await applyTreeBlessingToReward({
         userId: userRow.id,
-        sc: reward.sc,
+        k: reward.k,
         lumens: reward.lm,
         now,
         baseMultiplier,
       });
       const finalReward = {
         ...reward,
-        sc: blessingReward.sc,
+        k: blessingReward.k,
         lm: blessingReward.lumens,
         stars: Number(((Number(reward.stars) || 0) * baseMultiplier).toFixed(4)),
       };
@@ -2076,7 +2076,7 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
           totalTimeMs: Number(currentNightShift.stats?.totalTimeMs) || 0,
           anomaliesCleared: Number(currentNightShift.stats?.anomaliesCleared) || 0,
           totalEarnings: {
-            sc: (Number(currentNightShift.stats?.totalEarnings?.sc) || 0) + (Number(finalReward.sc) || 0),
+            k: (Number(currentNightShift.stats?.totalEarnings?.k) || 0) + (Number(finalReward.k) || 0),
             lm: (Number(currentNightShift.stats?.totalEarnings?.lm) || 0) + (Number(finalReward.lm) || 0),
             stars: Number(((Number(currentNightShift.stats?.totalEarnings?.stars) || 0) + (Number(finalReward.stars) || 0)).toFixed(4)),
           },
@@ -2084,18 +2084,18 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
       };
 
       await updateUserDataById(userRow.id, {
-        sc: (Number(userData.sc) || 0) + (Number(finalReward.sc) || 0),
+        k: (Number(userData.k) || 0) + (Number(finalReward.k) || 0),
         lumens: (Number(userData.lumens) || 0) + (Number(finalReward.lm) || 0),
         stars: Number(((Number(userData.stars) || 0) + (Number(finalReward.stars) || 0)).toFixed(4)),
         nightShift: nextNightShift,
       });
 
-      if ((Number(finalReward.sc) || 0) > 0) {
+      if ((Number(finalReward.k) || 0) > 0) {
         await recordTransaction({
           userId: userRow.id,
           type: 'night_shift',
           direction: 'credit',
-          amount: Number(finalReward.sc) || 0,
+          amount: Number(finalReward.k) || 0,
           currency: 'K',
           description: 'Ночная Смена: полный час',
           relatedEntity: row.sessionId,
@@ -2103,7 +2103,7 @@ async function processDueNightShiftSettlements({ now = new Date() } = {}) {
         }).catch(() => null);
         awardReferralBlessingExternal({
           receiverUserId: userRow.id,
-          amount: Number(finalReward.sc) || 0,
+          amount: Number(finalReward.k) || 0,
           sourceType: 'night_shift',
           relatedEntity: row.sessionId,
         }).catch(() => null);

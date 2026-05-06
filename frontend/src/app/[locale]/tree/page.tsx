@@ -59,17 +59,17 @@ type SolarStatusResponse = {
 
 type SolarShareResponse = {
   amountLm: number;
-  scAward: number;
+  kAward: number;
   starsAward: number;
   shareCountToday?: number;
   shareDailyLimit?: number;
 };
 
 type CollectFruitResponse = {
-  rewardType: 'sc' | 'stars' | 'lumens';
+  rewardType: 'k' | 'stars' | 'lumens';
   reward: number;
   user?: {
-    sc?: number;
+    k?: number;
     stars?: number;
     lumens?: number;
   };
@@ -80,7 +80,7 @@ type HealTreeResponse = {
   lumens: number;
   starsAward: number;
   user?: {
-    sc?: number;
+    k?: number;
     stars?: number;
     lumens?: number;
   };
@@ -88,9 +88,9 @@ type HealTreeResponse = {
 
 type SolarCollectResponse = {
   lmAward?: number;
-  scAward?: number;
+  kAward?: number;
   user?: {
-    sc?: number;
+    k?: number;
     stars?: number;
     lumens?: number;
   };
@@ -185,12 +185,12 @@ export default function TreePage() {
     }>
   >([]);
 
-  const syncUserResources = useCallback((nextUser?: { sc?: number; stars?: number; lumens?: number } | null) => {
+  const syncUserResources = useCallback((nextUser?: { k?: number; stars?: number; lumens?: number } | null) => {
     if (!user || !nextUser) return;
 
     updateUser({
       ...user,
-      sc: typeof nextUser.sc === 'number' ? nextUser.sc : user.sc,
+      k: typeof nextUser.k === 'number' ? nextUser.k : user.k,
       stars: typeof nextUser.stars === 'number' ? nextUser.stars : user.stars,
       lumens: typeof nextUser.lumens === 'number' ? nextUser.lumens : user.lumens,
     } as Parameters<typeof updateUser>[0]);
@@ -358,7 +358,7 @@ export default function TreePage() {
       setShareCountToday(typeof data?.shareCountToday === 'number' ? data.shareCountToday : null);
       setShareDailyLimit(typeof data?.shareDailyLimit === 'number' ? data.shareDailyLimit : null);
 
-      toast.success(t('tree.light_sent'), `−${data.amountLm} Lm, +${data.scAward} K, +${data.starsAward} ⭐`);
+      toast.success(t('tree.light_sent'), `−${data.amountLm} Lm, +${data.kAward} K, +${data.starsAward} ⭐`);
       await refreshUser();
       setIsShareOpen(false);
     } catch (e: unknown) {
@@ -508,8 +508,8 @@ export default function TreePage() {
         apiPost<SolarCollectResponse>('/tree/solar/collect', {})
           .then(async (data) => {
             const lumens = data?.lmAward ?? 100;
-            const sc = data?.scAward ?? 10;
-            toast.success(t('landing.energy'), `+${lumens} Lm, +${sc} K`);
+            const k = data?.kAward ?? 10;
+            toast.success(t('landing.energy'), `+${lumens} Lm, +${k} K`);
             const nextDeadlineAt = Date.now() + 3600 * 1000;
             setSolarStatus('charging');
             setSolarDeadlineAt(nextDeadlineAt);

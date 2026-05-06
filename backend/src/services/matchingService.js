@@ -14,7 +14,7 @@ function mapChatRow(row) {
         startedAt: row.started_at ? new Date(row.started_at) : null,
         endedAt: row.ended_at ? new Date(row.ended_at) : null,
         duration: Number(row.duration || 0),
-        scAwarded: Boolean(row.sc_awarded),
+        kAwarded: Boolean(row.k_awarded),
         waitingState: row.waiting_state && typeof row.waiting_state === 'object' ? row.waiting_state : null,
         disconnectionCount: row.disconnection_count && typeof row.disconnection_count === 'object' ? row.disconnection_count : {},
         createdAt: row.created_at ? new Date(row.created_at) : null,

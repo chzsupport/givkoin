@@ -119,7 +119,7 @@ export default function EntityProfilePage() {
         return `${hours}${t('entity_profile.hours_short')} ${minutes}${t('entity_profile.minutes_short')}`;
     };
 
-    const moodScEffectText = () => {
+    const moodKEffectText = () => {
         if (shownMood === 'happy') return t('entity_profile.mood_effect_happy');
         if (shownMood === 'sad') return t('entity_profile.mood_effect_sad');
         return t('entity_profile.mood_effect_neutral');
@@ -229,7 +229,7 @@ export default function EntityProfilePage() {
                                         <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
                                             <div className="text-label text-white/40 mb-0.5">{t('entity_profile.mood')}</div>
                                             <div className="text-sm font-bold text-green-400">{formatMood(shownMood)}</div>
-                                            <div className="text-caption text-white/50">{moodScEffectText()}</div>
+                                            <div className="text-caption text-white/50">{moodKEffectText()}</div>
                                         </div>
                                         <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
                                             <div className="text-label text-white/40 mb-0.5">{t('entity_profile.satiety')}</div>

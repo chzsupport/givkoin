@@ -140,8 +140,8 @@ export default function CabinetHistoryPage() {
   const [loadingBattles, setLoadingBattles] = useState(false);
   const [radianceHistory, setRadianceHistory] = useState<RadianceHistoryItem[]>([]);
   const [radianceTotal, setRadianceTotal] = useState<number>(0);
-  const [scHistory, setScHistory] = useState<EconomyHistoryItem[]>([]);
-  const [scTotal, setScTotal] = useState<number>(0);
+  const [kHistory, setKHistory] = useState<EconomyHistoryItem[]>([]);
+  const [kTotal, setKTotal] = useState<number>(0);
   const [starsHistory, setStarsHistory] = useState<EconomyHistoryItem[]>([]);
   const [starsTotal, setStarsTotal] = useState<number>(0);
 
@@ -183,7 +183,7 @@ export default function CabinetHistoryPage() {
     fruit_collect: t('history.collect_fruit'),
   };
 
-  const SC_TYPE_NAMES: Record<string, string> = {
+  const K_TYPE_NAMES: Record<string, string> = {
     attendance_bonus: t('history.attendance_day'),
     solar_collect: t('history.solar_charge'),
     solar_share: t('history.transfer_lumens'),
@@ -276,26 +276,26 @@ export default function CabinetHistoryPage() {
     return null;
   };
 
-  const getEconomyEntryName = (row: EconomyHistoryItem, mode: 'sc' | 'stars') => {
+  const getEconomyEntryName = (row: EconomyHistoryItem, mode: 'k' | 'stars') => {
     if (isExplicitBoostDescription(row.description)) return String(row.description || '').trim();
     const boostTypeName = BOOST_TYPE_NAMES[String(row.type || '')];
     if (boostTypeName) return boostTypeName;
     const descriptionKey = resolveEconomyDescriptionKey(row.description);
     if (descriptionKey) return t(descriptionKey);
-    const map = mode === 'sc' ? SC_TYPE_NAMES : STAR_TYPE_NAMES;
+    const map = mode === 'k' ? K_TYPE_NAMES : STAR_TYPE_NAMES;
     const typeKey = map[String(row.type || '')];
     if (typeKey) return typeKey;
     if (row.description) return row.description;
     return row.type || t('history.credit');
   };
   const [loadingRadiance, setLoadingRadiance] = useState(false);
-  const [loadingSc, setLoadingSc] = useState(false);
+  const [loadingK, setLoadingK] = useState(false);
   const [loadingStars, setLoadingStars] = useState(false);
   const [battleSummary, setBattleSummary] = useState<BattleSummary | null>(null);
   const [summaryBattleId, setSummaryBattleId] = useState<string | null>(null);
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'battles' | 'chats' | 'radiance' | 'sc' | 'stars'>('battles');
+  const [activeTab, setActiveTab] = useState<'battles' | 'chats' | 'radiance' | 'k' | 'stars'>('battles');
 
   useEffect(() => {
     let cancelled = false;
@@ -370,28 +370,28 @@ export default function CabinetHistoryPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadSc = async () => {
+    const loadK = async () => {
       if (!user) return;
-      setLoadingSc(true);
+      setLoadingK(true);
       try {
         const [historyRes, totalRes] = await Promise.all([
           apiGet<{ items: EconomyHistoryItem[] }>('/economy/history?currency=K&direction=credit&limit=100&offset=0'),
           apiGet<{ total: number }>('/economy/total-earned?currency=K&direction=credit'),
         ]);
         if (!cancelled) {
-          setScHistory(historyRes?.items || []);
-          setScTotal(Number(totalRes?.total) || 0);
+          setKHistory(historyRes?.items || []);
+          setKTotal(Number(totalRes?.total) || 0);
         }
       } catch {
         if (!cancelled) {
-          setScHistory([]);
-          setScTotal(0);
+          setKHistory([]);
+          setKTotal(0);
         }
       } finally {
-        if (!cancelled) setLoadingSc(false);
+        if (!cancelled) setLoadingK(false);
       }
     };
-    loadSc();
+    loadK();
     return () => {
       cancelled = true;
     };
@@ -629,15 +629,15 @@ export default function CabinetHistoryPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('sc')}
+              onClick={() => setActiveTab('k')}
               className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all ${
-                activeTab === 'sc'
+                activeTab === 'k'
                   ? 'border-amber-400/50 bg-amber-400/10 text-amber-200 shadow-[0_0_20px_-5px_rgba(251,191,36,0.3)]'
                   : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white hover:border-white/20'
               }`}
             >
               🪙 K
-              <span className="text-caption text-white/50">{scHistory.length}</span>
+              <span className="text-caption text-white/50">{kHistory.length}</span>
             </button>
             <button
               type="button"
@@ -867,23 +867,23 @@ export default function CabinetHistoryPage() {
             </div>
           )}
 
-          {activeTab === 'sc' && (
+          {activeTab === 'k' && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-h3">K</h2>
-                  <p className="text-secondary text-white/70">{t('history.sc_desc')}</p>
+                  <p className="text-secondary text-white/70">{t('history.k_desc')}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  {loadingSc && <span className="text-tiny text-white/60">{t('common.loading')}</span>}
+                  {loadingK && <span className="text-tiny text-white/60">{t('common.loading')}</span>}
                   <div className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-tiny text-amber-200">
-                    {t('history.total')}: <span className="font-semibold">{formatNumber(scTotal, language)}</span>
+                    {t('history.total')}: <span className="font-semibold">{formatNumber(kTotal, language)}</span>
                   </div>
                 </div>
               </div>
 
               <div className="mt-4 space-y-3">
-                {scHistory.map((row) => {
+                {kHistory.map((row) => {
                   const at = row.occurredAt ? new Date(row.occurredAt) : null;
                   const atText = at && !Number.isNaN(at.getTime()) ? formatDateTime(at, language) : '—';
                   return (
@@ -892,14 +892,14 @@ export default function CabinetHistoryPage() {
                         <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-tiny text-amber-200">
                           +{formatNumber(row.amount || 0, language)} K
                         </span>
-                        <span className="text-white/80">{getEconomyEntryName(row, 'sc')}</span>
+                        <span className="text-white/80">{getEconomyEntryName(row, 'k')}</span>
                         <span className="text-tiny text-white/60">{atText}</span>
                       </div>
                     </div>
                   );
                 })}
 
-                {scHistory.length === 0 && !loadingSc && (
+                {kHistory.length === 0 && !loadingK && (
                   <div className="rounded-xl border border-white/10 bg-black/30 p-4 text-secondary text-white/70">
                     {t('history.no_earnings')}
                   </div>

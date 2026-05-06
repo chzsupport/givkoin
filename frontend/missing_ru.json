@@ -397,7 +397,7 @@
   ">Сводка</span></div>\r\n                            <div className=",
   ">Мои:</span><span className=",
   ">Поздравляем!</div>\r\n                            <div className=",
-  "(null);\r\n\r\n  // Support Confirmation Modal\r\n  const [showSupportConfirm, setShowSupportConfirm] = useState(false);\r\n\r\n  // Fulfillment limits (приходит с сервера)\r\n  const [fulfilledToday, setFulfilledToday] = useState(0);\r\n  const [fulfilledThisMonth, setFulfilledThisMonth] = useState(0);\r\n\r\n  const userSc = user?.sc ?? 0;\r\n\r\n\r\n\r\n  const canCreate = useMemo(\r\n    () => wishText.trim().length > 0 && wishText.trim().length",
+  "(null);\r\n\r\n  // Support Confirmation Modal\r\n  const [showSupportConfirm, setShowSupportConfirm] = useState(false);\r\n\r\n  // Fulfillment limits (приходит с сервера)\r\n  const [fulfilledToday, setFulfilledToday] = useState(0);\r\n  const [fulfilledThisMonth, setFulfilledThisMonth] = useState(0);\r\n\r\n  const userK = user?.k ?? 0;\r\n\r\n\r\n\r\n  const canCreate = useMemo(\r\n    () => wishText.trim().length > 0 && wishText.trim().length",
   "Желаний",
   "Исполнений",
   "Космический зал для желаний: формулируйте намерения, поддерживайте чужие мечты K и берите желание на исполнение в реальности.",

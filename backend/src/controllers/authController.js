@@ -88,11 +88,11 @@ const APP_URL = getFrontendBaseUrl();
 
 
 
-const REFERRAL_SC_BONUS = 20;
+const REFERRAL_K_BONUS = 20;
 
 const REFERRAL_DAILY_LIMIT = 10;
 
-const REFERRAL_DAILY_BONUS_SC = 100;
+const REFERRAL_DAILY_BONUS_K = 100;
 
 
 
@@ -330,7 +330,7 @@ async function hasTransactionDailyReferralBonus({ userId, since }) {
 
 
 
-async function hasReferralRewardScTransaction({ userId, referralId }) {
+async function hasReferralRewardKTransaction({ userId, referralId }) {
 
   if (!userId || !referralId) return false;
 
@@ -464,7 +464,7 @@ function needsCoreUserDataRecovery(data = {}) {
 
   const safe = data && typeof data === 'object' ? data : {};
 
-  const missingCoreBalances = !hasOwn(safe, 'sc') || !hasOwn(safe, 'lumens') || !hasOwn(safe, 'stars');
+  const missingCoreBalances = !hasOwn(safe, 'k') || !hasOwn(safe, 'lumens') || !hasOwn(safe, 'stars');
 
   const missingCoreMeta = !hasOwn(safe, 'lives') || !hasOwn(safe, 'complaintChips');
 
@@ -608,13 +608,13 @@ async function repairDamagedUserData(row) {
 
   const initialStars = row.email_confirmed ? (Number(process.env.INITIAL_STARS ?? 1) || 1) : 0;
 
-  const initialSc = row.email_confirmed ? (Number(process.env.INITIAL_SC ?? 0) || 0) : 0;
+  const initialK = row.email_confirmed ? (Number(process.env.INITIAL_K ?? 0) || 0) : 0;
 
   const initialLumens = row.email_confirmed ? (Number(process.env.INITIAL_LUMENS ?? 0) || 0) : 0;
 
 
 
-  const expectedSc = round3(initialSc + (Number(balances?.K) || 0));
+  const expectedK = round3(initialK + (Number(balances?.K) || 0));
 
   const expectedLumens = round3(initialLumens + (Number(balances?.LM) || 0));
 
@@ -632,7 +632,7 @@ async function repairDamagedUserData(row) {
 
     nextData.complaintChips = hasOwn(currentData, 'complaintChips') ? currentData.complaintChips : initialComplaintChips;
 
-    nextData.sc = hasOwn(currentData, 'sc') ? currentData.sc : expectedSc;
+    nextData.k = hasOwn(currentData, 'k') ? currentData.k : expectedK;
 
     nextData.lumens = hasOwn(currentData, 'lumens') ? currentData.lumens : expectedLumens;
 
@@ -2018,7 +2018,7 @@ const register = async (req, res, next) => {
 
       stars: 0,
 
-      sc: 0,
+      k: 0,
 
       lumens: 0,
 
@@ -2818,11 +2818,11 @@ const login = async (req, res, next) => {
 
       if (!rewardableReferralError && rewardableReferral) {
 
-        const { awardReferralSc, creditSc } = require('../services/scService');
+        const { awardReferralK, creditK } = require('../services/kService');
 
         try {
 
-          const hasReferralSc = await hasReferralRewardScTransaction({
+          const hasReferralK = await hasReferralRewardKTransaction({
 
             userId: rewardableReferral.inviter_id,
 
@@ -2830,13 +2830,13 @@ const login = async (req, res, next) => {
 
           });
 
-          if (!hasReferralSc) {
+          if (!hasReferralK) {
 
-            await awardReferralSc({
+            await awardReferralK({
 
               userId: rewardableReferral.inviter_id,
 
-              bonus: REFERRAL_SC_BONUS,
+              bonus: REFERRAL_K_BONUS,
 
               description: pickLang(
 
@@ -2894,11 +2894,11 @@ const login = async (req, res, next) => {
 
             if (!alreadyDailyBonus) {
 
-              await creditSc({
+              await creditK({
 
                 userId: rewardableReferral.inviter_id,
 
-                amount: REFERRAL_DAILY_BONUS_SC,
+                amount: REFERRAL_DAILY_BONUS_K,
 
                 type: 'referral',
 
@@ -3014,7 +3014,7 @@ const confirmEmail = async (req, res, next) => {
 
     const stars = Number(process.env.INITIAL_STARS ?? 1) || 1;
 
-    const sc = Number(process.env.INITIAL_SC ?? 0) || 0;
+    const k = Number(process.env.INITIAL_K ?? 0) || 0;
 
     const lumens = Number(process.env.INITIAL_LUMENS ?? 0) || 0;
 
@@ -3080,7 +3080,7 @@ const confirmEmail = async (req, res, next) => {
 
           stars,
 
-          sc,
+          k,
 
           lumens,
 

@@ -36,7 +36,7 @@ async function recordFortuneWin({
 }) {
   if (!['roulette', 'lottery'].includes(String(gameType || ''))) return null;
 
-  const safeRewardType = ['sc', 'star', 'spin', 'other'].includes(String(rewardType || ''))
+  const safeRewardType = ['k', 'star', 'spin', 'other'].includes(String(rewardType || ''))
     ? String(rewardType)
     : 'other';
 

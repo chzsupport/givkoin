@@ -1,4 +1,4 @@
-const { debitSc, creditSc } = require('../services/scService');
+const { debitK, creditK } = require('../services/kService');
 const { createNotification } = require('./notificationController');
 const { applyStarsDelta } = require('../utils/stars');
 const { adminAudit } = require('../middleware/adminAudit');
@@ -10,8 +10,8 @@ const WISH_STATS_CACHE_TTL_MS = Math.max(1000, Number(process.env.WISH_STATS_CAC
 const DAILY_WISH_LIMIT = 3;
 const DAILY_FULFILL_LIMIT = 3;
 const MONTHLY_FULFILL_LIMIT = 10;
-const WISH_COST_SC = 100;
-const FULFILL_REWARD_SC = 100;
+const WISH_COST_K = 100;
+const FULFILL_REWARD_K = 100;
 const FULFILL_REWARD_STARS = 0.1;
 
 function normalizeLang(value) {
@@ -53,9 +53,9 @@ function mapWishRowToDoc(row) {
     text: row.text,
     status: row.status,
     supportCount: row.support_count ?? 0,
-    supportSc: Number(row.support_sc ?? 0),
+    supportK: Number(row.support_k ?? 0),
     language: row.language ?? undefined,
-    costSc: Number(row.cost_sc ?? 0),
+    costK: Number(row.cost_k ?? 0),
     executor: row.executor_id ?? null,
     executorContact: row.executor_contact ?? undefined,
     createdAt: row.created_at ? new Date(row.created_at) : null,
@@ -190,7 +190,7 @@ function mapWishDto(wish) {
     text: wish.text,
     status: wish.status,
     supportCount: wish.supportCount || 0,
-    supportSc: wish.supportSc || 0,
+    supportK: wish.supportK || 0,
     authorId: wish.author ? wish.author.toString() : null,
     executorId: wish.executor ? wish.executor.toString() : null,
     createdAt: wish.createdAt,
@@ -265,9 +265,9 @@ async function createWish(req, res, next) {
     }
 
     // Списываем K через сервис (проверка баланса внутри)
-    const updatedUser = await debitSc({
+    const updatedUser = await debitK({
       userId: req.user._id,
-      amount: WISH_COST_SC,
+      amount: WISH_COST_K,
       type: 'wish',
       description: pickLang(userLang, 'Загадать желание', 'Make a wish'),
     });
@@ -282,7 +282,7 @@ async function createWish(req, res, next) {
         author_id: String(req.user._id),
         text: text.trim(),
         status: 'open',
-        cost_sc: WISH_COST_SC,
+        cost_k: WISH_COST_K,
         ...(language ? { language } : {}),
         created_at: nowIso,
         updated_at: nowIso,
@@ -383,7 +383,7 @@ async function supportWish(req, res, next) {
       return res.status(400).json({ message: pickLang(userLang, 'Нельзя поддержать это желание', 'You cannot support this wish') });
     }
 
-    const updatedUser = await debitSc({
+    const updatedUser = await debitK({
       userId: req.user._id,
       amount: value,
       type: 'wish',
@@ -392,7 +392,7 @@ async function supportWish(req, res, next) {
     });
 
     const nextSupportCount = (Number(wish.supportCount) || 0) + 1;
-    const nextSupportSc = (Number(wish.supportSc) || 0) + value;
+    const nextSupportK = (Number(wish.supportK) || 0) + value;
     const nextStatus = wish.status === 'open' ? 'supported' : wish.status;
     {
       const supabase = getSupabaseClient();
@@ -401,7 +401,7 @@ async function supportWish(req, res, next) {
         .from('wishes')
         .update({
           support_count: nextSupportCount,
-          support_sc: nextSupportSc,
+          support_k: nextSupportK,
           status: nextStatus,
           updated_at: nowIso,
         })
@@ -417,15 +417,15 @@ async function supportWish(req, res, next) {
       userId: req.user._id,
       amount: 5,
       activityType: 'wish_support',
-      meta: { wishId: wish._id, amountSc: value },
+      meta: { wishId: wish._id, amountK: value },
       dedupeKey: `wish_support:${wish._id}:${req.user._id}:${crypto.randomBytes(12).toString('hex')}`,
     }).catch(() => { });
 
     // Ачивка #61. Меценат (Отправить заработанные в бою ЦП на желание другого)
     try {
       const stats = req.user.achievementStats || {};
-      const lastSc = stats.lastBattleScEarned || 0;
-      if (lastSc > 0 && Math.floor(value) === Math.floor(lastSc)) {
+      const lastK = stats.lastBattleKEarned || 0;
+      if (lastK > 0 && Math.floor(value) === Math.floor(lastK)) {
         const { grantAchievement } = require('../services/achievementService');
         await grantAchievement({ userId: req.user._id, achievementId: 61 });
       }
@@ -672,9 +672,9 @@ async function markFulfilled(req, res, next) {
 
     if (wish.executor) {
       try {
-        await creditSc({
+        await creditK({
           userId: wish.executor,
-          amount: FULFILL_REWARD_SC,
+          amount: FULFILL_REWARD_K,
           type: 'wish',
           description: pickLang(userLang, 'Бонус за исполнение желания', 'Bonus for fulfilling a wish'),
           relatedEntity: wish._id,
@@ -708,11 +708,11 @@ async function markFulfilled(req, res, next) {
 
 async function getStats(req, res, next) {
   try {
-    const currentSc = req.user.sc || 0;
+    const currentK = req.user.k || 0;
     const stats = await getStatsForUser(req.user._id);
     return res.json({
       ...stats,
-      userSc: currentSc,
+      userK: currentK,
     });
   } catch (error) {
     return next(error);

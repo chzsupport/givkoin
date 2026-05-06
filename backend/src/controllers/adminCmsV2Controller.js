@@ -4123,7 +4123,7 @@ async function listFortuneWins(req, res) {
     if (req.query.userId) {
       query = query.eq('data->>user', String(req.query.userId));
     }
-    if (req.query.rewardType && ['sc', 'star', 'spin', 'other'].includes(String(req.query.rewardType))) {
+    if (req.query.rewardType && ['k', 'star', 'spin', 'other'].includes(String(req.query.rewardType))) {
       query = query.eq('data->>rewardType', String(req.query.rewardType));
     }
 

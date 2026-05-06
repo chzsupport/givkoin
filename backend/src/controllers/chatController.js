@@ -77,7 +77,7 @@ function mapChatRow(row) {
         ratings: Array.isArray(row.ratings) ? row.ratings : [],
         hiddenFor: Array.isArray(row.hidden_for) ? row.hidden_for : [],
         complaint: row.complaint && typeof row.complaint === 'object' ? row.complaint : null,
-        scAwarded: Boolean(row.sc_awarded),
+        kAwarded: Boolean(row.k_awarded),
         waitingState: row.waiting_state && typeof row.waiting_state === 'object' ? row.waiting_state : null,
         disconnectionCount: row.disconnection_count && typeof row.disconnection_count === 'object' ? row.disconnection_count : {},
         createdAt: row.created_at ? new Date(row.created_at) : null,
@@ -398,7 +398,7 @@ async function getChatHistory(req, res) {
 async function getChatDetails(req, res) {
     try {
         const { chatId } = req.params;
-        const row = await getChatRowById(chatId, 'id,participants,status,started_at,ended_at,duration,messages_count,ratings,hidden_for,complaint,sc_awarded,waiting_state,disconnection_count,created_at,updated_at');
+        const row = await getChatRowById(chatId, 'id,participants,status,started_at,ended_at,duration,messages_count,ratings,hidden_for,complaint,k_awarded,waiting_state,disconnection_count,created_at,updated_at');
         const chat = mapChatRow(row);
 
         if (!chat) {

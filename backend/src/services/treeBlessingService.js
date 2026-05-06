@@ -262,9 +262,9 @@ async function getTreeBlessingRewardMultiplierForUser(userId, { now = new Date()
   return promise;
 }
 
-async function applyTreeBlessingToReward({ userId, sc = 0, lumens = 0, now = new Date(), baseMultiplier = 1 }) {
+async function applyTreeBlessingToReward({ userId, k = 0, lumens = 0, now = new Date(), baseMultiplier = 1 }) {
   const multiplier = await getTreeBlessingRewardMultiplierForUser(userId, { now });
-  const safeSc = Math.max(0, Number(sc) || 0);
+  const safeK = Math.max(0, Number(k) || 0);
   const safeLumens = Math.max(0, Number(lumens) || 0);
   const safeBaseMultiplier = Math.max(0, Number(baseMultiplier) || 0);
   const blessingBonusMultiplier = Math.max(0, multiplier - 1);
@@ -273,7 +273,7 @@ async function applyTreeBlessingToReward({ userId, sc = 0, lumens = 0, now = new
   return {
     multiplier,
     baseMultiplier: safeBaseMultiplier,
-    sc: round3(safeSc * totalMultiplier),
+    k: round3(safeK * totalMultiplier),
     lumens: Math.max(0, Math.floor(safeLumens * totalMultiplier)),
   };
 }

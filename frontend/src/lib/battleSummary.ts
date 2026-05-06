@@ -25,7 +25,7 @@ export type BattleSummary = {
     personalDataSourceLabel: string;
     result: BattleSummaryResult;
     userDamage: number;
-    rewardSc: number;
+    rewardK: number;
     durationSeconds: number | null;
     totalLightDamage: number | null;
     totalDarkDamage: number | null;
@@ -55,7 +55,7 @@ export type BattleSummaryPayload = Partial<BattleSummary> & {
 
 export const BATTLE_SUMMARY_LINE_ORDER = [
     'user_damage',
-    'reward_sc',
+    'reward_k',
     'duration',
     'best_player',
     'achievements',
@@ -100,7 +100,7 @@ const formatBattleSummaryTime = (value: string | number | Date, language: Battle
 
 const BATTLE_SUMMARY_LABELS: Record<string, Record<BattleSummaryLocale, string>> = {
     user_damage: { ru: '\u041b\u0438\u0447\u043d\u044b\u0439 \u0443\u0440\u043e\u043d', en: 'Personal damage' },
-    reward_sc: { ru: '\u0417\u0430\u0440\u0430\u0431\u043e\u0442\u043e\u043a \u0432 K', en: 'Earned K' },
+    reward_k: { ru: '\u0417\u0430\u0440\u0430\u0431\u043e\u0442\u043e\u043a \u0432 K', en: 'Earned K' },
     duration: { ru: '\u0414\u043b\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u0431\u043e\u044f', en: 'Battle duration' },
     best_player: { ru: '\u041b\u0443\u0447\u0448\u0438\u0439 \u0438\u0433\u0440\u043e\u043a', en: 'Top player' },
     achievements: { ru: '\u0414\u043e\u0441\u0442\u0438\u0436\u0435\u043d\u0438\u044f', en: 'Achievements' },
@@ -234,8 +234,8 @@ const buildBattleSummaryLineValueFallback = (
     switch (line.key) {
         case 'user_damage':
             return formatBattleSummaryNumber(summary.userDamage, language);
-        case 'reward_sc':
-            return `${formatBattleSummaryNumber(summary.rewardSc, language)} K`;
+        case 'reward_k':
+            return `${formatBattleSummaryNumber(summary.rewardK, language)} K`;
         case 'duration':
             return summary.durationSeconds == null
                 ? line.valueText
@@ -340,7 +340,7 @@ export const parseBattleSummaryPayload = (
             ? payload.result
             : (safePrevious?.result || null),
         userDamage: Math.max(0, Math.floor(Number(payload?.userDamage) || safePrevious?.userDamage || 0)),
-        rewardSc: Math.max(0, Math.floor(Number(payload?.rewardSc) || safePrevious?.rewardSc || 0)),
+        rewardK: Math.max(0, Math.floor(Number(payload?.rewardK) || safePrevious?.rewardK || 0)),
         durationSeconds: normalizeNullableBattleNumber(payload?.durationSeconds) ?? safePrevious?.durationSeconds ?? null,
         totalLightDamage: normalizeNullableBattleNumber(payload?.totalLightDamage) ?? safePrevious?.totalLightDamage ?? null,
         totalDarkDamage: normalizeNullableBattleNumber(payload?.totalDarkDamage) ?? safePrevious?.totalDarkDamage ?? null,

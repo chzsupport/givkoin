@@ -3,7 +3,7 @@ const axios = require('axios');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getDocById, upsertDoc, updateDoc, mapDocRow } = require('./documentStore');
 const { loadActiveAdCreative } = require('../controllers/adController');
-const { creditSc, recordTransaction } = require('./scService');
+const { creditK, recordTransaction } = require('./kService');
 const { applyStarsDelta } = require('../utils/stars');
 const { awardRadianceForActivity } = require('./activityRadianceService');
 const { __resetTreeBlessingRuntimeState } = require('./treeBlessingService');
@@ -145,7 +145,7 @@ async function insertWarehouseItem({ userId, itemKey, sourceOfferId }) {
     category: item.category,
     title: localized.title,
     description: localized.description,
-    priceSc: Number(item.priceSc) || 0,
+    priceK: Number(item.priceK) || 0,
     status: 'stored',
     purchasedAt: nowIso,
     source: 'ad_boost',
@@ -390,14 +390,14 @@ async function startAdBoost({ userId, offerId }) {
 
 async function grantCurrencyReward({ userId, reward, offerId, now = new Date() }) {
   const result = {};
-  const sc = Number(reward.sc) || 0;
+  const k = Number(reward.k) || 0;
   const lumens = Number(reward.lumens ?? reward.lm) || 0;
   const stars = Number(reward.stars) || 0;
 
-  if (sc > 0) {
-    const updated = await creditSc({
+  if (k > 0) {
+    const updated = await creditK({
       userId,
-      amount: sc,
+      amount: k,
       type: reward.transactionType || 'ad_boost',
       description: reward.description || 'Дополнительная награда за просмотр',
       relatedEntity: offerId,
@@ -405,7 +405,7 @@ async function grantCurrencyReward({ userId, reward, offerId, now = new Date() }
       skipBlessing: true,
       skipMood: true,
     });
-    result.sc = updated?.sc;
+    result.k = updated?.k;
   }
 
   if (lumens > 0) {
@@ -510,7 +510,7 @@ async function applyWarehouseUpgrade({ userId, reward }) {
   } else if (itemKey === 'boost_weak_zone_focus') {
     shopBoosts.weakZoneDamage = { ...(shopBoosts.weakZoneDamage || {}), bonusPercent: 55, adBoosted: true };
   } else if (itemKey === 'boost_chat_key') {
-    shopBoosts.chatSc = { ...(shopBoosts.chatSc || {}), bonusPercent: 30, adBoosted: true };
+    shopBoosts.chatK = { ...(shopBoosts.chatK || {}), bonusPercent: 30, adBoosted: true };
   } else if (itemKey === 'boost_solar_focus') {
     shopBoosts.solarExtraLmAmount = 25;
     shopBoosts.solarFocusAdBoosted = true;
@@ -656,7 +656,7 @@ async function grantFruitLikeRandom({ userId, offerId }) {
     description: 'Дополнительная награда: Посещаемость',
   };
   if (roll === 0) {
-    reward.sc = Math.floor(Math.random() * 41) + 10;
+    reward.k = Math.floor(Math.random() * 41) + 10;
   } else if (roll === 1) {
     reward.stars = 0.005;
   } else {

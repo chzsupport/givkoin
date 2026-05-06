@@ -4,7 +4,7 @@ function resolveLocale(language?: string) {
     return getSiteLanguageLocale(language === 'en' ? 'en' : getSiteLanguage());
 }
 
-export const formatUserSc = (value: number) => {
+export const formatUserK = (value: number) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return '0';
     const whole = Math.floor(n);

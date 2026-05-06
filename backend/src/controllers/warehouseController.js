@@ -455,7 +455,7 @@ exports.useItem = async (req, res) => {
         ok: true,
         message: pickLang(userLang, 'Сущность накормлена', 'Entity has been fed'),
         item: localizeWarehouseItem({ ...warehouseItem, status: 'used', usedAt: now.toISOString() }, userLang),
-        user: { sc: userData?.sc, lumens: userData?.lumens, stars: userData?.stars },
+        user: { k: userData?.k, lumens: userData?.lumens, stars: userData?.stars },
         boostOffer,
         entity: {
           _id: updatedEntityRow.id,
@@ -518,10 +518,10 @@ exports.useItem = async (req, res) => {
       }
       shopBoosts.weakZoneDamage = { pending: true, bonusPercent: 50, adBoosted: false, sourceWarehouseItemId: itemId };
     } else if (catalogItem.key === 'boost_chat_key') {
-      if (shopBoosts.chatSc?.pending) {
+      if (shopBoosts.chatK?.pending) {
         return res.status(400).json({ message: pickLang(userLang, 'Усиление уже подготовлено', 'Enhancement is already prepared') });
       }
-      shopBoosts.chatSc = { pending: true, bonusPercent: 25, adBoosted: false, sourceWarehouseItemId: itemId };
+      shopBoosts.chatK = { pending: true, bonusPercent: 25, adBoosted: false, sourceWarehouseItemId: itemId };
     } else if (catalogItem.key === 'boost_solar_focus') {
       const charges = Number(catalogItem.solarCharges) || 0;
       shopBoosts.solarExtraLmCharges = (Number(shopBoosts.solarExtraLmCharges) || 0) + charges;
@@ -602,7 +602,7 @@ exports.useItem = async (req, res) => {
         ...(usageEffect ? { usageEffect } : {}),
       }, userLang),
       user: {
-        sc: updatedUserData?.sc,
+        k: updatedUserData?.k,
         lumens: updatedUserData?.lumens,
         stars: updatedUserData?.stars,
         shopBoosts: updatedUserData?.shopBoosts,

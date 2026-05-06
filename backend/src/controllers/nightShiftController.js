@@ -7,7 +7,7 @@ const { createNotification } = require('./notificationController');
 const emailService = require('../services/emailService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-const NIGHT_SHIFT_DEFAULT_SALARY = Object.freeze({ sc: 100, lm: 100, stars: 0.001 });
+const NIGHT_SHIFT_DEFAULT_SALARY = Object.freeze({ k: 100, lm: 100, stars: 0.001 });
 
 function normalizeLang(value) {
     return value === 'en' ? 'en' : 'ru';
@@ -18,19 +18,19 @@ function pickLang(lang, ru, en) {
 }
 
 function normalizeNightShiftSalary(value) {
-    const sc = Number(value?.sc);
+    const k = Number(value?.k);
     const lm = Number(value?.lm);
     const stars = Number(value?.stars);
 
-    if (sc === 10 && lm === 50 && stars === 0.01) {
+    if (k === 10 && lm === 50 && stars === 0.01) {
         return { ...NIGHT_SHIFT_DEFAULT_SALARY };
     }
 
-    if (!Number.isFinite(sc) || !Number.isFinite(lm) || !Number.isFinite(stars)) {
+    if (!Number.isFinite(k) || !Number.isFinite(lm) || !Number.isFinite(stars)) {
         return { ...NIGHT_SHIFT_DEFAULT_SALARY };
     }
 
-    return { sc, lm, stars };
+    return { k, lm, stars };
 }
 
 async function getSystemSettings() {
@@ -230,7 +230,7 @@ exports.endShift = async (req, res) => {
                 description: pickLang(userLang, 'Досмотрите видео, чтобы получить такую же награду за смену ещё раз.', 'Watch the video to receive the same shift reward again.'),
                 reward: {
                     kind: 'currency',
-                    sc: result.reward?.sc || 0,
+                    k: result.reward?.k || 0,
                     lumens: result.reward?.lm || 0,
                     stars: result.reward?.stars || 0,
                     transactionType: 'night_shift_ad_boost',
@@ -419,10 +419,10 @@ exports.reviewShift = async (req, res) => {
 
 exports.updateSalarySettings = async (req, res) => {
     try {
-        const { sc, lm, stars, nightShiftSchedule } = req.body;
+        const { k, lm, stars, nightShiftSchedule } = req.body;
         const settings = await getSystemSettings();
 
-        if (sc !== undefined) settings.nightShiftSalary.sc = Number(sc);
+        if (k !== undefined) settings.nightShiftSalary.k = Number(k);
         if (lm !== undefined) settings.nightShiftSalary.lm = Number(lm);
         if (stars !== undefined) settings.nightShiftSalary.stars = Number(stars);
 

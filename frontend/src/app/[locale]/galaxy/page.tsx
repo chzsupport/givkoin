@@ -8,7 +8,7 @@ import { apiGet, apiPost } from '@/utils/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
-import { formatUserSc } from '@/utils/formatters';
+import { formatUserK } from '@/utils/formatters';
 import { Sparkles } from 'lucide-react';
 import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
@@ -22,7 +22,7 @@ type WishDto = {
   text: string;
   status: WishStatus | 'supported' | 'archived';
   supportCount: number;
-  supportSc: number;
+  supportK: number;
   authorId: string | null;
   executorId: string | null;
   createdAt: string;
@@ -35,7 +35,7 @@ type Wish = {
   text: string;
   date: string;
   supports: number;
-  supportSc: number;
+  supportK: number;
   status: WishStatus;
   isMine: boolean;
 };
@@ -87,13 +87,13 @@ export default function GalaxyPage() {
   const [fulfilledToday, setFulfilledToday] = useState(0);
   const [fulfilledThisMonth, setFulfilledThisMonth] = useState(0);
 
-  const userSc = user?.sc ?? 0;
+  const userK = user?.k ?? 0;
 
 
 
   const canCreate = useMemo(
-    () => wishText.trim().length > 0 && wishText.trim().length <= MAX_CHARS && createdToday < DAILY_WISH_LIMIT && userSc >= COST_PER_WISH,
-    [wishText, createdToday, userSc],
+    () => wishText.trim().length > 0 && wishText.trim().length <= MAX_CHARS && createdToday < DAILY_WISH_LIMIT && userK >= COST_PER_WISH,
+    [wishText, createdToday, userK],
   );
 
   function mapDtoToWish(dto: WishDto, currentUserId?: string | null): Wish {
@@ -109,7 +109,7 @@ export default function GalaxyPage() {
       text: dto.text,
       date,
       supports: dto.supportCount || 0,
-      supportSc: dto.supportSc || 0,
+      supportK: dto.supportK || 0,
       status: normalizedStatus,
       isMine: !!currentUserId && dto.authorId === currentUserId,
     };
@@ -121,7 +121,7 @@ export default function GalaxyPage() {
       const [othersRes, mineRes, stats] = await Promise.all([
         apiGet<{ wishes: WishDto[] }>('/wishes?scope=others'),
         apiGet<{ wishes: WishDto[] }>('/wishes?scope=mine'),
-        apiGet<{ createdToday: number; executedToday: number; executedLast30: number; userSc?: number }>('/wishes/stats'),
+        apiGet<{ createdToday: number; executedToday: number; executedLast30: number; userK?: number }>('/wishes/stats'),
       ]);
 
       const mappedOthers = (othersRes.wishes || []).map((w) => mapDtoToWish(w, user._id));
@@ -246,14 +246,14 @@ export default function GalaxyPage() {
   const handleSupportConfirm = () => {
     if (!supportModalWish || !supportAmount) return;
     const amount = parseInt(supportAmount);
-    if (Number.isNaN(amount) || amount <= 0 || amount > userSc) return;
+    if (Number.isNaN(amount) || amount <= 0 || amount > userK) return;
     setShowSupportConfirm(true);
   };
 
   const handleSupport = async () => {
     if (!supportModalWish || !supportAmount || !user) return;
     const amount = parseInt(supportAmount);
-    if (Number.isNaN(amount) || amount <= 0 || amount > userSc) return;
+    if (Number.isNaN(amount) || amount <= 0 || amount > userK) return;
 
     try {
       const res = await apiPost<{ wish: WishDto; user: unknown; stats: { createdToday: number; executedToday: number; executedLast30: number } }>(
@@ -378,7 +378,7 @@ export default function GalaxyPage() {
                   <div className="flex-1 flex flex-col items-center justify-center px-2.5 lg:px-3 py-2 rounded-xl hover:bg-white/5 transition-colors">
                     <span className="text-tiny uppercase tracking-[0.2em] text-neutral-500 font-black mb-0.5 whitespace-nowrap">{t('galaxy.balance')}</span>
                     <div className="flex items-center gap-1">
-                      <span className="text-secondary font-mono font-black text-blue-300">{userSc.toLocaleString()}</span>
+                      <span className="text-secondary font-mono font-black text-blue-300">{userK.toLocaleString()}</span>
                       <span className="text-tiny font-bold text-blue-500/50 uppercase">K</span>
                     </div>
                   </div>
@@ -653,7 +653,7 @@ export default function GalaxyPage() {
                             <span className="text-rose-500">❤️</span> {wish.supports}
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-blue-400">✨</span> {formatUserSc(wish.supportSc)} K
+                            <span className="text-blue-400">✨</span> {formatUserK(wish.supportK)} K
                           </div>
                         </div>
 
@@ -718,7 +718,7 @@ export default function GalaxyPage() {
                           <span className="text-rose-500">❤️</span> {wish.supports}
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-blue-400">✨</span> {formatUserSc(wish.supportSc)} K
+                          <span className="text-blue-400">✨</span> {formatUserK(wish.supportK)} K
                         </div>
                       </div>
 
@@ -809,7 +809,7 @@ export default function GalaxyPage() {
 
                 <div className="flex justify-between text-tiny font-bold uppercase tracking-widest px-2">
                   <span className="text-neutral-500">{t('galaxy.support_modal.your_balance')}</span>
-                  <span className="text-blue-400">{formatUserSc(userSc)} K</span>
+                  <span className="text-blue-400">{formatUserK(userK)} K</span>
                 </div>
 
                 <div className="flex gap-3">
@@ -821,7 +821,7 @@ export default function GalaxyPage() {
                   </button>
                   <button
                     onClick={handleSupportConfirm}
-                    disabled={!supportAmount || parseInt(supportAmount) <= 0 || parseInt(supportAmount) > userSc}
+                    disabled={!supportAmount || parseInt(supportAmount) <= 0 || parseInt(supportAmount) > userK}
                     className="flex-1 py-4 bg-blue-600 rounded-2xl text-tiny font-bold uppercase tracking-widest text-white shadow-lg shadow-blue-600/20 disabled:opacity-50 transition-all"
                   >
                     {t('common.next')}

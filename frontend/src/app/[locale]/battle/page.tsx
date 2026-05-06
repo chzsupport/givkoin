@@ -179,7 +179,7 @@ type BattlePersonalState = {
     confirmedDamage: number;
     confirmedLumens: number | null;
     startLumens: number | null;
-    startSc: number | null;
+    startK: number | null;
     startStars: number | null;
     lastAcceptedReportSequence: number;
     lastClientSyncAt: string | null;
@@ -193,7 +193,7 @@ type StoredBattleProgress = {
     joinedAtIso: string | null;
     battleJoinedAtMs: number | null;
     startLumens: number | null;
-    startSc: number | null;
+    startK: number | null;
     startStars: number | null;
     confirmedUserDamage: number;
     pendingUserDamage: number;
@@ -515,7 +515,7 @@ const normalizeStoredBattleProgress = (
             ? Math.max(0, Math.floor(Number(row.battleJoinedAtMs) || 0))
             : null,
         startLumens: row.startLumens == null ? null : Math.max(0, Math.round(Number(row.startLumens) || 0)),
-        startSc: row.startSc == null ? null : Math.max(0, Math.round(Number(row.startSc) || 0)),
+        startK: row.startK == null ? null : Math.max(0, Math.round(Number(row.startK) || 0)),
         startStars: row.startStars == null ? null : Math.max(0, Number(row.startStars) || 0),
         confirmedUserDamage: Math.max(0, Math.round(Number(row.confirmedUserDamage) || 0)),
         pendingUserDamage: Math.max(0, Math.round(Number(row.pendingUserDamage) || 0)),
@@ -547,7 +547,7 @@ const normalizeBattlePersonalState = (value: unknown): BattlePersonalState | nul
         confirmedDamage: Math.max(0, Math.round(Number(row.confirmedDamage) || 0)),
         confirmedLumens: row.confirmedLumens == null ? null : Math.max(0, Math.round(Number(row.confirmedLumens) || 0)),
         startLumens: row.startLumens == null ? null : Math.max(0, Math.round(Number(row.startLumens) || 0)),
-        startSc: row.startSc == null ? null : Math.max(0, Math.round(Number(row.startSc) || 0)),
+        startK: row.startK == null ? null : Math.max(0, Math.round(Number(row.startK) || 0)),
         startStars: row.startStars == null ? null : Math.max(0, Number(row.startStars) || 0),
         lastAcceptedReportSequence: Math.max(0, Math.floor(Number(row.lastAcceptedReportSequence) || 0)),
         lastClientSyncAt: typeof row.lastClientSyncAt === 'string' && row.lastClientSyncAt.trim() ? row.lastClientSyncAt : null,
@@ -678,9 +678,9 @@ export default function BattlePage() {
     const finalizedVoiceIdsRef = useRef<Set<string>>(new Set());
     const lastVoiceCommandRef = useRef<BattleScenarioVoiceCommand | null>(null);
     const serverOffsetMsRef = useRef<number>(0);
-    const battleStartResourcesRef = useRef<{ lumens: number | null; sc: number | null; stars: number | null }>({
+    const battleStartResourcesRef = useRef<{ lumens: number | null; k: number | null; stars: number | null }>({
         lumens: null,
-        sc: null,
+        k: null,
         stars: null,
     });
     const battleSyncSlotRef = useRef(0);
@@ -780,15 +780,15 @@ export default function BattlePage() {
         const nextLumens = snapshot
             ? Math.max(0, Math.round(Number(snapshot.predictedLumens) || 0))
             : Math.max(0, Math.round(Number(predictedLumensRef.current) || Number(user.lumens) || 0));
-        const baseSc = snapshot?.startSc ?? battleStartResourcesRef.current.sc ?? Math.max(0, Math.floor(Number(user.sc) || 0));
-        const nextSc = Math.max(
-            Math.max(0, Math.floor(Number(user.sc) || 0)),
-            Math.max(0, Math.floor(Number(baseSc) || 0)) + Math.max(0, Math.floor(Number(summary.rewardSc) || 0)),
+        const baseK = snapshot?.startK ?? battleStartResourcesRef.current.k ?? Math.max(0, Math.floor(Number(user.k) || 0));
+        const nextK = Math.max(
+            Math.max(0, Math.floor(Number(user.k) || 0)),
+            Math.max(0, Math.floor(Number(baseK) || 0)) + Math.max(0, Math.floor(Number(summary.rewardK) || 0)),
         );
 
         if (
             nextLumens === Math.max(0, Math.round(Number(user.lumens) || 0))
-            && nextSc === Math.max(0, Math.floor(Number(user.sc) || 0))
+            && nextK === Math.max(0, Math.floor(Number(user.k) || 0))
         ) {
             return;
         }
@@ -796,7 +796,7 @@ export default function BattlePage() {
         updateUser({
             ...user,
             lumens: nextLumens,
-            sc: nextSc,
+            k: nextK,
         });
     }, [readBattleProgress, updateUser, user]);
 
@@ -831,9 +831,9 @@ export default function BattlePage() {
             startLumens: merged.startLumens === undefined
                 ? battleStartResourcesRef.current.lumens
                 : merged.startLumens ?? null,
-            startSc: merged.startSc === undefined
-                ? battleStartResourcesRef.current.sc
-                : merged.startSc ?? null,
+            startK: merged.startK === undefined
+                ? battleStartResourcesRef.current.k
+                : merged.startK ?? null,
             startStars: merged.startStars === undefined
                 ? battleStartResourcesRef.current.stars
                 : merged.startStars ?? null,
@@ -915,7 +915,7 @@ export default function BattlePage() {
         if (!snapshot) return false;
         battleStartResourcesRef.current = {
             lumens: snapshot.startLumens,
-            sc: snapshot.startSc,
+            k: snapshot.startK,
             stars: snapshot.startStars,
         };
         confirmedUserDamageRef.current = Math.max(0, snapshot.confirmedUserDamage);
@@ -969,10 +969,10 @@ export default function BattlePage() {
     const applyBattlePersonalState = useCallback((snapshot: BattlePersonalState | null, options?: { preferServerValues?: boolean }) => {
         if (!snapshot) return false;
 
-        if (snapshot.startLumens != null || snapshot.startSc != null || snapshot.startStars != null) {
+        if (snapshot.startLumens != null || snapshot.startK != null || snapshot.startStars != null) {
             battleStartResourcesRef.current = {
                 lumens: snapshot.startLumens ?? battleStartResourcesRef.current.lumens,
-                sc: snapshot.startSc ?? battleStartResourcesRef.current.sc,
+                k: snapshot.startK ?? battleStartResourcesRef.current.k,
                 stars: snapshot.startStars ?? battleStartResourcesRef.current.stars,
             };
         }
@@ -990,7 +990,7 @@ export default function BattlePage() {
                 joinedAtIso: battleJoinedAtIsoRef.current,
                 battleJoinedAtMs: battleJoinedAtMs ?? (snapshot.joinedAt ? new Date(snapshot.joinedAt).getTime() + serverOffsetMsRef.current : null),
                 startLumens: battleStartResourcesRef.current.lumens,
-                startSc: battleStartResourcesRef.current.sc,
+                startK: battleStartResourcesRef.current.k,
                 startStars: battleStartResourcesRef.current.stars,
             });
             return false;
@@ -1010,7 +1010,7 @@ export default function BattlePage() {
             joinedAtIso: battleJoinedAtIsoRef.current,
             battleJoinedAtMs: battleJoinedAtMs ?? (snapshot.joinedAt ? new Date(snapshot.joinedAt).getTime() + serverOffsetMsRef.current : null),
             startLumens: battleStartResourcesRef.current.lumens,
-            startSc: battleStartResourcesRef.current.sc,
+            startK: battleStartResourcesRef.current.k,
             startStars: battleStartResourcesRef.current.stars,
             confirmedUserDamage: confirmedUserDamageRef.current,
             pendingUserDamage: 0,
@@ -1543,7 +1543,7 @@ export default function BattlePage() {
         pendingBattleProgressOverridesRef.current = null;
         battleJoinedAtIsoRef.current = null;
         hydratedBattleProgressKeyRef.current = null;
-        battleStartResourcesRef.current = { lumens: null, sc: null, stars: null };
+        battleStartResourcesRef.current = { lumens: null, k: null, stars: null };
         lastBattleSyncWindowKeyRef.current = null;
         confirmedUserDamageRef.current = Math.max(0, Math.round(nextConfirmedDamage));
         pendingUserDamageRef.current = 0;

@@ -1,5 +1,5 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { creditSc, getTotalRewardMultiplier, recordTransaction } = require('../services/scService');
+const { creditK, getTotalRewardMultiplier, recordTransaction } = require('../services/kService');
 const emailService = require('../services/emailService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
@@ -43,8 +43,8 @@ const STARS_MAX = 5 * STARS_SCALE;
 const STARS_MIN = Math.round(0.01 * STARS_SCALE);
 
 const STAR_MILESTONES = [2, 3, 4, 5];
-const STAR_MILESTONE_SC = 1000;
-const STAR_MAX_BONUS_SC = 5000;
+const STAR_MILESTONE_K = 1000;
+const STAR_MAX_BONUS_K = 5000;
 
 function toMilli(value) {
   const n = Number(value);
@@ -250,18 +250,18 @@ async function applyStarsDelta({
 
   if (newlyAwarded.length) {
     for (const m of newlyAwarded) {
-      await creditSc({
+      await creditK({
         userId,
-        amount: STAR_MILESTONE_SC,
+        amount: STAR_MILESTONE_K,
         type: 'stars',
         description: `Награда за достижение ${m} звезды`,
         relatedEntity: userId,
       });
 
       if (m === 5) {
-        await creditSc({
+        await creditK({
           userId,
-          amount: STAR_MAX_BONUS_SC,
+          amount: STAR_MAX_BONUS_K,
           type: 'stars',
           description: 'Бонус за 5 звёзд',
           relatedEntity: userId,

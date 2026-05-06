@@ -24,7 +24,7 @@ const RESET_COMPLAINT_CHIPS = 0;
 
 const RESET_STARS = 0;
 
-const RESET_SC = 0;
+const RESET_K = 0;
 
 const RESET_LUMENS = 0;
 
@@ -104,7 +104,7 @@ async function clearUserEntityLinkAndResetStats(userId) {
 
         stars: RESET_STARS,
 
-        sc: RESET_SC,
+        k: RESET_K,
 
         lumens: RESET_LUMENS,
 

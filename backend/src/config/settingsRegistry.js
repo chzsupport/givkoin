@@ -1,6 +1,6 @@
 const SETTINGS_REGISTRY = {
-  CHAT_SC_PER_HOUR: {
-    key: 'CHAT_SC_PER_HOUR',
+  CHAT_K_PER_HOUR: {
+    key: 'CHAT_K_PER_HOUR',
     type: 'number',
     min: 1,
     max: 500,
@@ -26,8 +26,8 @@ const SETTINGS_REGISTRY = {
     label: 'Стартовые жизни',
     appliesTo: ['registration', 'user_defaults'],
   },
-  SC_APPEAL_COMPENSATION: {
-    key: 'SC_APPEAL_COMPENSATION',
+  K_APPEAL_COMPENSATION: {
+    key: 'K_APPEAL_COMPENSATION',
     type: 'number',
     min: 0,
     max: 5000,
@@ -38,7 +38,7 @@ const SETTINGS_REGISTRY = {
 };
 
 const SETTINGS_ALIASES = {
-  SC_PER_HOUR_CHAT: 'CHAT_SC_PER_HOUR',
+  K_PER_HOUR_CHAT: 'CHAT_K_PER_HOUR',
 };
 
 function normalizeSettingKey(key) {

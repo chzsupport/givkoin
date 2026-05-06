@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const { awardFortuneSc, spendSc } = require('../services/scService');
+const { awardFortuneK, spendK } = require('../services/kService');
 
 const { applyStarsDelta } = require('../utils/stars');
 
@@ -1092,7 +1092,7 @@ async function getRouletteRewardsToday(userId, now = new Date()) {
 
         .limit(5000);
 
-    if (error || !Array.isArray(data)) return { sc: 0, stars: 0 };
+    if (error || !Array.isArray(data)) return { k: 0, stars: 0 };
 
 
 
@@ -1114,7 +1114,7 @@ async function getRouletteRewardsToday(userId, now = new Date()) {
 
                 || description.includes('fortune wheel winnings');
 
-            if (isRouletteWin) acc.sc += amount;
+            if (isRouletteWin) acc.k += amount;
 
         }
 
@@ -1126,7 +1126,7 @@ async function getRouletteRewardsToday(userId, now = new Date()) {
 
         return acc;
 
-    }, { sc: 0, stars: 0 });
+    }, { k: 0, stars: 0 });
 
 }
 
@@ -1476,7 +1476,7 @@ exports.spin = async (req, res) => {
 
             // #79. 100 K трижды
 
-            if (result.type === 'sc' && result.value === 100) {
+            if (result.type === 'k' && result.value === 100) {
 
                 const userRow = await getUserRowById(req.user._id);
 
@@ -1484,9 +1484,9 @@ exports.spin = async (req, res) => {
 
                 const stats = data.achievementStats && typeof data.achievementStats === 'object' ? data.achievementStats : {};
 
-                const nextCount = (Number(stats.totalRoulette100ScWins) || 0) + 1;
+                const nextCount = (Number(stats.totalRoulette100KWins) || 0) + 1;
 
-                await updateUserDataById(req.user._id, { achievementStats: { ...stats, totalRoulette100ScWins: nextCount } });
+                await updateUserDataById(req.user._id, { achievementStats: { ...stats, totalRoulette100KWins: nextCount } });
 
                 if (nextCount >= 3) {
 
@@ -1500,7 +1500,7 @@ exports.spin = async (req, res) => {
 
             // #80. Бонус -> 50+ K
 
-            if (lastSpinWasBonus && result.type === 'sc' && result.value >= 50) {
+            if (lastSpinWasBonus && result.type === 'k' && result.value >= 50) {
 
                 await grantAchievement({ userId: req.user._id, achievementId: 80 });
 
@@ -1626,7 +1626,7 @@ exports.spin = async (req, res) => {
 
             gameType: 'roulette',
 
-            rewardType: result.type === 'sc' || result.type === 'star' || result.type === 'spin' ? result.type : 'other',
+            rewardType: result.type === 'k' || result.type === 'star' || result.type === 'spin' ? result.type : 'other',
 
             amount: Number(result.value) || 0,
 
@@ -1690,9 +1690,9 @@ exports.spin = async (req, res) => {
 
 
 
-        if (result.type === 'sc' && result.value > 0) {
+        if (result.type === 'k' && result.value > 0) {
 
-            await awardFortuneSc({
+            await awardFortuneK({
 
                 userId: req.user._id,
 
@@ -1750,7 +1750,7 @@ exports.spin = async (req, res) => {
 
             const todayRewards = await getRouletteRewardsToday(req.user._id, now);
 
-            if (todayRewards.sc > 0 || todayRewards.stars > 0) {
+            if (todayRewards.k > 0 || todayRewards.stars > 0) {
 
                 boostOffer = await createAdBoostOffer({
 
@@ -1770,7 +1770,7 @@ exports.spin = async (req, res) => {
 
                         kind: 'currency',
 
-                        sc: todayRewards.sc,
+                        k: todayRewards.k,
 
                         stars: todayRewards.stars,
 
@@ -1866,9 +1866,9 @@ exports.getGlobalStats = async (req, res) => {
 
         const topLotteryWinners = allLotteries
 
-            .filter((l) => (Number(l.prizeSc) || 0) > 0)
+            .filter((l) => (Number(l.prizeK) || 0) > 0)
 
-            .sort((a, b) => (Number(b.prizeSc) || 0) - (Number(a.prizeSc) || 0))
+            .sort((a, b) => (Number(b.prizeK) || 0) - (Number(a.prizeK) || 0))
 
             .slice(0, 5);
 
@@ -1906,7 +1906,7 @@ exports.getGlobalStats = async (req, res) => {
 
         // K выплаченные только из рулетки
 
-        const rouletteScIssued = transactions
+        const rouletteKIssued = transactions
 
             .filter((t) => t.type === 'fortune' && t.direction === 'credit')
 
@@ -1916,7 +1916,7 @@ exports.getGlobalStats = async (req, res) => {
 
         // K выплаченные из лотереи
 
-        const lotteryScIssued = transactions
+        const lotteryKIssued = transactions
 
             .filter((t) => t.type === 'lottery' && t.direction === 'credit')
 
@@ -2038,7 +2038,7 @@ exports.getGlobalStats = async (req, res) => {
 
                     nickname,
 
-                    prize: Number(row?.prizeSc) || 0,
+                    prize: Number(row?.prizeK) || 0,
 
                 };
 
@@ -2056,7 +2056,7 @@ exports.getGlobalStats = async (req, res) => {
 
                 activeUsers,
 
-                totalScIssued: rouletteScIssued,
+                totalKIssued: rouletteKIssued,
 
                 topSpinners: topSpinnersPayload,
 
@@ -2068,7 +2068,7 @@ exports.getGlobalStats = async (req, res) => {
 
                 totalTickets,
 
-                totalPrizesPaid: lotteryScIssued,
+                totalPrizesPaid: lotteryKIssued,
 
                 totalDraws: lotteryPlayers,
 
@@ -2078,7 +2078,7 @@ exports.getGlobalStats = async (req, res) => {
 
             world: {
 
-                totalScFromLottery: lotteryScIssued,
+                totalKFromLottery: lotteryKIssued,
 
                 totalFortunePlayers: activeUsers,
 
@@ -2154,7 +2154,7 @@ exports.getUserStats = async (req, res) => {
 
         const totalTickets = userLotteries.reduce((s, l) => s + (Array.isArray(l.tickets) ? l.tickets.length : 0), 0);
 
-        const totalPrizeSc = userLotteries.reduce((s, l) => s + (Number(l.prizeSc) || 0), 0);
+        const totalPrizeK = userLotteries.reduce((s, l) => s + (Number(l.prizeK) || 0), 0);
 
 
 
@@ -2174,9 +2174,9 @@ exports.getUserStats = async (req, res) => {
 
                 lastSpinAt: spinData?.data?.lastSpinAt || null,
 
-                scEarned: fortuneEarned,
+                kEarned: fortuneEarned,
 
-                scSpent: fortuneSpent,
+                kSpent: fortuneSpent,
 
             },
 
@@ -2186,21 +2186,21 @@ exports.getUserStats = async (req, res) => {
 
                 totalDraws: userLotteries.length,
 
-                scWon: lotteryEarned,
+                kWon: lotteryEarned,
 
-                scSpent: lotterySpent,
+                kSpent: lotterySpent,
 
-                totalPrizeSc,
+                totalPrizeK,
 
             },
 
             total: {
 
-                scEarned: totalEarned,
+                kEarned: totalEarned,
 
-                scSpent: totalSpent,
+                kSpent: totalSpent,
 
-                scNet: net,
+                kNet: net,
 
             },
 
@@ -2284,7 +2284,7 @@ exports.getLotteryStatus = async (req, res) => {
 
             status: lottery.status,
 
-            prize: lottery.prizeSc || 0,
+            prize: lottery.prizeK || 0,
 
             freeTickets,
 
@@ -2346,7 +2346,7 @@ exports.buyLotteryTicket = async (req, res) => {
 
         const useFreeTicket = freeTickets > 0;
 
-        if (!useFreeTicket && (Number(userData.sc) || 0) < ticketCost) {
+        if (!useFreeTicket && (Number(userData.k) || 0) < ticketCost) {
 
             return res.status(400).json({
 
@@ -2432,7 +2432,7 @@ exports.buyLotteryTicket = async (req, res) => {
 
         } else {
 
-            await spendSc({
+            await spendK({
 
                 userId,
 
@@ -2532,7 +2532,7 @@ exports.buyLotteryTicket = async (req, res) => {
 
             ticketsToday: ticketsToday + 1,
 
-            userSc: Number(updatedUserData.sc) || 0,
+            userK: Number(updatedUserData.k) || 0,
 
             ticketNumber: formatLotteryNumbers(normalizedNumbers),
 
@@ -2658,7 +2658,7 @@ exports.getLotteryResults = async (req, res) => {
 
             })),
 
-            prize: lotteryData.prizeSc,
+            prize: lotteryData.prizeK,
 
             status: lotteryData.status,
 
@@ -2748,7 +2748,7 @@ exports.luckyDraw = async (req, res) => {
 
         try {
 
-            const awardResult = await awardFortuneSc({
+            const awardResult = await awardFortuneK({
 
                 userId: req.user._id,
 
@@ -2832,7 +2832,7 @@ exports.luckyDraw = async (req, res) => {
 
                 kind: 'currency',
 
-                sc: creditedAmount,
+                k: creditedAmount,
 
                 transactionType: 'personal_luck_ad_reward',
 
@@ -3014,7 +3014,7 @@ exports.drawLottery = async () => {
 
                 winningNumber: formatLotteryNumbers(winningNumbers),
 
-                prizeSc: totalPrize,
+                prizeK: totalPrize,
 
                 status: 'paid',
 
@@ -3032,7 +3032,7 @@ exports.drawLottery = async () => {
 
                 const userLang = normalizeLang(userRow?.language || userRow?.data?.language || 'ru');
 
-                await awardFortuneSc({
+                await awardFortuneK({
 
                     userId: uid,
 
@@ -3048,7 +3048,7 @@ exports.drawLottery = async () => {
 
                     gameType: 'lottery',
 
-                    rewardType: 'sc',
+                    rewardType: 'k',
 
                     amount: totalPrize,
 

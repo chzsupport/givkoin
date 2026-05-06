@@ -33,7 +33,7 @@ interface ShiftStats {
     totalTimeMs: number;
     anomaliesCleared: number;
     totalEarnings: {
-        sc: number;
+        k: number;
         lm: number;
         stars: number;
     };
@@ -407,7 +407,7 @@ export default function NightShiftPage() {
     const hourlyGoal = 60;
     const currentHourProgress = Math.min(100, Math.round((currentHourAnomalies / hourlyGoal) * 100));
     const currentHourRemaining = Math.max(0, hourlyGoal - currentHourAnomalies);
-    const totalEarnings = status?.stats?.totalEarnings || { sc: 0, lm: 0, stars: 0 };
+    const totalEarnings = status?.stats?.totalEarnings || { k: 0, lm: 0, stars: 0 };
     const payableHours = status?.payableHoursCurrent || 0;
     const consecutiveEmptyWindows = status?.consecutiveEmptyWindows || 0;
     const pendingSettlementTime = status?.pendingSettlement?.dueAt ? formatShortTime(status.pendingSettlement.dueAt) : null;
@@ -673,7 +673,7 @@ export default function NightShiftPage() {
                                 <div className="mt-4 space-y-3">
                                     <div className="flex items-center justify-between gap-3 text-sm text-white/70">
                                         <span className="flex items-center gap-2"><Coins className="w-4 h-4 text-amber-300" /> K</span>
-                                        <span className="font-bold text-white">{totalEarnings.sc}</span>
+                                        <span className="font-bold text-white">{totalEarnings.k}</span>
                                     </div>
                                     <div className="flex items-center justify-between gap-3 text-sm text-white/70">
                                         <span className="flex items-center gap-2"><Zap className="w-4 h-4 text-cyan-300" /> {t('night_shift.lumens')}</span>
