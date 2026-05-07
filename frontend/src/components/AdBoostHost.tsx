@@ -87,7 +87,7 @@ const DAO_PREROLL_SCRIPT_SRC = 'https://video.agenteimmobiliare.info/d-video.js?
 const DAO_PREROLL_TAG_URL = 'https://video.agenteimmobiliare.info/api/video/tag?sourceId=61874&tmax=500&video-skipafter=15&count=1';
 const DAO_PREROLL_REWARD_DELAY_MS = 15_000;
 const DAO_REWARD_NOTICE_MS = 1_400;
-const TECHNICAL_VIDEO_SRC = '/ready.mp4';
+const TECHNICAL_VIDEO_SRC = '/bonus.mp4';
 
 let daoVideoScriptPromise: Promise<void> | null = null;
 
