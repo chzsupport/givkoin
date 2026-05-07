@@ -91,11 +91,28 @@ const TECHNICAL_VIDEO_SRC = '/ready.mp4';
 
 let daoVideoScriptPromise: Promise<void> | null = null;
 
+function readDaoVideoConstructor() {
+  if (typeof window === 'undefined') return undefined;
+  if (window.DaoVideo) return window.DaoVideo;
+
+  try {
+    const candidate = Function('return typeof DaoVideo !== "undefined" ? DaoVideo : undefined;')() as DaoVideoConstructor | undefined;
+    if (candidate) {
+      window.DaoVideo = candidate;
+      return candidate;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 function loadDaoVideoScript() {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('dao_browser_unavailable'));
   }
-  if (window.DaoVideo) {
+  if (readDaoVideoConstructor()) {
     return Promise.resolve();
   }
   if (daoVideoScriptPromise) {
@@ -105,9 +122,15 @@ function loadDaoVideoScript() {
   daoVideoScriptPromise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${DAO_PREROLL_SCRIPT_SRC}"]`);
     if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('load', () => {
+        if (readDaoVideoConstructor()) {
+          resolve();
+        } else {
+          reject(new Error('dao_player_missing'));
+        }
+      }, { once: true });
       existing.addEventListener('error', () => reject(new Error('dao_load_failed')), { once: true });
-      if (window.DaoVideo) resolve();
+      if (readDaoVideoConstructor()) resolve();
       return;
     }
 
@@ -116,7 +139,7 @@ function loadDaoVideoScript() {
     script.src = DAO_PREROLL_SCRIPT_SRC;
     script.async = true;
     script.onload = () => {
-      if (window.DaoVideo) {
+      if (readDaoVideoConstructor()) {
         resolve();
       } else {
         reject(new Error('dao_player_missing'));
@@ -271,7 +294,7 @@ export function AdBoostHost() {
     loadDaoVideoScript()
       .then(() => {
         if (cancelled) return;
-        const DaoVideo = window.DaoVideo;
+        const DaoVideo = readDaoVideoConstructor();
         if (!DaoVideo) {
           throw new Error('dao_player_missing');
         }
