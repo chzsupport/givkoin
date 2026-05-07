@@ -40,18 +40,9 @@ type ShopBoosts = {
   practiceTreeBlessingAdBoosted?: boolean;
 };
 
-type VastTracking = Partial<Record<'impression' | 'start' | 'complete' | 'error', string[]>>;
-
 type StartResponse = {
   sessionId: string;
   creativeId?: string;
-  vast?: {
-    vastUrl?: string;
-    vastXml?: string;
-    mediaUrl?: string;
-    mediaType?: string;
-    tracking?: VastTracking;
-  };
 };
 
 type CompleteResponse = {
@@ -75,50 +66,67 @@ type CompleteResponse = {
   };
 };
 
-function readText(node: Element | null) {
-  return (node?.textContent || '').replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
-}
+type DaoVideoInstance = {
+  loadAd: (callback: () => void) => void;
+  preroll: (options: { videoId: string }) => void;
+};
 
-function parseVastXml(xml: string) {
-  try {
-    const doc = new DOMParser().parseFromString(xml, 'text/xml');
-    const mediaFiles = Array.from(doc.querySelectorAll('MediaFile'))
-      .map((node) => ({
-        url: readText(node),
-        type: (node.getAttribute('type') || '').toLowerCase(),
-        width: Number(node.getAttribute('width') || 0) || 0,
-      }))
-      .filter((item) => item.url)
-      .sort((a, b) => {
-        const aMp4 = a.type.includes('mp4') ? 1 : 0;
-        const bMp4 = b.type.includes('mp4') ? 1 : 0;
-        if (aMp4 !== bMp4) return bMp4 - aMp4;
-        return b.width - a.width;
-      });
+type DaoVideoConstructor = new (config: { sourceId: number; tagUrl: string }) => DaoVideoInstance;
 
-    const tracking = (event: string) => Array.from(doc.querySelectorAll(`Tracking[event="${event}"]`)).map(readText).filter(Boolean);
-    return {
-      mediaUrl: mediaFiles[0]?.url || '',
-      tracking: {
-        impression: Array.from(doc.querySelectorAll('Impression')).map(readText).filter(Boolean),
-        start: tracking('start'),
-        complete: tracking('complete'),
-        error: tracking('error'),
-      },
-    };
-  } catch {
-    return { mediaUrl: '', tracking: {} as VastTracking };
+declare global {
+  interface Window {
+    DaoVideo?: DaoVideoConstructor;
+    daoVideoPreRoll?: DaoVideoInstance;
   }
 }
 
-function pingUrls(urls: string[] | undefined) {
-  if (!Array.isArray(urls)) return;
-  urls.forEach((url) => {
-    const safeUrl = String(url || '').trim();
-    if (!safeUrl) return;
-    const img = new Image();
-    img.src = safeUrl;
+const DAO_PREROLL_VIDEO_ID = 'givkoin-ad-boost-video';
+const DAO_PREROLL_CREATIVE_ID = 'dao_preroll_61874';
+const DAO_PREROLL_SOURCE_ID = 61874;
+const DAO_PREROLL_SCRIPT_SRC = 'https://video.agenteimmobiliare.info/d-video.js?b=32';
+const DAO_PREROLL_TAG_URL = 'https://video.agenteimmobiliare.info/api/video/tag?sourceId=61874&tmax=500&video-skipafter=15&count=1';
+const DAO_PREROLL_REWARD_DELAY_MS = 15_000;
+const DAO_REWARD_NOTICE_MS = 1_400;
+const TECHNICAL_VIDEO_SRC = '/ready.mp4';
+
+let daoVideoScriptPromise: Promise<void> | null = null;
+
+function loadDaoVideoScript() {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('dao_browser_unavailable'));
+  }
+  if (window.DaoVideo) {
+    return Promise.resolve();
+  }
+  if (daoVideoScriptPromise) {
+    return daoVideoScriptPromise;
+  }
+
+  daoVideoScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${DAO_PREROLL_SCRIPT_SRC}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('dao_load_failed')), { once: true });
+      if (window.DaoVideo) resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = DAO_PREROLL_SCRIPT_SRC;
+    script.async = true;
+    script.onload = () => {
+      if (window.DaoVideo) {
+        resolve();
+      } else {
+        reject(new Error('dao_player_missing'));
+      }
+    };
+    script.onerror = () => reject(new Error('dao_load_failed'));
+    document.body.appendChild(script);
   });
+
+  return daoVideoScriptPromise;
 }
 
 export function AdBoostHost() {
@@ -128,101 +136,83 @@ export function AdBoostHost() {
   const [offer, setOffer] = useState<AdBoostOffer | null>(null);
   const [sessionId, setSessionId] = useState('');
   const [creativeId, setCreativeId] = useState('');
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [tracking, setTracking] = useState<VastTracking>({});
   const [loading, setLoading] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [daoPlayerActive, setDaoPlayerActive] = useState(false);
+  const [daoStatus, setDaoStatus] = useState<'idle' | 'loading' | 'playing' | 'rewarding' | 'rewarded'>('idle');
+  const [rewardNoticeVisible, setRewardNoticeVisible] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const maxWatchedRef = useRef(0);
-  const startedPingRef = useRef(false);
+  const daoStartedRef = useRef(false);
+  const rewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimers = useCallback(() => {
+    if (rewardTimerRef.current) {
+      clearTimeout(rewardTimerRef.current);
+      rewardTimerRef.current = null;
+    }
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const resetPlayerState = useCallback(() => {
+    clearTimers();
+    daoStartedRef.current = false;
+    setDaoPlayerActive(false);
+    setDaoStatus('idle');
+    setRewardNoticeVisible(false);
+  }, [clearTimers]);
 
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<AdBoostOffer>).detail;
       if (!detail?.id) return;
+      resetPlayerState();
       setOffer(detail);
       setSessionId('');
       setCreativeId('');
-      setMediaUrl('');
-      setTracking({});
-      maxWatchedRef.current = 0;
-      startedPingRef.current = false;
     };
     window.addEventListener('givkoin:ad-boost-offer', handler);
     return () => window.removeEventListener('givkoin:ad-boost-offer', handler);
-  }, []);
+  }, [resetPlayerState]);
 
   const close = useCallback(() => {
+    resetPlayerState();
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
     setOffer(null);
     setSessionId('');
     setCreativeId('');
-    setMediaUrl('');
-    setTracking({});
-    maxWatchedRef.current = 0;
-    startedPingRef.current = false;
-  }, []);
+  }, [resetPlayerState]);
 
-  const start = useCallback(async () => {
-    if (!offer?.id) return;
-    setLoading(true);
-    try {
-      const response = await apiPost<StartResponse>('/ad-boosts/start', { offerId: offer.id });
-      const vast = response.vast || {};
-      let nextMediaUrl = vast.mediaUrl || '';
-      let nextTracking = vast.tracking || {};
+  const getDaoErrorMessage = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'dao_browser_unavailable') return t('ads.boost_dao_browser_unavailable');
+    if (message === 'dao_load_failed') return t('ads.boost_dao_load_failed');
+    if (message === 'dao_player_missing') return t('ads.boost_dao_player_missing');
+    return message || t('ads.boost_video_unavailable');
+  }, [t]);
 
-      if (!nextMediaUrl && vast.vastXml) {
-        const parsed = parseVastXml(vast.vastXml);
-        nextMediaUrl = parsed.mediaUrl;
-        nextTracking = { ...nextTracking, ...parsed.tracking };
-      }
-
-      if (!nextMediaUrl && vast.vastUrl) {
-        try {
-          const direct = await fetch(vast.vastUrl, { credentials: 'omit' });
-          const xml = await direct.text();
-          const parsed = parseVastXml(xml);
-          nextMediaUrl = parsed.mediaUrl;
-          nextTracking = { ...nextTracking, ...parsed.tracking };
-        } catch {
-          // Если сеть не отдала XML браузеру, серверный разбор уже был последней попыткой.
-        }
-      }
-
-      if (!response.sessionId || !nextMediaUrl) {
-        throw new Error(t('ads.boost_video_missing'));
-      }
-
-      setSessionId(response.sessionId);
-      setCreativeId(response.creativeId || '');
-      setMediaUrl(nextMediaUrl);
-      setTracking(nextTracking);
-      pingUrls(nextTracking.impression);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t('ads.boost_video_unavailable');
-      toast.error(t('ads.boost_unavailable'), message);
-      close();
-    } finally {
-      setLoading(false);
-    }
-  }, [close, offer?.id, t, toast]);
-
-  const recordVastEvent = useCallback((eventType: 'vast_start' | 'vast_complete' | 'vast_error') => {
+  const recordRewardedAdEvent = useCallback((eventType: 'vast_start' | 'vast_complete' | 'vast_error') => {
     const page = offer?.page || 'ad_boost';
     apiPost('/ads/impression', {
       page,
       placement: 'rewarded_vast',
-      creativeId: creativeId || undefined,
+      creativeId: creativeId || DAO_PREROLL_CREATIVE_ID,
       eventType,
     }).catch(() => {});
   }, [creativeId, offer?.page]);
 
-  const complete = useCallback(async () => {
+  const completeReward = useCallback(async () => {
     if (!sessionId || completing) return;
     setCompleting(true);
+    setDaoStatus('rewarding');
     try {
-      pingUrls(tracking.complete);
-      recordVastEvent('vast_complete');
+      recordRewardedAdEvent('vast_complete');
       const response = await apiPost<CompleteResponse>('/ad-boosts/complete', { sessionId });
       if (user && response?.result) {
         updateUser({
@@ -234,22 +224,84 @@ export function AdBoostHost() {
         });
       }
       window.dispatchEvent(new CustomEvent('givkoin:ad-boost-completed', { detail: response }));
-      toast.success(t('ads.boost_received'), response?.title || t('ads.boost_reward_received'));
-      close();
+      setRewardNoticeVisible(true);
+      setDaoStatus('rewarded');
+      closeTimerRef.current = setTimeout(close, DAO_REWARD_NOTICE_MS);
     } catch (error) {
       const message = error instanceof Error ? error.message : t('ads.boost_complete_failed');
       toast.error(t('ads.boost_error'), message);
+      setDaoStatus('playing');
     } finally {
       setCompleting(false);
     }
-  }, [close, completing, recordVastEvent, sessionId, t, toast, tracking.complete, updateUser, user]);
+  }, [close, completing, recordRewardedAdEvent, sessionId, t, toast, updateUser, user]);
 
-  const onPlay = () => {
-    if (startedPingRef.current) return;
-    startedPingRef.current = true;
-    pingUrls(tracking.start);
-    recordVastEvent('vast_start');
-  };
+  const start = useCallback(async () => {
+    if (!offer?.id) return;
+    resetPlayerState();
+    setLoading(true);
+    setDaoStatus('loading');
+    try {
+      const response = await apiPost<StartResponse>('/ad-boosts/start', { offerId: offer.id });
+      if (!response.sessionId) {
+        throw new Error(t('ads.boost_video_missing'));
+      }
+
+      setSessionId(response.sessionId);
+      setCreativeId(response.creativeId || DAO_PREROLL_CREATIVE_ID);
+      setDaoPlayerActive(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('ads.boost_video_unavailable');
+      toast.error(t('ads.boost_unavailable'), message);
+      close();
+    } finally {
+      setLoading(false);
+    }
+  }, [close, offer?.id, resetPlayerState, t, toast]);
+
+  useEffect(() => {
+    if (!daoPlayerActive || !sessionId || daoStartedRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    let cancelled = false;
+    daoStartedRef.current = true;
+    setDaoStatus('loading');
+
+    loadDaoVideoScript()
+      .then(() => {
+        if (cancelled) return;
+        const DaoVideo = window.DaoVideo;
+        if (!DaoVideo) {
+          throw new Error('dao_player_missing');
+        }
+        const daoVideoPreRoll = new DaoVideo({
+          sourceId: DAO_PREROLL_SOURCE_ID,
+          tagUrl: DAO_PREROLL_TAG_URL,
+        });
+        window.daoVideoPreRoll = daoVideoPreRoll;
+        daoVideoPreRoll.loadAd(() => {
+          if (cancelled) return;
+          daoVideoPreRoll.preroll({ videoId: DAO_PREROLL_VIDEO_ID });
+          recordRewardedAdEvent('vast_start');
+          setDaoStatus('playing');
+          rewardTimerRef.current = setTimeout(() => {
+            void completeReward();
+          }, DAO_PREROLL_REWARD_DELAY_MS);
+          video.play().catch(() => {});
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        recordRewardedAdEvent('vast_error');
+        toast.error(t('ads.boost_video_failed'), getDaoErrorMessage(error));
+        close();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [close, completeReward, daoPlayerActive, getDaoErrorMessage, recordRewardedAdEvent, sessionId, t, toast]);
 
   return (
     <AnimatePresence>
@@ -282,34 +334,39 @@ export function AdBoostHost() {
               </button>
             </div>
 
-            {mediaUrl ? (
+            {daoPlayerActive ? (
               <div className="relative mt-4 overflow-hidden rounded-2xl border border-yellow-200/25 bg-black shadow-[0_0_30px_rgba(14,165,233,0.18)]">
                 <video
-                  src={mediaUrl}
+                  id={DAO_PREROLL_VIDEO_ID}
                   ref={videoRef}
-                  className="aspect-video w-full"
+                  className="aspect-video w-full bg-black"
                   controls
-                  autoPlay
                   playsInline
-                  onLoadedMetadata={() => {
-                    maxWatchedRef.current = 0;
-                  }}
-                  onTimeUpdate={(event) => {
-                    maxWatchedRef.current = Math.max(maxWatchedRef.current, event.currentTarget.currentTime);
-                  }}
-                  onSeeking={(event) => {
-                    if (event.currentTarget.currentTime > maxWatchedRef.current + 0.75) {
-                      event.currentTarget.currentTime = maxWatchedRef.current;
-                    }
-                  }}
-                  onPlay={onPlay}
-                  onEnded={() => void complete()}
-                  onError={() => {
-                    pingUrls(tracking.error);
-                    recordVastEvent('vast_error');
-                    toast.error(t('ads.boost_video_failed'), t('ads.boost_try_later'));
-                  }}
-                />
+                  preload="metadata"
+                >
+                  <source src={TECHNICAL_VIDEO_SRC} type="video/mp4" />
+                </video>
+
+                {daoStatus === 'loading' && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-sm font-semibold text-white/80">
+                    {t('ads.boost_loading_video')}
+                  </div>
+                )}
+
+                <AnimatePresence>
+                  {rewardNoticeVisible && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.96 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+                    >
+                      <div className="rounded-2xl border border-yellow-200/50 bg-slate-950/92 px-7 py-5 text-center text-lg font-black text-white shadow-[0_0_36px_rgba(250,204,21,0.28)]">
+                        {t('ads.boost_reward_notice')}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             ) : (
               <button
@@ -322,9 +379,9 @@ export function AdBoostHost() {
               </button>
             )}
 
-            {mediaUrl && (
+            {daoPlayerActive && (
               <div className="relative mt-3 text-center text-xs font-semibold text-yellow-100/78">
-                {t('ads.boost_reward_after_video')}
+                {completing || daoStatus === 'rewarding' ? t('ads.boost_loading_video') : t('ads.boost_reward_after_ad')}
               </div>
             )}
           </motion.div>
