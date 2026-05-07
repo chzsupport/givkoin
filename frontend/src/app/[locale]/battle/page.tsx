@@ -678,6 +678,19 @@ export default function BattlePage() {
     const finalizedVoiceIdsRef = useRef<Set<string>>(new Set());
     const lastVoiceCommandRef = useRef<BattleScenarioVoiceCommand | null>(null);
     const serverOffsetMsRef = useRef<number>(0);
+
+    useEffect(() => {
+        return () => {
+            const previous = activeBattleLockRef.current;
+            if (previous?.battleId || previous?.userId) {
+                clearActiveBattleLock({
+                    battleId: previous.battleId,
+                    userId: previous.userId,
+                });
+            }
+            activeBattleLockRef.current = null;
+        };
+    }, []);
     const battleStartResourcesRef = useRef<{ lumens: number | null; k: number | null; stars: number | null }>({
         lumens: null,
         k: null,
@@ -1102,9 +1115,15 @@ export default function BattlePage() {
 
     const redirectToTree = useCallback(() => {
         if (typeof window === 'undefined') return;
-        clearBattleProgress(lastBattleIdRef.current || battleId);
+        const lockBattleId = lastBattleIdRef.current || battleId;
+        const lockUserId = String(user?._id || user?.id || '').trim();
+        clearActiveBattleLock({
+            battleId: lockBattleId || undefined,
+            userId: lockUserId || undefined,
+        });
+        clearBattleProgress(lockBattleId);
         window.location.replace(localePath('/tree'));
-    }, [battleId, clearBattleProgress, localePath]);
+    }, [battleId, clearBattleProgress, localePath, user?._id, user?.id]);
 
     useEffect(() => {
         if (!socket) return;
@@ -2926,7 +2945,7 @@ export default function BattlePage() {
                 <motion.button
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    onClick={() => window.location.href = localePath('/tree')}
+                    onClick={redirectToTree}
                     className="absolute top-3 md:top-6 left-3 md:left-6 z-50 px-3 md:px-5 py-1.5 md:py-2 rounded-full border border-red-400/40 bg-gradient-to-r from-red-900/50 via-red-700/30 to-amber-500/10 text-red-100 text-caption md:text-label font-black uppercase tracking-[0.18em] md:tracking-[0.28em] shadow-[0_0_24px_rgba(248,113,113,0.35)] backdrop-blur-md transition-all hover:border-red-300/70 hover:bg-red-600/30 hover:text-red-50"
                     style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.8rem)' }}
                 >

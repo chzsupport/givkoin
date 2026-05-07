@@ -1,16 +1,13 @@
 'use client';
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
 
 import { useAuth } from '@/context/AuthContext';
-import { useI18n } from '@/context/I18nContext';
 import {
   readActiveBattleLock,
   subscribeActiveBattleLock,
   type ActiveBattleLock,
 } from '@/utils/activeBattleLock';
-import { normalizeSitePath, pathStartsWith } from '@/utils/sitePath';
 
 type ActiveBattleContextType = {
   activeBattle: ActiveBattleLock | null;
@@ -22,10 +19,6 @@ const ACTIVE_BATTLE_LOCK_RECHECK_MS = 2000;
 
 export function ActiveBattleProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { localePath } = useI18n();
-  const pathname = usePathname();
-  const router = useRouter();
-  const cleanPathname = normalizeSitePath(pathname || '/');
   const userId = String(user?._id || user?.id || '').trim();
   const [activeBattle, setActiveBattle] = useState<ActiveBattleLock | null>(null);
 
@@ -39,12 +32,7 @@ export function ActiveBattleProvider({ children }: { children: ReactNode }) {
   const syncActiveBattle = useCallback(() => {
     const lock = readUserBattleLock();
     setActiveBattle(lock);
-
-    if (!lock) return;
-    if (pathStartsWith(cleanPathname, '/battle')) return;
-
-    router.replace(localePath('/battle'));
-  }, [cleanPathname, localePath, readUserBattleLock, router]);
+  }, [readUserBattleLock]);
 
   useEffect(() => {
     syncActiveBattle();
