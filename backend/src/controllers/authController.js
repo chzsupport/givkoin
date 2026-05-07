@@ -770,6 +770,92 @@ function buildSafeUserFromRow(row) {
 
 }
 
+function mapEntityRowToAuthUser(entityRow) {
+
+  if (!entityRow) return null;
+
+  return {
+
+    _id: entityRow.id,
+
+    id: entityRow.id,
+
+    name: entityRow.name,
+
+    avatarUrl: entityRow.avatar_url,
+
+    stage: entityRow.stage,
+
+    mood: entityRow.mood,
+
+    satietyUntil: entityRow.satiety_until,
+
+    createdAt: entityRow.created_at,
+
+  };
+
+}
+
+
+
+async function getAuthUserEntity(userId) {
+
+  const safeUserId = String(userId || '').trim();
+
+  if (!safeUserId) return null;
+
+  const supabase = getSupabaseClient();
+
+  const { data: entityRow, error } = await supabase
+
+    .from('entities')
+
+    .select('id,name,avatar_url,stage,mood,satiety_until,created_at')
+
+    .eq('user_id', safeUserId)
+
+    .maybeSingle();
+
+  if (error || !entityRow) return null;
+
+  const entity = mapEntityRowToAuthUser(entityRow);
+
+  const diag = await getMoodDiagnosticsForUser(safeUserId).catch(() => null);
+
+  if (diag?.mood) {
+
+    entity.mood = diag.mood;
+
+  }
+
+  return entity;
+
+}
+
+
+
+async function buildSafeUserWithEntity(row) {
+
+  const user = buildSafeUserFromRow(row);
+
+  if (!user) return null;
+
+  const entity = await getAuthUserEntity(user._id || user.id);
+
+  if (entity) {
+
+    user.entity = entity;
+
+  } else {
+
+    delete user.entity;
+
+  }
+
+  return user;
+
+}
+
 
 
 async function getUserRowById(userId) {
@@ -2762,7 +2848,7 @@ const login = async (req, res, next) => {
 
     const refreshedUserRow = await repairDamagedUserData((await getUserRowById(user._id)) || userRow);
 
-    const safeUser = buildSafeUserFromRow(refreshedUserRow || userRow);
+    const safeUser = await buildSafeUserWithEntity(refreshedUserRow || userRow);
 
 
 
@@ -3142,7 +3228,7 @@ const getMe = async (req, res, next) => {
 
     }
 
-    const userObj = buildSafeUserFromRow(row);
+    const userObj = await buildSafeUserWithEntity(row);
 
     return res.json({ user: userObj });
 
