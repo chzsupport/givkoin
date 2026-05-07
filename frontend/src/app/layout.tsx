@@ -1,6 +1,13 @@
 import {cookies, headers} from 'next/headers';
+import type {Metadata} from 'next';
 import { Exo_2, Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+
+export const metadata: Metadata = {
+  other: {
+    'daopush-site-verification': '525c66e92e1047d4094df55ee72d18b700d094fc',
+  },
+};
 
 const inter = Inter({
   subsets: ['latin', 'cyrillic'],
