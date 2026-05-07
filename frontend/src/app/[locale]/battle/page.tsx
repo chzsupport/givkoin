@@ -688,7 +688,7 @@ export default function BattlePage() {
     const battleSyncIntervalSecondsRef = useRef(BATTLE_REPORT_INTERVAL_SECONDS);
     const battleFinalReportAcceptSecondsRef = useRef(30);
     const battleFinalReportRetryIntervalMsRef = useRef(FINAL_REPORT_RETRY_INTERVAL_MS);
-    const battleFinalReportWindowCapacityRef = useRef(2000);
+    const battleFinalReportWindowCapacityRef = useRef(500);
     const summaryLoadTimerRef = useRef<number | null>(null);
     const lastShotTelemetryRef = useRef<{ at: number; screenX: number; screenY: number } | null>(null);
     const summaryModalClicksRef = useRef<Array<{ at: number; x: number; y: number }>>([]);
@@ -1224,7 +1224,7 @@ export default function BattlePage() {
                 battleSyncIntervalSecondsRef.current = Math.max(1, Math.floor(Number(data.syncIntervalSeconds) || BATTLE_REPORT_INTERVAL_SECONDS));
                 battleFinalReportAcceptSecondsRef.current = Math.max(0, Math.floor(Number(data.finalReportAcceptSeconds) || 30));
                 battleFinalReportRetryIntervalMsRef.current = Math.max(250, Math.floor(Number(data.finalReportRetryIntervalMs) || FINAL_REPORT_RETRY_INTERVAL_MS));
-                battleFinalReportWindowCapacityRef.current = Math.max(1, Math.floor(Number(data.finalReportWindowCapacity) || 2000));
+                battleFinalReportWindowCapacityRef.current = Math.max(1, Math.floor(Number(data.finalReportWindowCapacity) || 500));
                 const durationMs = Math.max(0, Math.floor(Number(data.durationSeconds) || 0) * 1000);
                 const safeTimeLeftMs = Math.max(0, Math.floor(Number(data.timeLeftMs) || 0));
                 const nextBattleStartsAtMs = Number.isFinite(Number(data.battleStartsAtMs))
@@ -2019,7 +2019,7 @@ export default function BattlePage() {
                 setBattleTimeLeftMs(0);
                 battleFinalReportAcceptSecondsRef.current = Math.max(0, Math.floor(Number(battle.finalReportAcceptSeconds) || battleFinalReportAcceptSecondsRef.current || 30));
                 battleFinalReportRetryIntervalMsRef.current = Math.max(250, Math.floor(Number(battle.finalReportRetryIntervalMs) || battleFinalReportRetryIntervalMsRef.current || FINAL_REPORT_RETRY_INTERVAL_MS));
-                battleFinalReportWindowCapacityRef.current = Math.max(1, Math.floor(Number(battle.finalReportWindowCapacity) || battleFinalReportWindowCapacityRef.current || 2000));
+                battleFinalReportWindowCapacityRef.current = Math.max(1, Math.floor(Number(battle.finalReportWindowCapacity) || battleFinalReportWindowCapacityRef.current || 500));
                 setSummaryVisible(true);
                 setSummaryLoadAtMs(Date.now());
                 summaryRequestedRef.current = battleIdValue;

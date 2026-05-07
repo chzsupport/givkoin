@@ -9,6 +9,10 @@ const BATTLE_SUMMARY_DETAILS_BATCH_SIZE = Math.max(1, parseInt(process.env.BATTL
 const BATTLE_SUMMARY_DETAILS_BATCH_DELAY_MS = Math.max(0, parseInt(process.env.BATTLE_SUMMARY_DETAILS_BATCH_DELAY_MS || '120', 10) || 120);
 const BATTLE_SETTLEMENT_BATCH_SIZE = Math.max(1, parseInt(process.env.BATTLE_SETTLEMENT_BATCH_SIZE || '10', 10) || 10);
 const BATTLE_SETTLEMENT_BATCH_DELAY_MS = Math.max(0, parseInt(process.env.BATTLE_SETTLEMENT_BATCH_DELAY_MS || '200', 10) || 200);
+const BATTLE_FINISHED_ATTENDANCE_INLINE_LIMIT = Math.max(
+  0,
+  Math.floor(Number(process.env.BATTLE_FINISHED_ATTENDANCE_INLINE_LIMIT) || 1000),
+);
 
 const battleSummaryDetailLocks = new Set();
 
@@ -952,7 +956,7 @@ async function publishBattleSummary({
   return summary;
 }
 
-async function prepareBattleSummaryDetails(battleId) {
+async function prepareBattleSummaryDetails(battleId, { attendanceOverride = null } = {}) {
   const safeBattleId = String(battleId || '').trim();
   if (!safeBattleId || battleSummaryDetailLocks.has(safeBattleId)) return false;
 
@@ -961,7 +965,10 @@ async function prepareBattleSummaryDetails(battleId) {
     const battle = await getBattleDocById(safeBattleId);
     if (!battle || String(battle.status || '') !== 'finished') return false;
 
-    const attendance = Array.isArray(battle.attendance) ? [...battle.attendance] : [];
+    const sourceAttendance = Array.isArray(attendanceOverride) && attendanceOverride.length
+      ? attendanceOverride
+      : (Array.isArray(battle.attendance) ? battle.attendance : []);
+    const attendance = [...sourceAttendance];
     if (!attendance.length) return true;
 
     const attendanceIds = attendance.map((row) => String(row?.user || '').trim()).filter(Boolean);
@@ -1082,9 +1089,12 @@ async function prepareBattleSummaryDetails(battleId) {
       }
     }
 
+    const shouldInlineFinishedAttendance = attendance.length <= BATTLE_FINISHED_ATTENDANCE_INLINE_LIMIT;
     await updateBattleDocById(safeBattleId, {
       ...battle,
-      attendance,
+      attendance: shouldInlineFinishedAttendance ? attendance : [],
+      attendanceStoredInRuntime: !shouldInlineFinishedAttendance,
+      attendanceRuntimeCount: attendance.length,
       summaryTopPlayer: savedBestPlayer,
     }).catch(() => null);
 
@@ -1103,12 +1113,12 @@ async function prepareBattleSummaryDetails(battleId) {
   }
 }
 
-async function prepareBattleSummaries(battleId) {
+async function prepareBattleSummaries(battleId, { attendanceOverride = null } = {}) {
   const battle = await getBattleDocById(battleId);
   if (!battle || String(battle.status || '') !== 'finished') return battle;
 
   setTimeout(() => {
-    prepareBattleSummaryDetails(battleId).catch((error) => {
+    prepareBattleSummaryDetails(battleId, { attendanceOverride }).catch((error) => {
       console.error('prepareBattleSummaryDetails timer error', error);
     });
   }, 0);

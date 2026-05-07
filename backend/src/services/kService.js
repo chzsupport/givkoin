@@ -117,6 +117,29 @@ async function createTransaction({
   return data || null;
 }
 
+async function findCompletedTransaction({
+  userId,
+  type,
+  direction,
+  relatedEntity,
+  currency = 'K',
+}) {
+  if (!userId || !type || !direction || !relatedEntity) return null;
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('id,amount,currency,occurred_at')
+    .eq('user_id', String(userId))
+    .eq('type', String(type))
+    .eq('direction', String(direction))
+    .eq('related_entity', String(relatedEntity))
+    .eq('currency', String(currency || 'K'))
+    .eq('status', 'completed')
+    .limit(1);
+  if (error || !Array.isArray(data) || !data.length) return null;
+  return data[0] || null;
+}
+
 async function getChatEconomyRuntime() {
   const [chatKPerHour, chatMinutesPerDayCap] = await Promise.all([
     getNumericSettingValue('CHAT_K_PER_HOUR', DEFAULT_CHAT_K_PER_HOUR),
@@ -452,6 +475,7 @@ async function creditK({
   skipDebuff = false,
   skipBlessing = false,
   skipMood = false,
+  skipReferral = false,
 }) {
   ensurePositive(amount);
   const blessingPromise = skipBlessing ? Promise.resolve(1) : getTreeBlessingRewardMultiplierForUser(userId);
@@ -484,7 +508,9 @@ async function creditK({
   const updatedData = getUserDataFromRow(updated);
 
   await createTransaction({ userId, type, direction: 'credit', amount: debuffedAmount, description, relatedEntity });
-  await maybeAwardReferralBlessing({ receiverUserId: userId, creditedAmount: debuffedAmount, sourceType: type, relatedEntity });
+  if (!skipReferral) {
+    await maybeAwardReferralBlessing({ receiverUserId: userId, creditedAmount: debuffedAmount, sourceType: type, relatedEntity });
+  }
   return {
     ...updated,
     ...updatedData,
@@ -559,8 +585,49 @@ async function awardReferralK({ userId, bonus = 20, description = 'Бонус з
   return creditK({ userId, amount: bonus, type: 'referral', description, relatedEntity });
 }
 
-async function awardBattleK({ userId, amount, relatedEntity, description = 'Участие в бою', skipDebuff = false }) {
-  return creditK({ userId, amount, type: 'battle', description, relatedEntity, skipDebuff });
+async function awardBattleK({
+  userId,
+  amount,
+  relatedEntity,
+  description = 'Участие в бою',
+  skipDebuff = false,
+  skipBlessing = false,
+  skipMood = false,
+  skipReferral = false,
+  skipExistingCheck = false,
+}) {
+  if (!skipExistingCheck) {
+    const existing = await findCompletedTransaction({
+      userId,
+      type: 'battle',
+      direction: 'credit',
+      relatedEntity,
+      currency: 'K',
+    });
+    if (existing) {
+      const row = await getUserRowById(userId);
+      const data = getUserDataFromRow(row);
+      return row ? {
+        ...row,
+        ...data,
+        k: Number(data.k) || 0,
+        creditedAmount: 0,
+        requestedAmount: round3(amount),
+        alreadyAwarded: true,
+      } : null;
+    }
+  }
+  return creditK({
+    userId,
+    amount,
+    type: 'battle',
+    description,
+    relatedEntity,
+    skipDebuff,
+    skipBlessing,
+    skipMood,
+    skipReferral,
+  });
 }
 
 async function awardFortuneK({ userId, amount, relatedEntity, description = 'Фортуна' }) {

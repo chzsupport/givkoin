@@ -1342,7 +1342,8 @@
     "close_aria": "Close summary",
     "title": "Outcome scroll",
     "full_pending": "The scroll is finishing the full battle summary...",
-    "pending_note": "The scroll has not finished the record yet. The full result will appear as soon as the server compiles it."
+    "pending_note": "The scroll has not finished the record yet. The full result will appear as soon as the server compiles it.",
+    "stats_update_note": "Your statistics will update within 10 minutes. Please wait."
   },
   "achievements_page": {
     "title": "ACHIEVEMENTS",

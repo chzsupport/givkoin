@@ -9,6 +9,7 @@ const {
   touchSession,
   revokeSession,
   enforceSingleDeviceSession,
+  isSessionKnownRevoked,
 } = require('../services/authTrackingService');
 const { evaluateAccessRestriction } = require('../services/securityService');
 const {
@@ -21,6 +22,182 @@ const { getRequestLanguage, pickRequestLanguage } = require('../utils/requestLan
 const { JWT_SECRET } = require('../config/auth');
 
 const SESSION_MULTI_ACCOUNT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const AUTH_RUNTIME_CACHE_TTL_MS = Math.max(60 * 1000, Number(process.env.AUTH_RUNTIME_CACHE_TTL_MS) || (15 * 60 * 1000));
+const AUTH_RUNTIME_DB_CHECK_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.AUTH_RUNTIME_DB_CHECK_INTERVAL_MS) || (15 * 60 * 1000));
+const AUTH_RUNTIME_ONLINE_WRITE_INTERVAL_MS = Math.max(15 * 1000, Number(process.env.AUTH_RUNTIME_ONLINE_WRITE_INTERVAL_MS) || (60 * 1000));
+const AUTH_RUNTIME_SESSION_TOUCH_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.AUTH_RUNTIME_SESSION_TOUCH_INTERVAL_MS) || (5 * 60 * 1000));
+const AUTH_RUNTIME_CACHE_MAX = Math.max(1000, Number(process.env.AUTH_RUNTIME_CACHE_MAX) || 50000);
+const authRuntimeCache = new Map();
+
+function buildAuthCacheKey(userId, sessionId) {
+  const safeUserId = String(userId || '').trim();
+  const safeSessionId = String(sessionId || '').trim();
+  if (!safeUserId) return '';
+  return `${safeUserId}:${safeSessionId || 'no-session'}`;
+}
+
+function normalizeIdentityToken(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function buildRequestIdentity(client = {}) {
+  return {
+    deviceId: normalizeIdentityToken(client.deviceId),
+    fingerprint: normalizeIdentityToken(client.fingerprint),
+    weakFingerprint: normalizeIdentityToken(client.weakFingerprint),
+    profileKey: normalizeIdentityToken(client.profileKey),
+  };
+}
+
+function hasIdentityValue(identity = {}) {
+  return Boolean(identity.deviceId || identity.fingerprint || identity.weakFingerprint || identity.profileKey);
+}
+
+function identityMatches(cachedIdentity = {}, requestIdentity = {}) {
+  if (!hasIdentityValue(cachedIdentity) || !hasIdentityValue(requestIdentity)) return true;
+  return (
+    (cachedIdentity.deviceId && requestIdentity.deviceId && cachedIdentity.deviceId === requestIdentity.deviceId)
+    || (cachedIdentity.fingerprint && requestIdentity.fingerprint && cachedIdentity.fingerprint === requestIdentity.fingerprint)
+    || (cachedIdentity.profileKey && requestIdentity.profileKey && cachedIdentity.profileKey === requestIdentity.profileKey)
+    || (cachedIdentity.weakFingerprint && requestIdentity.weakFingerprint && cachedIdentity.weakFingerprint === requestIdentity.weakFingerprint)
+  );
+}
+
+function cleanupAuthRuntimeCache(nowMs = Date.now()) {
+  if (authRuntimeCache.size <= AUTH_RUNTIME_CACHE_MAX) return;
+  for (const [key, value] of authRuntimeCache.entries()) {
+    if (!value || Number(value.expiresAtMs) <= nowMs) {
+      authRuntimeCache.delete(key);
+    }
+  }
+  while (authRuntimeCache.size > AUTH_RUNTIME_CACHE_MAX) {
+    const oldestKey = authRuntimeCache.keys().next().value;
+    if (!oldestKey) break;
+    authRuntimeCache.delete(oldestKey);
+  }
+}
+
+function buildUserForRequest(baseUser, req) {
+  const user = {
+    ...(baseUser || {}),
+    data: baseUser?.data && typeof baseUser.data === 'object' ? { ...baseUser.data } : {},
+  };
+  const siteLanguage = getRequestLanguage(req, { fallback: user.language || user?.data?.language || 'ru' });
+  user.profileLanguage = user.language || user?.data?.language || 'ru';
+  user.siteLanguage = siteLanguage;
+  user.language = siteLanguage;
+  return user;
+}
+
+function isBattleRequestPath(req) {
+  return [req?.path, req?.baseUrl, req?.originalUrl]
+    .map((value) => String(value || '').trim())
+    .some((value) => value.startsWith('/battles/') || value === '/battles' || value.startsWith('/api/battles/'));
+}
+
+function buildBattleUserFromToken(decoded, req) {
+  const userId = String(decoded?.userId || '').trim();
+  if (!userId) return null;
+
+  const snapshot = decoded?.battleUser && typeof decoded.battleUser === 'object'
+    ? decoded.battleUser
+    : {};
+  const snapshotData = snapshot.data && typeof snapshot.data === 'object' ? snapshot.data : {};
+  const data = {
+    ...snapshotData,
+    k: Number.isFinite(Number(snapshotData.k ?? snapshot.k)) ? Number(snapshotData.k ?? snapshot.k) : 0,
+    lumens: Number.isFinite(Number(snapshotData.lumens ?? snapshot.lumens)) ? Number(snapshotData.lumens ?? snapshot.lumens) : 0,
+    stars: Number.isFinite(Number(snapshotData.stars ?? snapshot.stars)) ? Number(snapshotData.stars ?? snapshot.stars) : 0,
+    status: snapshot.status || snapshotData.status || 'active',
+    nickname: snapshot.nickname || snapshotData.nickname || String(decoded?.email || userId).split('@')[0],
+  };
+
+  const user = {
+    _id: userId,
+    id: userId,
+    email: String(decoded?.email || snapshot.email || '').trim(),
+    role: snapshot.role || snapshotData.role || 'user',
+    nickname: data.nickname,
+    status: data.status,
+    emailConfirmed: true,
+    emailConfirmedAt: snapshot.emailConfirmedAt || null,
+    accessRestrictedUntil: null,
+    accessRestrictionReason: '',
+    language: snapshot.language || snapshotData.language || 'ru',
+    lastSeenAt: null,
+    lastOnlineAt: null,
+    lastIp: '',
+    lastDeviceId: '',
+    lastFingerprint: '',
+    lastWeakFingerprint: '',
+    lastIpIntel: null,
+    createdAt: null,
+    updatedAt: null,
+    data,
+  };
+
+  return buildUserForRequest(user, req);
+}
+
+function getCachedAuthRuntime(decoded, client, nowMs = Date.now()) {
+  const cacheKey = buildAuthCacheKey(decoded?.userId, decoded?.sid);
+  if (!cacheKey) return null;
+  const cached = authRuntimeCache.get(cacheKey);
+  if (!cached) return null;
+  if (decoded?.sid && isSessionKnownRevoked(decoded.sid)) {
+    authRuntimeCache.delete(cacheKey);
+    return null;
+  }
+  if (Number(cached.expiresAtMs) <= nowMs || Number(cached.nextDbCheckAtMs) <= nowMs) {
+    authRuntimeCache.delete(cacheKey);
+    return null;
+  }
+  if (!identityMatches(cached.identity, buildRequestIdentity(client))) {
+    authRuntimeCache.delete(cacheKey);
+    return null;
+  }
+  return cached;
+}
+
+function setCachedAuthRuntime({ decoded, user, client, nowMs = Date.now() }) {
+  const cacheKey = buildAuthCacheKey(decoded?.userId || user?._id, decoded?.sid);
+  if (!cacheKey || !user) return null;
+  cleanupAuthRuntimeCache(nowMs);
+  const cached = {
+    user: {
+      ...user,
+      data: user?.data && typeof user.data === 'object' ? { ...user.data } : {},
+    },
+    identity: buildRequestIdentity(client),
+    expiresAtMs: nowMs + AUTH_RUNTIME_CACHE_TTL_MS,
+    nextDbCheckAtMs: nowMs + AUTH_RUNTIME_DB_CHECK_INTERVAL_MS,
+    nextOnlineWriteAtMs: nowMs + AUTH_RUNTIME_ONLINE_WRITE_INTERVAL_MS,
+    nextSessionTouchAtMs: nowMs + AUTH_RUNTIME_SESSION_TOUCH_INTERVAL_MS,
+  };
+  authRuntimeCache.set(cacheKey, cached);
+  return cached;
+}
+
+function refreshCachedRuntimeSideEffects({ cached, decoded, client, req, nowMs = Date.now() }) {
+  if (!cached?.user?._id) return;
+  if (decoded?.sid && Number(cached.nextSessionTouchAtMs) <= nowMs) {
+    cached.nextSessionTouchAtMs = nowMs + AUTH_RUNTIME_SESSION_TOUCH_INTERVAL_MS;
+    touchSession(decoded.sid, req).catch(() => { });
+  }
+  if (Number(cached.nextOnlineWriteAtMs) <= nowMs) {
+    cached.nextOnlineWriteAtMs = nowMs + AUTH_RUNTIME_ONLINE_WRITE_INTERVAL_MS;
+    cached.user.lastOnlineAt = new Date(nowMs).toISOString();
+    if (client.ip) cached.user.lastIp = client.ip;
+    if (client.deviceId) cached.user.lastDeviceId = client.deviceId;
+    if (client.fingerprint) cached.user.lastFingerprint = client.fingerprint;
+    updateUserById(cached.user._id, {
+      last_online_at: cached.user.lastOnlineAt,
+      last_ip: cached.user.lastIp || null,
+      last_device_id: cached.user.lastDeviceId || null,
+      last_fingerprint: cached.user.lastFingerprint || null,
+    }).catch(() => { });
+  }
+}
 
 async function fetchUserById(userId) {
   if (!userId) return null;
@@ -109,6 +286,45 @@ const auth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const client = extractClientMeta(req);
+    const nowMs = Date.now();
+    const isBattleRequest = isBattleRequestPath(req);
+
+    const cachedRuntime = getCachedAuthRuntime(decoded, client, nowMs);
+    if (cachedRuntime) {
+      refreshCachedRuntimeSideEffects({
+        cached: cachedRuntime,
+        decoded,
+        client,
+        req,
+        nowMs,
+      });
+      req.user = buildUserForRequest(cachedRuntime.user, req);
+      req.auth = decoded;
+      return next();
+    }
+
+    if (isBattleRequest) {
+      const battleUser = buildBattleUserFromToken(decoded, req);
+      if (!battleUser) {
+        return res.status(401).json({
+          message: pickRequestLanguage(req, 'Пользователь не найден', 'User not found'),
+        });
+      }
+      if (battleUser.status === 'banned') {
+        return res.status(403).json({
+          message: pickRequestLanguage(req, 'Аккаунт заблокирован', 'Account is blocked'),
+        });
+      }
+      req.user = battleUser;
+      req.auth = decoded;
+      setCachedAuthRuntime({
+        decoded,
+        user: battleUser,
+        client,
+        nowMs,
+      });
+      return next();
+    }
 
     const user = await fetchUserById(decoded.userId);
 
@@ -236,13 +452,14 @@ const auth = async (req, res, next) => {
     req.user = user;
     req.auth = decoded;
 
-    const now = new Date();
+    const now = new Date(nowMs);
     const { ip, deviceId, fingerprint, weakFingerprint } = client;
     const currentData = user?.data && typeof user.data === 'object' ? user.data : {};
     const lastSecurityCheckAtMs = currentData.lastSecuritySignalCheckAt
       ? new Date(currentData.lastSecuritySignalCheckAt).getTime()
       : 0;
-    const shouldRunSecurityCheck = user.role !== 'admin'
+    const shouldRunSecurityCheck = !isBattleRequest
+      && user.role !== 'admin'
       && Boolean(ip || deviceId || fingerprint || weakFingerprint)
       && (
         !Number.isFinite(lastSecurityCheckAtMs)
@@ -261,7 +478,12 @@ const auth = async (req, res, next) => {
       last_fingerprint: fingerprint || user.lastFingerprint || null,
       data: nextData,
     };
-    await updateUserById(user._id, update);
+    const userPresenceUpdate = updateUserById(user._id, update);
+    if (shouldRunSecurityCheck) {
+      await userPresenceUpdate;
+    } else {
+      userPresenceUpdate.catch(() => { });
+    }
 
     if (shouldRunSecurityCheck) {
       const sessionCheckResult = await handleAuthenticatedSessionMultiAccount({
@@ -302,6 +524,20 @@ const auth = async (req, res, next) => {
         });
       }
     }
+
+    setCachedAuthRuntime({
+      decoded,
+      user: {
+        ...user,
+        lastOnlineAt: now.toISOString(),
+        lastIp: update.last_ip,
+        lastDeviceId: update.last_device_id,
+        lastFingerprint: update.last_fingerprint,
+        data: nextData,
+      },
+      client,
+      nowMs,
+    });
 
     return next();
   } catch (error) {

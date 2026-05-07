@@ -18,7 +18,7 @@ const WEAPONS = {
         baseColor: '#00d0ff',
         recoil: 0.25,
         shake: 0.4,
-        rate: 50,
+        rate: 16,
         burstCount: 1,
         chargeTime: 0,
         speed: 4.5, // Increased from 3.0 (x1.5)

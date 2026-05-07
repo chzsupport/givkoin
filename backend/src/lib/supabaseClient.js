@@ -6,7 +6,7 @@ function getSupabaseClient() {
   if (supabase) return supabase;
 
   const url = String(process.env.SUPABASE_URL || '').trim();
-  const key = String(process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '').trim();
 
   if (!url || !key) {
     throw new Error('SUPABASE_URL and SUPABASE_KEY (or SUPABASE_SERVICE_ROLE_KEY) are required');

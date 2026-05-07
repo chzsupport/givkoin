@@ -2,6 +2,24 @@ const { getSupabaseClient } = require('../lib/supabaseClient');
 
 const RUNTIME_TABLE = 'battle_runtime_entries';
 const runtimeHotCache = new Map();
+const runtimeWriteQueue = new Map();
+
+const RUNTIME_WRITE_QUEUE_FLUSH_MS = Math.max(
+  5000,
+  Number(process.env.BATTLE_RUNTIME_WRITE_QUEUE_FLUSH_MS) || 10 * 60 * 1000,
+);
+const RUNTIME_WRITE_QUEUE_BATCH_SIZE = Math.max(
+  25,
+  Math.min(500, Number(process.env.BATTLE_RUNTIME_WRITE_QUEUE_BATCH_SIZE) || 250),
+);
+const RUNTIME_WRITE_QUEUE_RETRY_MS = Math.max(
+  1000,
+  Number(process.env.BATTLE_RUNTIME_WRITE_QUEUE_RETRY_MS) || 5000,
+);
+
+let runtimeWriteFlushTimer = null;
+let runtimeWriteFlushTimerDueMs = 0;
+let runtimeWriteFlushPromise = null;
 
 function buildRuntimeHotCacheKey(modelName, id) {
   const model = String(modelName || '').trim();
@@ -31,24 +49,259 @@ function parseRuntimeHotCacheExpiryMs(row) {
   return Number.isFinite(nested) ? nested : NaN;
 }
 
+function cloneRuntimeHotCacheData(data) {
+  if (!data || typeof data !== 'object') return {};
+  return JSON.parse(JSON.stringify(data));
+}
+
+function toRuntimeHotCacheDate(value) {
+  const ms = parseMs(value);
+  return Number.isFinite(ms) ? new Date(ms) : null;
+}
+
 function getRuntimeHotCacheRow(modelName, id, nowMs = Date.now()) {
-  return null;
+  const key = buildRuntimeHotCacheKey(modelName, id);
+  if (!key) return null;
+
+  const row = runtimeHotCache.get(key);
+  if (!row) return null;
+
+  const expiresAtMs = parseRuntimeHotCacheExpiryMs(row);
+  if (Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs) {
+    runtimeHotCache.delete(key);
+    return null;
+  }
+
+  return cloneRuntimeHotCacheRow(row);
 }
 
 function setRuntimeHotCacheRow(modelName, id, row) {
-  return null;
+  const key = buildRuntimeHotCacheKey(modelName, id);
+  if (!key || !row || typeof row !== 'object') return null;
+
+  const now = new Date();
+  const data = cloneRuntimeHotCacheData(row.data && typeof row.data === 'object' ? row.data : {});
+  const normalized = {
+    id: String(row.id || id || ''),
+    data,
+    createdAt: toRuntimeHotCacheDate(row.createdAt || row.created_at) || now,
+    updatedAt: toRuntimeHotCacheDate(row.updatedAt || row.updated_at) || now,
+    expiresAt: toRuntimeHotCacheDate(row.expiresAt || row.expires_at || data.expiresAt),
+  };
+
+  runtimeHotCache.set(key, normalized);
+  return cloneRuntimeHotCacheRow(normalized);
 }
 
 function deleteRuntimeHotCacheRow(modelName, id) {
-  return null;
+  const key = buildRuntimeHotCacheKey(modelName, id);
+  if (!key) return false;
+  return runtimeHotCache.delete(key);
 }
 
 function deleteRuntimeHotCacheRowsByPrefix(modelName, idPrefix) {
-  return null;
+  const model = String(modelName || '').trim();
+  const prefix = String(idPrefix || '').trim();
+  if (!model || !prefix) return 0;
+
+  const keyPrefix = `${model}::${prefix}`;
+  let deleted = 0;
+  for (const key of Array.from(runtimeHotCache.keys())) {
+    if (!key.startsWith(keyPrefix)) continue;
+    runtimeHotCache.delete(key);
+    deleted += 1;
+  }
+  return deleted;
 }
 
 function listRuntimeHotCacheRows(modelName, { idPrefix = '', limit = 5000, nowMs = Date.now() } = {}) {
-  return [];
+  const model = String(modelName || '').trim();
+  if (!model) return [];
+
+  const prefix = String(idPrefix || '').trim();
+  const keyPrefix = `${model}::${prefix}`;
+  const safeLimit = Math.max(1, Math.min(100000, Number(limit) || 5000));
+  const out = [];
+
+  for (const [key, row] of runtimeHotCache.entries()) {
+    if (!key.startsWith(keyPrefix)) continue;
+
+    const expiresAtMs = parseRuntimeHotCacheExpiryMs(row);
+    if (Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs) {
+      runtimeHotCache.delete(key);
+      continue;
+    }
+
+    const cloned = cloneRuntimeHotCacheRow(row);
+    if (cloned) out.push(cloned);
+    if (out.length >= safeLimit) break;
+  }
+
+  return out;
+}
+
+function buildRuntimeDbRow(model, docId, data, opts = {}) {
+  const nowIso = new Date().toISOString();
+  const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
+  const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
+  const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
+  return {
+    model,
+    id: docId,
+    data: data || {},
+    expires_at: expiresAtIso,
+    created_at: createdAtIso,
+    updated_at: updatedAtIso,
+  };
+}
+
+function setRuntimeHotCacheFromDbRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  return setRuntimeHotCacheRow(row.model, row.id, {
+    id: row.id,
+    data: row.data || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    expiresAt: row.expires_at,
+  });
+}
+
+async function upsertRuntimeDbRows(rows) {
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from(RUNTIME_TABLE)
+    .upsert(rows, {
+      onConflict: 'model,id',
+      ignoreDuplicates: false,
+    });
+  if (error) throw error;
+  return rows.length;
+}
+
+function clearRuntimeWriteFlushTimer() {
+  if (!runtimeWriteFlushTimer) return;
+  clearTimeout(runtimeWriteFlushTimer);
+  runtimeWriteFlushTimer = null;
+  runtimeWriteFlushTimerDueMs = 0;
+}
+
+function scheduleRuntimeWriteFlush(delayMs = RUNTIME_WRITE_QUEUE_FLUSH_MS) {
+  const safeDelay = Math.max(0, Number(delayMs) || 0);
+  const dueMs = Date.now() + safeDelay;
+  if (runtimeWriteFlushTimer && runtimeWriteFlushTimerDueMs <= dueMs) return;
+  clearRuntimeWriteFlushTimer();
+  runtimeWriteFlushTimer = setTimeout(() => {
+    runtimeWriteFlushTimer = null;
+    runtimeWriteFlushTimerDueMs = 0;
+    flushRuntimeWriteQueue().catch((error) => {
+      warnRuntimeStore('flushRuntimeWriteQueue', error);
+    });
+  }, safeDelay);
+  runtimeWriteFlushTimerDueMs = dueMs;
+  if (typeof runtimeWriteFlushTimer.unref === 'function') {
+    runtimeWriteFlushTimer.unref();
+  }
+}
+
+async function flushRuntimeWriteQueue({ limit = RUNTIME_WRITE_QUEUE_BATCH_SIZE } = {}) {
+  if (runtimeWriteFlushPromise) return runtimeWriteFlushPromise;
+
+  runtimeWriteFlushPromise = (async () => {
+    clearRuntimeWriteFlushTimer();
+    const safeLimit = Math.max(1, Math.min(1000, Number(limit) || RUNTIME_WRITE_QUEUE_BATCH_SIZE));
+    const batch = Array.from(runtimeWriteQueue.entries()).slice(0, safeLimit);
+    if (!batch.length) return 0;
+
+    const rows = batch.map(([, item]) => item.row);
+    try {
+      await upsertRuntimeDbRows(rows);
+      for (const [key, item] of batch) {
+        if (runtimeWriteQueue.get(key) === item) {
+          runtimeWriteQueue.delete(key);
+        }
+      }
+      return batch.length;
+    } catch (error) {
+      const nowMs = Date.now();
+      for (const [key, item] of batch) {
+        const current = runtimeWriteQueue.get(key);
+        if (current !== item) continue;
+        runtimeWriteQueue.set(key, {
+          ...item,
+          attempts: Math.max(0, Number(item.attempts) || 0) + 1,
+          lastErrorAtMs: nowMs,
+          lastErrorMessage: error?.message || String(error || 'unknown error'),
+        });
+      }
+      throw error;
+    }
+  })();
+
+  try {
+    return await runtimeWriteFlushPromise;
+  } finally {
+    runtimeWriteFlushPromise = null;
+    if (runtimeWriteQueue.size > 0) {
+      scheduleRuntimeWriteFlush(RUNTIME_WRITE_QUEUE_RETRY_MS);
+    }
+  }
+}
+
+async function flushAllRuntimeWriteQueue({ maxRounds = 100, limit = 1000 } = {}) {
+  const safeRounds = Math.max(1, Math.min(100, Number(maxRounds) || 20));
+  let flushedTotal = 0;
+
+  for (let round = 0; round < safeRounds; round += 1) {
+    if (runtimeWriteQueue.size <= 0) break;
+    // eslint-disable-next-line no-await-in-loop
+    const flushed = await flushRuntimeWriteQueue({ limit });
+    flushedTotal += Math.max(0, Number(flushed) || 0);
+    if (!flushed) break;
+  }
+
+  return flushedTotal;
+}
+
+function enqueueRuntimeDbUpsert(row, { flushWhenFull = true } = {}) {
+  const key = buildRuntimeHotCacheKey(row?.model, row?.id);
+  if (!key || !row) return false;
+
+  const existing = runtimeWriteQueue.get(key);
+  runtimeWriteQueue.set(key, {
+    row,
+    queuedAtMs: existing?.queuedAtMs || Date.now(),
+    updatedAtMs: Date.now(),
+    attempts: Math.max(0, Number(existing?.attempts) || 0),
+  });
+
+  if (flushWhenFull && runtimeWriteQueue.size >= RUNTIME_WRITE_QUEUE_BATCH_SIZE) {
+    scheduleRuntimeWriteFlush(0);
+  } else {
+    scheduleRuntimeWriteFlush(RUNTIME_WRITE_QUEUE_FLUSH_MS);
+  }
+  return true;
+}
+
+function deleteRuntimeQueuedWrite(modelName, id) {
+  const key = buildRuntimeHotCacheKey(modelName, id);
+  if (!key) return false;
+  return runtimeWriteQueue.delete(key);
+}
+
+function deleteRuntimeQueuedWritesByPrefix(modelName, idPrefix) {
+  const model = String(modelName || '').trim();
+  const prefix = String(idPrefix || '').trim();
+  if (!model || !prefix) return 0;
+
+  const keyPrefix = `${model}::${prefix}`;
+  let deleted = 0;
+  for (const key of Array.from(runtimeWriteQueue.keys())) {
+    if (!key.startsWith(keyPrefix)) continue;
+    runtimeWriteQueue.delete(key);
+    deleted += 1;
+  }
+  return deleted;
 }
 
 function warnRuntimeStore(action, error) {
@@ -60,6 +313,9 @@ async function getDocument(modelName, id) {
   const model = String(modelName || '').trim();
   const docId = String(id || '').trim();
   if (!model || !docId) return null;
+
+  const cached = getRuntimeHotCacheRow(model, docId);
+  if (cached) return cached;
 
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -77,7 +333,7 @@ async function getDocument(modelName, id) {
     updatedAt: data.updated_at ? new Date(data.updated_at) : null,
     expiresAt: data.expires_at ? new Date(data.expires_at) : null,
   };
-  return row;
+  return setRuntimeHotCacheRow(model, docId, row) || row;
 }
 
 async function insertDocument(modelName, id, data, opts = {}) {
@@ -85,28 +341,20 @@ async function insertDocument(modelName, id, data, opts = {}) {
   const docId = String(id || '').trim();
   if (!model || !docId) throw new Error('[DB] insertDocument requires model and id');
 
-  const nowIso = new Date().toISOString();
-  const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
-  const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
-  const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
+  const row = buildRuntimeDbRow(model, docId, data, opts);
 
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from(RUNTIME_TABLE)
-    .insert({
-      model,
-      id: docId,
-      data: data || {},
-      expires_at: expiresAtIso,
-      created_at: createdAtIso,
-      updated_at: updatedAtIso,
-    });
+    .insert(row);
   if (error) {
     const wrapped = new Error(`[DB] Failed to insert "${model}/${docId}": ${error.message}`);
     wrapped.code = error.code || '';
     wrapped.details = error;
     throw wrapped;
   }
+
+  setRuntimeHotCacheFromDbRow(row);
 }
 
 async function upsertDocument(modelName, id, data, opts = {}) {
@@ -114,32 +362,26 @@ async function upsertDocument(modelName, id, data, opts = {}) {
   const docId = String(id || '').trim();
   if (!model || !docId) throw new Error('[DB] upsertDocument requires model and id');
 
-  const nowIso = new Date().toISOString();
-  const createdAtIso = opts.createdAt ? new Date(opts.createdAt).toISOString() : nowIso;
-  const updatedAtIso = opts.updatedAt ? new Date(opts.updatedAt).toISOString() : nowIso;
-  const expiresAtIso = data?.expiresAt ? new Date(data.expiresAt).toISOString() : null;
+  const row = buildRuntimeDbRow(model, docId, data, opts);
 
-  const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from(RUNTIME_TABLE)
-    .upsert({
-      model,
-      id: docId,
-      data: data || {},
-      expires_at: expiresAtIso,
-      created_at: createdAtIso,
-      updated_at: updatedAtIso,
-    }, {
-      onConflict: 'model,id',
-      ignoreDuplicates: false,
+  if (opts.defer === true) {
+    setRuntimeHotCacheFromDbRow(row);
+    enqueueRuntimeDbUpsert(row, {
+      flushWhenFull: opts.flushWhenFull !== false,
     });
-  if (error) throw error;
+    return;
+  }
+
+  await upsertRuntimeDbRows([row]);
+  setRuntimeHotCacheFromDbRow(row);
 }
 
 async function deleteDocument(modelName, id) {
   const model = String(modelName || '').trim();
   const docId = String(id || '').trim();
   if (!model || !docId) return;
+  deleteRuntimeQueuedWrite(model, docId);
+  deleteRuntimeHotCacheRow(model, docId);
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from(RUNTIME_TABLE)
@@ -191,6 +433,8 @@ async function deleteDocumentsByPrefix(modelName, idPrefix, { limit = 1000 } = {
       break;
     }
   }
+  deleteRuntimeQueuedWritesByPrefix(model, prefix);
+  deleteRuntimeHotCacheRowsByPrefix(model, prefix);
   return deletedTotal;
 }
 
@@ -218,6 +462,27 @@ function normalizeIdPart(value) {
 
 function buildRuntimeId(parts) {
   return parts.map((part) => normalizeIdPart(part)).join(':');
+}
+
+function clearBattleRuntimeCache(battleId) {
+  const safeBattleId = normalizeIdPart(battleId);
+  if (!safeBattleId) return 0;
+
+  const prefix = `${safeBattleId}:`;
+  return [
+    RUNTIME_MODELS.shot,
+    RUNTIME_MODELS.hitSlot,
+    RUNTIME_MODELS.processedHit,
+    RUNTIME_MODELS.cooldownWindow,
+    RUNTIME_MODELS.attendanceState,
+    RUNTIME_MODELS.finalReport,
+    RUNTIME_MODELS.finalSettlement,
+    RUNTIME_MODELS.finalSummary,
+  ].reduce((sum, modelName) => {
+    const queued = deleteRuntimeQueuedWritesByPrefix(modelName, prefix);
+    const cached = deleteRuntimeHotCacheRowsByPrefix(modelName, prefix);
+    return sum + queued + cached;
+  }, 0);
 }
 
 function normalizeWorldPoint(raw) {
@@ -360,6 +625,45 @@ function buildAttendanceStateDocId({ battleId, userId }) {
   return buildRuntimeId([battleId, userId, 'attendance']);
 }
 
+function primeAttendanceStateCache({
+  battleId,
+  userId,
+  state,
+  ttlMs = 3 * 60 * 60 * 1000,
+}) {
+  if (!battleId || !userId || !state || typeof state !== 'object') return null;
+  const safeBattleId = normalizeIdPart(battleId);
+  const safeUserId = normalizeIdPart(userId);
+  const payload = {
+    battleId: safeBattleId,
+    userId: safeUserId,
+    ...(state || {}),
+    expiresAt: state.expiresAt || toIsoString(Date.now() + Math.max(60 * 1000, Number(ttlMs) || 3 * 60 * 60 * 1000)),
+  };
+  setRuntimeHotCacheRow(
+    RUNTIME_MODELS.attendanceState,
+    buildAttendanceStateDocId({ battleId: safeBattleId, userId: safeUserId }),
+    {
+      id: buildAttendanceStateDocId({ battleId: safeBattleId, userId: safeUserId }),
+      data: payload,
+      updatedAt: new Date(),
+      expiresAt: payload.expiresAt,
+    },
+  );
+  return payload;
+}
+
+function getCachedAttendanceState({ battleId, userId }) {
+  if (!battleId || !userId) return null;
+  const safeBattleId = normalizeIdPart(battleId);
+  const safeUserId = normalizeIdPart(userId);
+  const cached = getRuntimeHotCacheRow(
+    RUNTIME_MODELS.attendanceState,
+    buildAttendanceStateDocId({ battleId: safeBattleId, userId: safeUserId }),
+  );
+  return cached?.data || null;
+}
+
 function buildFinalReportDocId({ battleId, userId }) {
   return buildRuntimeId([battleId, userId, 'final']);
 }
@@ -382,7 +686,18 @@ function buildDarknessStateDocId(kind) {
 
 async function getFinalReport({ battleId, userId }) {
   if (!battleId || !userId) return null;
+  const cached = getCachedFinalReport({ battleId, userId });
+  if (cached) return cached;
   return loadActiveRuntimeData(RUNTIME_MODELS.finalReport, buildFinalReportDocId({ battleId, userId }));
+}
+
+function getCachedFinalReport({ battleId, userId }) {
+  if (!battleId || !userId) return null;
+  const cached = getRuntimeHotCacheRow(
+    RUNTIME_MODELS.finalReport,
+    buildFinalReportDocId({ battleId, userId }),
+  );
+  return cached?.data || null;
 }
 
 async function upsertFinalReport({ battleId, userId, report, ttlMs = 2 * 60 * 60 * 1000 }) {
@@ -391,13 +706,25 @@ async function upsertFinalReport({ battleId, userId, report, ttlMs = 2 * 60 * 60
   await upsertDocument(RUNTIME_MODELS.finalReport, buildFinalReportDocId({ battleId, userId }), {
     ...(report || {}),
     expiresAt: toIsoString(expiresAtMs),
+  }, {
+    updatedAt: new Date(),
+    defer: true,
+    flushWhenFull: false,
   });
   return report || null;
 }
 
-async function listFinalReportsByBattle({ battleId, limit = 5000 } = {}) {
+async function listFinalReportsByBattle({ battleId, limit = 5000, preferCache = false, cacheOnly = false } = {}) {
   const safeBattleId = normalizeIdPart(battleId);
   if (!safeBattleId) return [];
+  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.finalReport, {
+    idPrefix: `${safeBattleId}:`,
+    limit,
+  });
+  if ((preferCache || cacheOnly) && cached.length) {
+    return mergeRuntimePayloads(cached, { limit });
+  }
+  if (cacheOnly) return [];
 
   const client = getSupabaseClient();
   const out = [];
@@ -424,7 +751,13 @@ async function listFinalReportsByBattle({ battleId, limit = 5000 } = {}) {
       if (!payload) continue;
       const expiresAtMs = getExpiryMs(payload);
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
-      out.push({ id: String(row?.id || ''), data: payload });
+      const rowId = String(row?.id || '');
+      setRuntimeHotCacheRow(RUNTIME_MODELS.finalReport, rowId, {
+        id: rowId,
+        data: payload,
+        expiresAt: row?.expires_at || payload.expiresAt || null,
+      });
+      out.push({ id: rowId, data: payload });
       if (out.length >= limit) break;
     }
 
@@ -435,12 +768,12 @@ async function listFinalReportsByBattle({ battleId, limit = 5000 } = {}) {
     from += data.length;
   }
 
-  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.finalReport, {
+  const latestCached = listRuntimeHotCacheRows(RUNTIME_MODELS.finalReport, {
     idPrefix: `${safeBattleId}:`,
     limit,
   });
   return mergeRuntimePayloads([
-    ...cached,
+    ...latestCached,
     ...out,
   ], { limit });
 }
@@ -468,7 +801,18 @@ async function deleteFinalSettlement({ battleId }) {
 
 async function getFinalSummary({ battleId, userId }) {
   if (!battleId || !userId) return null;
+  const cached = getCachedFinalSummary({ battleId, userId });
+  if (cached) return cached;
   return loadActiveRuntimeData(RUNTIME_MODELS.finalSummary, buildFinalSummaryDocId({ battleId, userId }));
+}
+
+function getCachedFinalSummary({ battleId, userId }) {
+  if (!battleId || !userId) return null;
+  const cached = getRuntimeHotCacheRow(
+    RUNTIME_MODELS.finalSummary,
+    buildFinalSummaryDocId({ battleId, userId }),
+  );
+  return cached?.data || null;
 }
 
 async function upsertFinalSummary({ battleId, userId, summary, ttlMs = 14 * 24 * 60 * 60 * 1000 }) {
@@ -479,6 +823,10 @@ async function upsertFinalSummary({ battleId, userId, summary, ttlMs = 14 * 24 *
     battleId: normalizeIdPart(battleId),
     userId: normalizeIdPart(userId),
     expiresAt: toIsoString(expiresAtMs),
+  }, {
+    updatedAt: new Date(),
+    defer: true,
+    flushWhenFull: false,
   });
   return summary || null;
 }
@@ -512,7 +860,13 @@ async function listFinalSummariesByBattle({ battleId, limit = 5000 } = {}) {
       if (!payload) continue;
       const expiresAtMs = getExpiryMs(payload);
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
-      out.push({ id: String(row?.id || ''), data: payload });
+      const rowId = String(row?.id || '');
+      setRuntimeHotCacheRow(RUNTIME_MODELS.finalSummary, rowId, {
+        id: rowId,
+        data: payload,
+        expiresAt: row?.expires_at || payload.expiresAt || null,
+      });
+      out.push({ id: rowId, data: payload });
       if (out.length >= limit) break;
     }
 
@@ -840,6 +1194,8 @@ async function reserveAcceptedHitSlot({
 
 async function getAttendanceState({ battleId, userId }) {
   if (!battleId || !userId) return null;
+  const cached = getCachedAttendanceState({ battleId, userId });
+  if (cached) return cached;
   return loadActiveRuntimeData(
     RUNTIME_MODELS.attendanceState,
     buildAttendanceStateDocId({ battleId, userId })
@@ -866,6 +1222,8 @@ async function upsertAttendanceState({
 
   await upsertDocument(RUNTIME_MODELS.attendanceState, id, payload, {
     updatedAt: new Date(),
+    defer: true,
+    flushWhenFull: false,
   });
 
   return payload;
@@ -888,19 +1246,27 @@ async function createAttendanceStateIfAbsent({
     battleId: safeBattleId,
     userId: safeUserId,
     ...(state || {}),
+    expiresAt: toIsoString(expiresAtMs),
   };
 
-  const result = await claimExpiringUniqueDocument({
-    modelName: RUNTIME_MODELS.attendanceState,
-    id: buildAttendanceStateDocId({ battleId: safeBattleId, userId: safeUserId }),
-    data: payload,
-    expiresAtMs,
-    createdAtMs: Date.now(),
+  const cached = getCachedAttendanceState({ battleId: safeBattleId, userId: safeUserId });
+  if (cached) {
+    return {
+      created: false,
+      state: cached,
+    };
+  }
+
+  const saved = await upsertAttendanceState({
+    battleId: safeBattleId,
+    userId: safeUserId,
+    state: payload,
+    ttlMs,
   });
 
   return {
-    created: Boolean(result?.created),
-    state: result?.data || payload,
+    created: true,
+    state: saved || payload,
   };
 }
 
@@ -912,9 +1278,17 @@ async function deleteAttendanceState({ battleId, userId }) {
   ).catch(() => {});
 }
 
-async function listAttendanceStatesByBattle({ battleId, limit = 5000 } = {}) {
+async function listAttendanceStatesByBattle({ battleId, limit = 5000, preferCache = false, cacheOnly = false } = {}) {
   const safeBattleId = normalizeIdPart(battleId);
   if (!safeBattleId) return [];
+  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.attendanceState, {
+    idPrefix: `${safeBattleId}:`,
+    limit,
+  });
+  if ((preferCache || cacheOnly) && cached.length) {
+    return mergeRuntimePayloads(cached, { limit });
+  }
+  if (cacheOnly) return [];
 
   const client = getSupabaseClient();
   const out = [];
@@ -941,7 +1315,13 @@ async function listAttendanceStatesByBattle({ battleId, limit = 5000 } = {}) {
       if (!payload) continue;
       const expiresAtMs = getExpiryMs(payload);
       if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) continue;
-      out.push({ id: String(row?.id || ''), data: payload });
+      const rowId = String(row?.id || '');
+      setRuntimeHotCacheRow(RUNTIME_MODELS.attendanceState, rowId, {
+        id: rowId,
+        data: payload,
+        expiresAt: row?.expires_at || payload.expiresAt || null,
+      });
+      out.push({ id: rowId, data: payload });
       if (out.length >= limit) break;
     }
 
@@ -952,12 +1332,12 @@ async function listAttendanceStatesByBattle({ battleId, limit = 5000 } = {}) {
     from += data.length;
   }
 
-  const cached = listRuntimeHotCacheRows(RUNTIME_MODELS.attendanceState, {
+  const latestCached = listRuntimeHotCacheRows(RUNTIME_MODELS.attendanceState, {
     idPrefix: `${safeBattleId}:`,
     limit,
   });
   return mergeRuntimePayloads([
-    ...cached,
+    ...latestCached,
     ...out,
   ], { limit });
 }
@@ -967,7 +1347,8 @@ async function cleanupModelByUpdatedBefore({ modelName, beforeMs, limit = CLEANU
   if (safeModel) {
     for (const [key, entry] of runtimeHotCache.entries()) {
       if (!key.startsWith(`${safeModel}::`)) continue;
-      const updatedAtMs = parseMs(entry?.row?.updatedAt || entry?.row?.data?.updatedAt);
+      const row = entry?.row || entry;
+      const updatedAtMs = parseMs(row?.updatedAt || row?.data?.updatedAt);
       if (Number.isFinite(updatedAtMs) && updatedAtMs < beforeMs) {
         runtimeHotCache.delete(key);
       }
@@ -1007,7 +1388,10 @@ async function cleanupModelByUpdatedBefore({ modelName, beforeMs, limit = CLEANU
     return 0;
   }
 
-  ids.forEach((id) => deleteRuntimeHotCacheRow(modelName, id));
+  ids.forEach((id) => {
+    deleteRuntimeQueuedWrite(modelName, id);
+    deleteRuntimeHotCacheRow(modelName, id);
+  });
 
   return ids.length;
 }
@@ -1061,17 +1445,21 @@ module.exports = {
   claimProcessedHit,
   reserveAcceptedHitSlot,
   getAttendanceState,
+  getCachedAttendanceState,
+  primeAttendanceStateCache,
   upsertAttendanceState,
   createAttendanceStateIfAbsent,
   deleteAttendanceState,
   listAttendanceStatesByBattle,
   getFinalReport,
+  getCachedFinalReport,
   upsertFinalReport,
   listFinalReportsByBattle,
   getFinalSettlement,
   upsertFinalSettlement,
   deleteFinalSettlement,
   getFinalSummary,
+  getCachedFinalSummary,
   upsertFinalSummary,
   listFinalSummariesByBattle,
   listDueFinalSettlements,
@@ -1081,6 +1469,9 @@ module.exports = {
   getDarknessState,
   setDarknessState,
   clearDarknessState,
+  clearBattleRuntimeCache,
   deleteDocumentsByPrefix,
+  flushRuntimeWriteQueue,
+  flushAllRuntimeWriteQueue,
   maybeCleanupExpiredEntries,
 };

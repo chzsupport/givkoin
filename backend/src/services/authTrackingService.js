@@ -34,6 +34,71 @@ function buildSessionId() {
   return `sid_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 }
 
+const REVOKED_SESSION_TTL_MS = Math.max(60 * 60 * 1000, Number(process.env.AUTH_REVOKED_SESSION_TTL_MS) || (24 * 60 * 60 * 1000));
+const ACTIVE_SESSION_TTL_MS = Math.max(60 * 1000, Number(process.env.AUTH_ACTIVE_SESSION_TTL_MS) || (15 * 60 * 1000));
+const revokedSessionRuntime = new Map();
+const activeSessionRuntime = new Map();
+
+function buildActiveSessionRuntimeKey(userId, sessionId) {
+  const safeUserId = String(userId || '').trim();
+  const safeSessionId = String(sessionId || '').trim();
+  if (!safeUserId || !safeSessionId) return '';
+  return `${safeUserId}:${safeSessionId}`;
+}
+
+function cleanupRevokedSessionRuntime(nowMs = Date.now()) {
+  for (const [sessionId, expiresAtMs] of revokedSessionRuntime.entries()) {
+    if (!sessionId || Number(expiresAtMs) <= nowMs) {
+      revokedSessionRuntime.delete(sessionId);
+    }
+  }
+}
+
+function markSessionsRevoked(sessionIds = []) {
+  const nowMs = Date.now();
+  cleanupRevokedSessionRuntime(nowMs);
+  for (const sessionId of Array.isArray(sessionIds) ? sessionIds : []) {
+    const safeSessionId = String(sessionId || '').trim();
+    if (!safeSessionId) continue;
+    revokedSessionRuntime.set(safeSessionId, nowMs + REVOKED_SESSION_TTL_MS);
+    for (const key of Array.from(activeSessionRuntime.keys())) {
+      if (key.endsWith(`:${safeSessionId}`)) {
+        activeSessionRuntime.delete(key);
+      }
+    }
+  }
+}
+
+function isSessionKnownRevoked(sessionId) {
+  const safeSessionId = String(sessionId || '').trim();
+  if (!safeSessionId) return false;
+  const expiresAtMs = Number(revokedSessionRuntime.get(safeSessionId)) || 0;
+  if (!expiresAtMs) return false;
+  if (expiresAtMs <= Date.now()) {
+    revokedSessionRuntime.delete(safeSessionId);
+    return false;
+  }
+  return true;
+}
+
+function markSessionActiveRuntime({ userId, sessionId }) {
+  const key = buildActiveSessionRuntimeKey(userId, sessionId);
+  if (!key) return;
+  activeSessionRuntime.set(key, Date.now() + ACTIVE_SESSION_TTL_MS);
+}
+
+function isSessionActiveRuntime({ userId, sessionId }) {
+  const key = buildActiveSessionRuntimeKey(userId, sessionId);
+  if (!key) return false;
+  const expiresAtMs = Number(activeSessionRuntime.get(key)) || 0;
+  if (!expiresAtMs) return false;
+  if (expiresAtMs <= Date.now()) {
+    activeSessionRuntime.delete(key);
+    return false;
+  }
+  return true;
+}
+
 function normalizeIdentityToken(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -199,6 +264,7 @@ async function revokeSessionsByIds({ sessionIds = [], revokedBy = null, reason =
       .eq('is_active', true)
       .select('*');
     if (error || !Array.isArray(data)) return [];
+    markSessionsRevoked(data.map((session) => session?.session_id));
     return data;
   } catch (_err) {
     return [];
@@ -437,6 +503,8 @@ async function touchSession(sessionId, req) {
 
 async function isSessionActive({ userId, sessionId }) {
   if (!sessionId || !userId) return false;
+  if (isSessionKnownRevoked(sessionId)) return false;
+  if (isSessionActiveRuntime({ userId, sessionId })) return true;
   try {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
@@ -446,10 +514,14 @@ async function isSessionActive({ userId, sessionId }) {
       .eq('user_id', String(userId))
       .eq('is_active', true)
       .maybeSingle();
-    if (error) return false;
-    return Boolean(data);
-  } catch (_err) {
+    if (error) return true;
+    if (data) {
+      markSessionActiveRuntime({ userId, sessionId });
+      return true;
+    }
     return false;
+  } catch (_err) {
+    return true;
   }
 }
 
@@ -480,6 +552,7 @@ async function revokeSession({ sessionId, revokedBy = null, reason = 'session_re
       .select('*')
       .maybeSingle();
     if (error) return null;
+    markSessionsRevoked([sessionId]);
     return data || null;
   } catch (_err) {
     return null;
@@ -505,6 +578,7 @@ async function revokeAllUserSessions({ userId, revokedBy = null, reason = 'revok
       .eq('is_active', true)
       .select('session_id');
     if (error) return 0;
+    markSessionsRevoked((Array.isArray(data) ? data : []).map((session) => session?.session_id));
     return Array.isArray(data) ? data.length : 0;
   } catch (_err) {
     return 0;
@@ -525,4 +599,5 @@ module.exports = {
   revokeAllUserSessions,
   enforceSingleDeviceSession,
   notifyForcedLogout,
+  isSessionKnownRevoked,
 };

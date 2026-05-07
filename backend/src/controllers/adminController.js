@@ -23,6 +23,7 @@ const {
 } = require('../services/adminCleanupService');
 const { recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const battleService = require('../services/battleService');
+const { revokeAllUserSessions } = require('../services/authTrackingService');
 const { adminAudit } = require('../middleware/adminAudit');
 const { forEachUserBatch } = require('../services/userBatchService');
 const bcrypt = require('bcryptjs');
@@ -1306,6 +1307,18 @@ exports.updateUser = async (req, res) => {
             .select('id,email,nickname,role,status,email_confirmed,created_at,updated_at,data')
             .maybeSingle();
         if (error || !updated) return res.status(500).json({ message: 'Server error' });
+
+        if (
+            Object.prototype.hasOwnProperty.call(columnUpdates, 'status')
+            && String(columnUpdates.status || '').trim() === 'banned'
+            && String(current.status || '') !== 'banned'
+        ) {
+            await revokeAllUserSessions({
+                userId: id,
+                revokedBy: req.user?._id || null,
+                reason: 'admin_user_banned',
+            });
+        }
 
         await adminAudit('user.update', req, {
             targetId: id,

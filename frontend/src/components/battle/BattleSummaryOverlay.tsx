@@ -560,6 +560,12 @@ export function BattleSummaryOverlay({
                                         </div>
                                     )}
 
+                                    {revealComplete ? (
+                                        <div className="mt-5 text-center text-sm font-semibold text-[#efcf8b] md:text-base">
+                                            {t('battle_summary.stats_update_note')}
+                                        </div>
+                                    ) : null}
+
                                     <div className="mt-7 flex flex-col items-center justify-center gap-3 pb-1 sm:flex-row sm:justify-center">
                                         {revealComplete && onSecondaryAction && secondaryActionLabel ? (
                                             <button

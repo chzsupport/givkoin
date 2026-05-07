@@ -28,6 +28,10 @@ const { createRateLimiter } = require('./middleware/rateLimit');
 
 const { registerCronJobs } = require('./services/cronJobs');
 
+const battleRuntimeStore = require('./services/battleRuntimeStore');
+
+const battleService = require('./services/battleService');
+
 const { initSocket, closeSocketAdapter } = require('./socket');
 
 const logger = require('./utils/logger');
@@ -324,6 +328,8 @@ app.use((req, res, next) => {
 
     if (statusCode < 200 || statusCode >= 300) return;
 
+    if (String(pathName || '').startsWith('/battles/')) return;
+
 
 
     recordBehaviorEvent({
@@ -606,6 +612,20 @@ const startServer = async () => {
 
     registerCronJobs();
 
+    const battleRecovery = await battleService.recoverActiveBattleRuntime().catch((error) => {
+
+      logger.error('Battle runtime recovery failed', error);
+
+      return null;
+
+    });
+
+    if (battleRecovery?.recovered) {
+
+      logger.info('Battle runtime recovered', battleRecovery);
+
+    }
+
     ioInstance = await initSocket(server);
 
     app.set('io', ioInstance);
@@ -673,6 +693,14 @@ const shutdownServer = async (signal = 'shutdown') => {
     }),
 
   ]);
+
+
+
+  await battleRuntimeStore.flushAllRuntimeWriteQueue().catch((error) => {
+
+    logger.error('Battle runtime queue flush failed during shutdown', error);
+
+  });
 
 
 

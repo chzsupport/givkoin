@@ -120,12 +120,22 @@ const BATTLE_SYNC_INTERVAL_SECONDS = Math.max(1, parseInt(process.env.BATTLE_SYN
 const BATTLE_FINAL_REPORT_ACCEPT_SECONDS = Math.max(1, parseInt(process.env.BATTLE_FINAL_REPORT_ACCEPT_SECONDS || '30', 10) || 30);
 const BATTLE_FINAL_WINDOW_SECONDS = BATTLE_FINAL_REPORT_ACCEPT_SECONDS;
 const BATTLE_FINAL_REPORT_RETRY_INTERVAL_MS = Math.max(250, parseInt(process.env.BATTLE_FINAL_REPORT_RETRY_INTERVAL_MS || '2000', 10) || 2000);
-const BATTLE_FINAL_REPORT_WINDOW_CAPACITY = Math.max(1, parseInt(process.env.BATTLE_FINAL_REPORT_WINDOW_CAPACITY || '2000', 10) || 2000);
+const BATTLE_FINAL_REPORT_WINDOW_CAPACITY = Math.max(1, parseInt(process.env.BATTLE_FINAL_REPORT_WINDOW_CAPACITY || '500', 10) || 500);
 const BATTLE_FINAL_MIN_DAMAGE_PCT = Math.max(0, Math.min(1, Number(process.env.BATTLE_FINAL_MIN_DAMAGE_PCT || '0.1')));
 const BATTLE_FINAL_DEFER_MIN_MS = Math.max(0, Number(process.env.BATTLE_FINAL_DEFER_MIN_MS || (2 * 60 * 1000)));
 const BATTLE_FINAL_DEFER_MAX_MS = Math.max(BATTLE_FINAL_DEFER_MIN_MS, Number(process.env.BATTLE_FINAL_DEFER_MAX_MS || (5 * 60 * 1000)));
+const BATTLE_FINAL_SIDE_EFFECT_BATCH_SIZE = Math.max(
+  1,
+  Math.min(500, Number(process.env.BATTLE_FINAL_SIDE_EFFECT_BATCH_SIZE) || 25),
+);
+const BATTLE_FINISHED_ATTENDANCE_INLINE_LIMIT = Math.max(
+  0,
+  Math.floor(Number(process.env.BATTLE_FINISHED_ATTENDANCE_INLINE_LIMIT) || 1000),
+);
 const battleEarlyFinalizeLocks = new Set();
 const battleFinalizeTimers = new Map();
+const battleAttendanceLocks = new Map();
+const battleAttendanceCounters = new Map();
 const CURRENT_BATTLE_POINTER_KIND = 'current';
 const UPCOMING_BATTLE_POINTER_KIND = 'upcoming';
 
@@ -156,11 +166,15 @@ function clearBattleFinalizeSchedule(battleId) {
   battleFinalizeTimers.delete(safeBattleId);
 }
 
-function clearBattleTransientState(battleId) {
+function clearBattleTransientState(battleId, { keepRuntime = false } = {}) {
   const safeBattleId = String(battleId || '').trim();
   if (!safeBattleId) return;
   clearBattleFinalizeSchedule(safeBattleId);
   battleEarlyFinalizeLocks.delete(safeBattleId);
+  clearBattleAttendanceCounter(safeBattleId);
+  if (!keepRuntime) {
+    battleRuntimeStore.clearBattleRuntimeCache(safeBattleId);
+  }
 }
 
 function clearAllBattleTransientState() {
@@ -168,6 +182,9 @@ function clearAllBattleTransientState() {
     clearBattleFinalizeSchedule(battleId);
   }
   battleEarlyFinalizeLocks.clear();
+  for (const battleId of Array.from(battleAttendanceCounters.keys())) {
+    clearBattleAttendanceCounter(battleId);
+  }
 }
 
 async function getBattleById(battleId) {
@@ -219,6 +236,176 @@ function scheduleBattleFinalize(battleLike) {
   return true;
 }
 
+async function withBattleAttendanceLock(battleId, task) {
+  const safeBattleId = String(battleId || '').trim();
+  if (!safeBattleId || typeof task !== 'function') {
+    return task();
+  }
+
+  const previous = battleAttendanceLocks.get(safeBattleId) || Promise.resolve();
+  let releaseCurrent = () => {};
+  const currentGate = new Promise((resolve) => {
+    releaseCurrent = resolve;
+  });
+  const currentTail = previous.catch(() => {}).then(() => currentGate);
+  battleAttendanceLocks.set(safeBattleId, currentTail);
+
+  await previous.catch(() => {});
+  try {
+    return await task();
+  } finally {
+    releaseCurrent();
+    if (battleAttendanceLocks.get(safeBattleId) === currentTail) {
+      battleAttendanceLocks.delete(safeBattleId);
+    }
+  }
+}
+
+function buildBattleAttendanceSnapshot(battle) {
+  if (!battle) return null;
+  return {
+    _id: battle._id,
+    status: battle.status,
+    startsAt: battle.startsAt || null,
+    firstPlayerJoinedAt: battle.firstPlayerJoinedAt || null,
+    durationSeconds: Number(battle.durationSeconds) || BATTLE_BASE_DURATION_SECONDS,
+    attendanceCount: Math.max(0, Number(battle.attendanceCount) || 0),
+    maxAttendanceCount: Math.max(0, Number(battle.maxAttendanceCount) || 0),
+    uniqueAttendanceCount: Math.max(0, Number(battle.uniqueAttendanceCount) || 0),
+    endsAt: battle.endsAt || null,
+    isShrunken: Boolean(battle.isShrunken),
+    activeUsersCountSnapshot: Math.max(0, Number(battle.activeUsersCountSnapshot) || 0),
+    scenario: battle?.scenario && typeof battle.scenario === 'object' ? battle.scenario : null,
+    injuries: Array.isArray(battle.injuries) ? battle.injuries : [],
+    injury: battle.injury || null,
+  };
+}
+
+function clearBattleAttendanceCounter(battleId) {
+  const safeBattleId = String(battleId || '').trim();
+  if (!safeBattleId) return;
+  const state = battleAttendanceCounters.get(safeBattleId);
+  if (state?.timer) {
+    clearTimeout(state.timer);
+  }
+  battleAttendanceCounters.delete(safeBattleId);
+}
+
+async function getBattleAttendanceCounter(battleId, fallbackBattle = null) {
+  const safeBattleId = String(battleId || '').trim();
+  if (!safeBattleId) return null;
+
+  let state = battleAttendanceCounters.get(safeBattleId);
+  if (state?.battle) return state;
+
+  const battle = await getModelDocById('Battle', safeBattleId) || fallbackBattle;
+  if (!battle) return null;
+
+  state = {
+    battle: { ...battle },
+    attendanceCount: Math.max(0, Number(battle.attendanceCount) || 0),
+    uniqueAttendanceCount: Math.max(0, Number(battle.uniqueAttendanceCount) || Number(battle.attendanceCount) || 0),
+    maxAttendanceCount: Math.max(0, Number(battle.maxAttendanceCount) || Number(battle.attendanceCount) || 0),
+    dirty: false,
+    version: 0,
+    timer: null,
+    flushing: null,
+  };
+  battleAttendanceCounters.set(safeBattleId, state);
+  return state;
+}
+
+async function flushBattleAttendanceCounter(battleId) {
+  const safeBattleId = String(battleId || '').trim();
+  if (!safeBattleId) return null;
+  const state = battleAttendanceCounters.get(safeBattleId);
+  if (!state) return null;
+  if (state.flushing) return state.flushing;
+
+  state.flushing = (async () => {
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    if (!state.dirty || !state.battle) {
+      return state.battle || null;
+    }
+
+    const flushVersion = Math.max(0, Number(state.version) || 0);
+    const targetAttendanceCount = Math.max(0, Number(state.attendanceCount) || 0);
+    const targetUniqueAttendanceCount = Math.max(0, Number(state.uniqueAttendanceCount) || 0);
+    const targetMaxAttendanceCount = Math.max(0, Number(state.maxAttendanceCount) || 0);
+    const patch = {
+      attendanceCount: targetAttendanceCount,
+      uniqueAttendanceCount: targetUniqueAttendanceCount,
+      maxAttendanceCount: targetMaxAttendanceCount,
+    };
+    if (state.battle.firstPlayerJoinedAt) {
+      patch.firstPlayerJoinedAt = state.battle.firstPlayerJoinedAt;
+      patch.globalDebuffActive = false;
+      patch.globalDebuffPercent = 0;
+    }
+    const timingUpdate = buildAttendanceTimingUpdate({
+      ...state.battle,
+      ...patch,
+    });
+    if (timingUpdate) {
+      Object.assign(patch, timingUpdate);
+    }
+
+    const saved = await updateModelDoc('Battle', safeBattleId, patch);
+    if (saved) {
+      state.battle = {
+        ...state.battle,
+        ...saved,
+        attendanceCount: state.attendanceCount,
+        uniqueAttendanceCount: state.uniqueAttendanceCount,
+        maxAttendanceCount: state.maxAttendanceCount,
+      };
+      if (Math.max(0, Number(state.version) || 0) === flushVersion) {
+        state.attendanceCount = targetAttendanceCount;
+        state.uniqueAttendanceCount = targetUniqueAttendanceCount;
+        state.maxAttendanceCount = targetMaxAttendanceCount;
+        state.battle = {
+          ...saved,
+          attendanceCount: targetAttendanceCount,
+          uniqueAttendanceCount: targetUniqueAttendanceCount,
+          maxAttendanceCount: targetMaxAttendanceCount,
+        };
+        state.dirty = false;
+      } else {
+        state.dirty = true;
+        scheduleBattleAttendanceCounterFlush(safeBattleId);
+      }
+      if (timingUpdate) {
+        scheduleBattleFinalize(saved);
+      }
+    }
+    return state.battle || saved || null;
+  })();
+
+  try {
+    return await state.flushing;
+  } finally {
+    state.flushing = null;
+  }
+}
+
+function scheduleBattleAttendanceCounterFlush(battleId, delayMs = 750) {
+  const safeBattleId = String(battleId || '').trim();
+  const state = battleAttendanceCounters.get(safeBattleId);
+  if (!state || state.timer) return;
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    flushBattleAttendanceCounter(safeBattleId).catch((error) => {
+      console.error('flushBattleAttendanceCounter error:', error);
+    });
+  }, Math.max(0, Number(delayMs) || 0));
+  if (typeof state.timer.unref === 'function') {
+    state.timer.unref();
+  }
+}
+
 async function refreshBattleFinalizeSchedule(battleId) {
   const safeBattleId = String(battleId || '').trim();
   if (!safeBattleId) return null;
@@ -229,6 +416,40 @@ async function refreshBattleFinalizeSchedule(battleId) {
   }
   scheduleBattleFinalize(battle);
   return battle;
+}
+
+async function recoverActiveBattleRuntime() {
+  const battle = await getCurrentBattle().catch(() => null);
+  if (!battle || String(battle.status || '') !== 'active') {
+    return { recovered: false, battleId: null, attendancePrimed: 0 };
+  }
+
+  await battleRuntimeStore.setBattlePointer(CURRENT_BATTLE_POINTER_KIND, battle._id).catch(() => {});
+  scheduleBattleFinalize(battle);
+
+  const runtimeAttendance = await battleRuntimeStore
+    .listAttendanceStatesByBattle({ battleId: battle._id, limit: 50000 })
+    .catch(() => []);
+
+  let attendancePrimed = Array.isArray(runtimeAttendance) ? runtimeAttendance.length : 0;
+  if (Array.isArray(battle.attendance) && battle.attendance.length) {
+    for (const row of battle.attendance) {
+      const userId = String(row?.user || '').trim();
+      if (!userId) continue;
+      battleRuntimeStore.primeAttendanceStateCache({
+        battleId: battle._id,
+        userId,
+        state: row,
+      });
+      attendancePrimed += 1;
+    }
+  }
+
+  return {
+    recovered: true,
+    battleId: battle._id,
+    attendancePrimed,
+  };
 }
 
 function getUserData(row) {
@@ -512,6 +733,30 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function retryBattleSideEffect(action, { attempts = 5, delayMs = 250 } = {}) {
+  const safeAttempts = Math.max(1, Math.floor(Number(attempts) || 1));
+  const safeDelayMs = Math.max(0, Math.floor(Number(delayMs) || 0));
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= safeAttempts; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await action(attempt);
+      if (result != null) return result;
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < safeAttempts && safeDelayMs > 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(safeDelayMs * attempt);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
 function randBetween(min, max) {
   const lo = Math.min(min, max);
   const hi = Math.max(min, max);
@@ -721,9 +966,9 @@ function computeBattleForceTotals(battleLike, { endedAt = null, baddieDamage = 0
 }
 
 const WEAPON_COMBAT_RULES = Object.freeze({
-  1: { damage: 6, costLumens: 10, maxHitsPerShot: 10, minShotGapMs: 35, maxAimDeviation: 85 },
-  2: { damage: 500, costLumens: 100, maxHitsPerShot: 2, minShotGapMs: 2600, maxAimDeviation: 45 },
-  3: { damage: 5000, costLumens: 500, maxHitsPerShot: 1, minShotGapMs: 4500, maxAimDeviation: 28 },
+  1: { damage: 6, costLumens: 10, maxHitsPerShot: 10, minShotGapMs: 16, maxAimDeviation: 85 },
+  2: { damage: 500, costLumens: 100, maxHitsPerShot: 2, minShotGapMs: 3000, maxAimDeviation: 45 },
+  3: { damage: 5000, costLumens: 500, maxHitsPerShot: 1, minShotGapMs: 5000, maxAimDeviation: 28 },
 });
 
 function getWeaponCombatRules(weaponId) {
@@ -1683,12 +1928,15 @@ async function finishBattle(
   const finalAttendanceCount = typeof attendanceCount === 'number'
     ? attendanceCount
     : finalAttendance.length;
+  const shouldInlineFinishedAttendance = finalAttendance.length <= BATTLE_FINISHED_ATTENDANCE_INLINE_LIMIT;
   const patch = {
     status: 'finished',
     endsAt: endedAt ? new Date(endedAt) : new Date(),
     darknessDamage: nextDarknessDamage,
     lightDamage: nextLightDamage,
-    attendance: finalAttendance,
+    attendance: shouldInlineFinishedAttendance ? finalAttendance : [],
+    attendanceStoredInRuntime: !shouldInlineFinishedAttendance,
+    attendanceRuntimeCount: finalAttendance.length,
   };
   if (typeof finalAttendanceCount === 'number') {
     patch.attendanceCount = finalAttendanceCount;
@@ -1778,7 +2026,7 @@ async function finishBattle(
 
   let attendanceUsersById = new Map();
   try {
-    const summary = await buildFinishedBattleSummary({ ...battle, ...patch });
+    const summary = await buildFinishedBattleSummary({ ...battle, ...patch, attendance: finalAttendance });
     attendanceUsersById = summary?.usersById || new Map();
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -1788,12 +2036,12 @@ async function finishBattle(
 
   const saved = await updateModelDoc('Battle', battleId, patch);
   if (!saved) throw new Error('Battle not found');
-  clearBattleFinalizeSchedule(saved._id);
+  clearBattleTransientState(saved._id, { keepRuntime: true });
   await battleRuntimeStore.clearBattlePointer(CURRENT_BATTLE_POINTER_KIND, saved._id).catch(() => {});
   await battleRuntimeStore.clearBattlePointer(UPCOMING_BATTLE_POINTER_KIND, saved._id).catch(() => {});
 
   try {
-    await prepareBattleSummaries(saved._id);
+    await prepareBattleSummaries(saved._id, { attendanceOverride: finalAttendance });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('finishBattle: prepare summaries failed', e);
@@ -1802,7 +2050,7 @@ async function finishBattle(
   const runSideEffects = async (delayPerBatchMs = 0) => {
     // Итоговая награда за бой считается один раз в конце только по урону.
     try {
-      const batchSize = 25;
+      const batchSize = BATTLE_FINAL_SIDE_EFFECT_BATCH_SIZE;
       for (let offset = 0; offset < finalAttendance.length; offset += batchSize) {
         // eslint-disable-next-line no-await-in-loop
         await Promise.all(finalAttendance.slice(offset, offset + batchSize).map(async (row) => {
@@ -1811,13 +2059,17 @@ async function finishBattle(
           const amount = computeBattleRewardK({
             damage: Number(row?.damage) || 0,
           });
-          const kUpdatedRow = await awardBattleK({
+          const kUpdatedRow = await retryBattleSideEffect(() => awardBattleK({
             userId,
             amount,
             relatedEntity: battle._id,
             description: null,
             skipDebuff: true,
-          }).catch((error) => {
+            skipBlessing: true,
+            skipMood: true,
+            skipReferral: true,
+            skipExistingCheck: true,
+          }), { attempts: 6, delayMs: 300 }).catch((error) => {
             // eslint-disable-next-line no-console
             console.error('finishBattle: awardBattleK failed', { battleId, userId, error });
             return null;
@@ -1835,11 +2087,11 @@ async function finishBattle(
           );
 
           if (Math.max(0, Math.floor(Number(userData?.lumens) || 0)) !== nextLumens) {
-            await updateUserDataById(
+            await retryBattleSideEffect(() => updateUserDataById(
               userId,
               { lumens: nextLumens },
               { userRow: kUpdatedRow || null },
-            ).catch((error) => {
+            ), { attempts: 6, delayMs: 300 }).catch((error) => {
               // eslint-disable-next-line no-console
               console.error('finishBattle: update battle lumens failed', { battleId, userId, error });
             });
@@ -1864,7 +2116,7 @@ async function finishBattle(
             ? 'light'
             : 'dark';
         const users = Array.from(attendanceUsersById.values()).filter((user) => user?.email);
-        const batchSize = 25;
+        const batchSize = BATTLE_FINAL_SIDE_EFFECT_BATCH_SIZE;
         for (let offset = 0; offset < users.length; offset += batchSize) {
           // eslint-disable-next-line no-await-in-loop
           await Promise.all(users.slice(offset, offset + batchSize).map((u) =>
@@ -1892,7 +2144,7 @@ async function finishBattle(
     const startDelayMs = Math.floor(randBetween(BATTLE_FINAL_DEFER_MIN_MS, BATTLE_FINAL_DEFER_MAX_MS));
     const spreadMs = Math.floor(randBetween(BATTLE_FINAL_DEFER_MIN_MS, BATTLE_FINAL_DEFER_MAX_MS));
     setTimeout(async () => {
-      const batchSize = 25;
+      const batchSize = BATTLE_FINAL_SIDE_EFFECT_BATCH_SIZE;
       const batches = Math.max(1, Math.ceil(finalAttendance.length / batchSize));
       const perBatchDelay = Math.max(0, Math.floor(spreadMs / batches));
       await runSideEffects(perBatchDelay).catch(() => {});
@@ -1912,7 +2164,7 @@ async function cancelBattle(battleId, reason = 'Cancelled by scheduler') {
     endsAt: new Date(),
   });
   if (!saved) throw new Error('Battle not found');
-  clearBattleFinalizeSchedule(saved._id);
+  clearBattleTransientState(saved._id);
   await battleRuntimeStore.clearBattlePointer(CURRENT_BATTLE_POINTER_KIND, saved._id).catch(() => {});
   await battleRuntimeStore.clearBattlePointer(UPCOMING_BATTLE_POINTER_KIND, saved._id).catch(() => {});
   return saved;
@@ -1943,69 +2195,108 @@ async function registerAttendance(
   } = {}
 ) {
   if (!userId) return { joined: false, appliedTimerUpdate: false, sync: null, battleSnapshot: null };
-  const snapshot = battle || await getModelDocById('Battle', battleId);
-  if (!snapshot) {
-    return { joined: false, appliedTimerUpdate: false, sync: null, battleSnapshot: null };
-  }
-  const currentAttendanceCount = Math.max(0, Number(snapshot.attendanceCount) || 0);
-  const currentMaxAttendanceCount = Math.max(0, Number(snapshot.maxAttendanceCount) || currentAttendanceCount);
-  const currentUniqueAttendanceCount = Math.max(0, Number(snapshot.uniqueAttendanceCount) || currentAttendanceCount);
-  const sync = buildAttendanceSyncState(currentAttendanceCount);
+
   const safeJoinedAt = new Date(joinedAt);
-  const attendanceEntry = {
+  const initialEntry = {
     user: String(userId),
     joinedAt: safeJoinedAt,
     damage: 0,
-    syncSlot: sync.syncSlot,
-    syncSlotCount: sync.syncSlotCount,
-    syncIntervalSeconds: sync.syncIntervalSeconds,
+    syncSlot: 0,
+    syncSlotCount: BATTLE_SYNC_SLOT_COUNT,
+    syncIntervalSeconds: BATTLE_SYNC_INTERVAL_SECONDS,
   };
   const claimedAttendance = await battleRuntimeStore.createAttendanceStateIfAbsent({
     battleId,
     userId,
-    state: attendanceEntry,
+    state: initialEntry,
   });
+
   if (!claimedAttendance?.created) {
-    return { joined: false, appliedTimerUpdate: false, sync, battleSnapshot: snapshot };
+    const existing = claimedAttendance?.state || await battleRuntimeStore.getAttendanceState({ battleId, userId }).catch(() => null);
+    const sync = {
+      syncSlot: Math.max(0, Number(existing?.syncSlot) || 0),
+      syncSlotCount: Math.max(1, Number(existing?.syncSlotCount) || BATTLE_SYNC_SLOT_COUNT),
+      syncIntervalSeconds: Math.max(1, Number(existing?.syncIntervalSeconds) || BATTLE_SYNC_INTERVAL_SECONDS),
+    };
+    const snapshot = await getBattleAttendanceCounter(battleId, battle);
+    return {
+      joined: false,
+      appliedTimerUpdate: false,
+      sync,
+      battleSnapshot: buildBattleAttendanceSnapshot(snapshot?.battle || battle),
+    };
   }
 
-  const timingUpdate = buildAttendanceTimingUpdate(snapshot);
-  const nextPatch = {
-    attendanceCount: currentAttendanceCount + 1,
-    maxAttendanceCount: Math.max(currentMaxAttendanceCount, currentAttendanceCount + 1),
-    uniqueAttendanceCount: currentUniqueAttendanceCount + 1,
-  };
-  if (timingUpdate) {
-    Object.assign(nextPatch, timingUpdate);
-  }
+  return withBattleAttendanceLock(battleId, async () => {
+    const counter = await getBattleAttendanceCounter(battleId, battle);
+    if (!counter?.battle) {
+      await battleRuntimeStore.deleteAttendanceState({ battleId, userId }).catch(() => {});
+      return { joined: false, appliedTimerUpdate: false, sync: null };
+    }
 
-  const joinedBattle = await updateModelDoc('Battle', battleId, nextPatch);
-  if (!joinedBattle) {
-    await battleRuntimeStore.deleteAttendanceState({ battleId, userId }).catch(() => {});
-    return { joined: false, appliedTimerUpdate: false, sync: null };
-  }
+    const currentAttendanceCount = Math.max(0, Number(counter.attendanceCount) || 0);
+    const sync = buildAttendanceSyncState(currentAttendanceCount);
+    const nextAttendanceCount = currentAttendanceCount + 1;
+    const nextUniqueAttendanceCount = Math.max(0, Number(counter.uniqueAttendanceCount) || 0) + 1;
+    const nextMaxAttendanceCount = Math.max(
+      Math.max(0, Number(counter.maxAttendanceCount) || 0),
+      nextAttendanceCount,
+    );
+    const startedByFirstJoin = !counter.battle.firstPlayerJoinedAt;
+    const baseBattleForTiming = startedByFirstJoin
+      ? {
+        ...counter.battle,
+        firstPlayerJoinedAt: safeJoinedAt,
+        globalDebuffActive: false,
+        globalDebuffPercent: 0,
+        ...(!counter.battle.durationLocked
+          ? {
+            durationSeconds: BATTLE_BASE_DURATION_SECONDS,
+            endsAt: new Date(safeJoinedAt.getTime() + BATTLE_BASE_DURATION_SECONDS * 1000),
+          }
+          : {}),
+      }
+      : counter.battle;
+    const nextBattleForTiming = {
+      ...baseBattleForTiming,
+      attendanceCount: nextAttendanceCount,
+      uniqueAttendanceCount: nextUniqueAttendanceCount,
+      maxAttendanceCount: nextMaxAttendanceCount,
+    };
+    const timingUpdate = buildAttendanceTimingUpdate(nextBattleForTiming);
+    const nextBattle = {
+      ...nextBattleForTiming,
+      ...(timingUpdate || {}),
+    };
 
-  return {
-    joined: true,
-    appliedTimerUpdate: Boolean(timingUpdate),
-    sync,
-    battleSnapshot: joinedBattle ? {
-      _id: joinedBattle._id,
-      status: joinedBattle.status,
-      startsAt: joinedBattle.startsAt || null,
-      firstPlayerJoinedAt: joinedBattle.firstPlayerJoinedAt || null,
-      durationSeconds: Number(joinedBattle.durationSeconds) || BATTLE_BASE_DURATION_SECONDS,
-      attendanceCount: Math.max(0, Number(joinedBattle.attendanceCount) || 0),
-      maxAttendanceCount: Math.max(0, Number(joinedBattle.maxAttendanceCount) || 0),
-      uniqueAttendanceCount: Math.max(0, Number(joinedBattle.uniqueAttendanceCount) || 0),
-      endsAt: joinedBattle.endsAt || null,
-      isShrunken: Boolean(joinedBattle.isShrunken),
-      activeUsersCountSnapshot: Math.max(0, Number(joinedBattle.activeUsersCountSnapshot) || 0),
-      scenario: joinedBattle?.scenario && typeof joinedBattle.scenario === 'object' ? joinedBattle.scenario : null,
-      injuries: Array.isArray(joinedBattle.injuries) ? joinedBattle.injuries : [],
-      injury: joinedBattle.injury || null,
-    } : null,
-  };
+    counter.attendanceCount = nextAttendanceCount;
+    counter.uniqueAttendanceCount = nextUniqueAttendanceCount;
+    counter.maxAttendanceCount = nextMaxAttendanceCount;
+    counter.battle = nextBattle;
+    counter.version = Math.max(0, Number(counter.version) || 0) + 1;
+    counter.dirty = true;
+    scheduleBattleAttendanceCounterFlush(battleId);
+
+    const nextEntry = {
+      ...initialEntry,
+      syncSlot: sync.syncSlot,
+      syncSlotCount: sync.syncSlotCount,
+      syncIntervalSeconds: sync.syncIntervalSeconds,
+    };
+    await battleRuntimeStore.upsertAttendanceState({
+      battleId,
+      userId,
+      state: nextEntry,
+    }).catch(() => {});
+
+    return {
+      joined: true,
+      appliedTimerUpdate: Boolean(timingUpdate),
+      startedByFirstJoin,
+      sync,
+      battleSnapshot: buildBattleAttendanceSnapshot(nextBattle),
+    };
+  });
 }
 
 async function incrementAttendance(battleId, delta = 1) {
@@ -2261,12 +2552,21 @@ function buildLatestFinalReportsMap(rows = []) {
 }
 
 async function finalizeBattleWithReports(battleId) {
+  await flushBattleAttendanceCounter(battleId).catch(() => {});
   const battle = await getModelDocById('Battle', battleId);
   if (!battle) throw new Error('Battle not found');
   if (String(battle.status) !== 'active') return null;
 
-  const runtimeAttendance = await battleRuntimeStore.listAttendanceStatesByBattle({ battleId, limit: 50000 }).catch(() => []);
-  const runtimeFinalReports = await battleRuntimeStore.listFinalReportsByBattle({ battleId, limit: 50000 }).catch(() => []);
+  const runtimeAttendance = await battleRuntimeStore.listAttendanceStatesByBattle({
+    battleId,
+    limit: 50000,
+    preferCache: true,
+  }).catch(() => []);
+  const runtimeFinalReports = await battleRuntimeStore.listFinalReportsByBattle({
+    battleId,
+    limit: 50000,
+    preferCache: true,
+  }).catch(() => []);
   const finalReportsByUserId = buildLatestFinalReportsMap(runtimeFinalReports);
   const attendance = Array.isArray(runtimeAttendance) && runtimeAttendance.length
     ? runtimeAttendance
@@ -2612,6 +2912,8 @@ async function getCurrentBattle() {
         continue;
       } catch (error) {
         console.error('getCurrentBattle: stale active battle finish failed', error);
+        await battleRuntimeStore.clearBattlePointer(CURRENT_BATTLE_POINTER_KIND, battle._id).catch(() => {});
+        continue;
       }
     }
 
@@ -2693,6 +2995,7 @@ module.exports = {
   finalizeBattleWithReports,
   tryFinalizeBattleIfReady,
   refreshBattleFinalizeSchedule,
+  recoverActiveBattleRuntime,
   processDueBattleSettlements,
   forceFinishBattleNow,
   BATTLE_BASE_DURATION_SECONDS,

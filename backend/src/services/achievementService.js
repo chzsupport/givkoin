@@ -2,28 +2,68 @@ const { getSupabaseClient } = require('../lib/supabaseClient');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
+function isDuplicateInsertError(error) {
+  if (!error) return false;
+  if (String(error.code || '').trim() === '23505') return true;
+  return /duplicate key/i.test(String(error.message || ''));
+}
+
+function normalizeAchievementDocPart(value) {
+  return String(value == null ? '' : value)
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 120);
+}
+
+function buildUserAchievementDocId({ userId, achievementId }) {
+  return `ua_${normalizeAchievementDocPart(userId)}_${Math.max(0, Math.floor(Number(achievementId) || 0))}`;
+}
+
 async function listUserAchievementsDocs(userId) {
     const supabase = getSupabaseClient();
+    const safeUserId = String(userId || '').trim();
+    if (!safeUserId) return [];
+
     const { data, error } = await supabase
         .from(DOC_TABLE)
         .select('id,data,created_at,updated_at')
         .eq('model', 'UserAchievement')
-        .limit(500);
-    if (error || !Array.isArray(data)) return [];
-    return data.filter((row) => String(row.data?.user) === String(userId));
+        .contains('data', { user: safeUserId })
+        .limit(1000);
+
+    if (!error && Array.isArray(data)) {
+        return data;
+    }
+
+    const { data: fallbackData, error: fallbackError } = await supabase
+        .from(DOC_TABLE)
+        .select('id,data,created_at,updated_at')
+        .eq('model', 'UserAchievement')
+        .limit(5000);
+    if (fallbackError || !Array.isArray(fallbackData)) return [];
+    return fallbackData.filter((row) => String(row.data?.user) === safeUserId);
 }
 
 async function insertUserAchievement(doc) {
     const supabase = getSupabaseClient();
-    const id = `ua_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+    const id = buildUserAchievementDocId({
+      userId: doc?.user,
+      achievementId: doc?.achievementId,
+    });
     const nowIso = new Date().toISOString();
-    await supabase.from(DOC_TABLE).insert({
+    const { error } = await supabase.from(DOC_TABLE).insert({
         model: 'UserAchievement',
         id,
         data: doc,
         created_at: nowIso,
         updated_at: nowIso,
     });
+    if (error) {
+      if (isDuplicateInsertError(error)) {
+        return { ...doc, _id: id, alreadyExists: true };
+      }
+      throw error;
+    }
     return { ...doc, _id: id };
 }
 
@@ -43,6 +83,7 @@ async function grantAchievement({ userId, achievementId, meta = null, earnedAt =
       earnedAt: earnedAt instanceof Date ? earnedAt.toISOString() : earnedAt,
       meta,
     });
+    if (doc?.alreadyExists) return { granted: false, doc: null };
 
     try {
       const { awardRadianceForActivity } = require('./activityRadianceService');

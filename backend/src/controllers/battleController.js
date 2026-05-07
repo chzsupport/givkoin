@@ -9,22 +9,36 @@ const { getSupabaseClient } = require('../lib/supabaseClient');
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const BATTLE_REPORT_SECRET = String(process.env.BATTLE_REPORT_SECRET || 'givkoin_battle_secret_key_2026').trim();
 const HEARTBEAT_BATTLE_CACHE_TTL_MS = 5000;
+const SUMMARY_BATTLE_CACHE_TTL_MS = 30000;
 const CURRENT_BATTLE_SHARED_CACHE_TTL_MS = 3000;
 const CURRENT_BATTLE_PERSONAL_CACHE_TTL_MS = 1200;
-const BATTLE_JOIN_BATCH_SIZE = 100;
-const BATTLE_JOIN_BATCH_DELAY_MS = 2000;
+const BATTLE_JOIN_BATCH_BASE_SIZE = Math.max(1, Number(process.env.BATTLE_JOIN_BATCH_BASE_SIZE) || 100);
+const BATTLE_JOIN_BATCH_MEDIUM_SIZE = Math.max(
+    BATTLE_JOIN_BATCH_BASE_SIZE,
+    Number(process.env.BATTLE_JOIN_BATCH_MEDIUM_SIZE) || 250,
+);
+const BATTLE_JOIN_BATCH_HIGH_SIZE = Math.max(
+    BATTLE_JOIN_BATCH_MEDIUM_SIZE,
+    Number(process.env.BATTLE_JOIN_BATCH_HIGH_SIZE) || 500,
+);
+const BATTLE_JOIN_BATCH_MEDIUM_QUEUE = Math.max(1, Number(process.env.BATTLE_JOIN_BATCH_MEDIUM_QUEUE) || 1000);
+const BATTLE_JOIN_BATCH_HIGH_QUEUE = Math.max(BATTLE_JOIN_BATCH_MEDIUM_QUEUE, Number(process.env.BATTLE_JOIN_BATCH_HIGH_QUEUE) || 3000);
+const BATTLE_JOIN_BATCH_DELAY_MS = Math.max(250, Number(process.env.BATTLE_JOIN_BATCH_DELAY_MS) || 2000);
 const BATTLE_JOIN_TICKET_TTL_MS = 10 * 60 * 1000;
 
 const heartbeatBattleCache = new Map();
+const summaryBattleCache = new Map();
 const battleJoinPayloadCache = new Map();
 const battleJoinQueueState = new Map();
 const battleFinalReportCapacityState = new Map();
 const battleFinalReportProgressState = new Map();
+const battleDocRefreshPromises = new Map();
 let currentBattleSharedCache = {
     battle: null,
     upcoming: null,
     expiresAtMs: 0,
 };
+let currentBattleSharedRefreshPromise = null;
 const currentBattlePersonalCache = new Map();
 
 function normalizeLang(value) {
@@ -67,15 +81,25 @@ async function getCachedCurrentBattleShared(nowMs = Date.now()) {
         };
     }
 
-    const battle = await battleService.getCurrentBattle();
-    if (!battle) {
-        const upcoming = await battleService.getUpcomingBattle();
-        primeCurrentBattleSharedCache({ battle: null, upcoming, nowMs });
-        return { battle: null, upcoming };
+    if (currentBattleSharedRefreshPromise) {
+        return currentBattleSharedRefreshPromise;
     }
 
-    primeCurrentBattleSharedCache({ battle, upcoming: null, nowMs });
-    return { battle, upcoming: null };
+    currentBattleSharedRefreshPromise = (async () => {
+        const battle = await battleService.getCurrentBattle();
+        if (!battle) {
+            const upcoming = await battleService.getUpcomingBattle();
+            primeCurrentBattleSharedCache({ battle: null, upcoming, nowMs: Date.now() });
+            return { battle: null, upcoming };
+        }
+
+        primeCurrentBattleSharedCache({ battle, upcoming: null, nowMs: Date.now() });
+        return { battle, upcoming: null };
+    })().finally(() => {
+        currentBattleSharedRefreshPromise = null;
+    });
+
+    return currentBattleSharedRefreshPromise;
 }
 
 async function getCachedCurrentBattlePersonal({ battleId, userId, fallbackUser = null, nowMs = Date.now() }) {
@@ -98,10 +122,10 @@ async function getCachedCurrentBattlePersonal({ battleId, userId, fallbackUser =
         };
     }
 
-    const attendanceEntry = await getAttendanceRuntimeSnapshot({
+    const attendanceEntry = battleRuntimeStore.getCachedAttendanceState({
         battleId: safeBattleId,
         userId: safeUserId,
-    }).catch(() => null);
+    });
     const personalState = buildBattlePersonalStatePayload(attendanceEntry, fallbackUser);
 
     currentBattlePersonalCache.set(cacheKey, {
@@ -278,13 +302,21 @@ function reserveBattleJoinSlot({ battleId, userId, nowMs = Date.now() }) {
         state.ticketsByUser.set(safeUserId, ticketState);
     }
 
-    const slotIndex = Math.floor(Math.max(0, Number(ticketState.ticket) || 0) / BATTLE_JOIN_BATCH_SIZE);
+    const waitingCount = Math.max(0, Number(state.ticketsByUser.size) || 0);
+    const batchSize = waitingCount >= BATTLE_JOIN_BATCH_HIGH_QUEUE
+        ? BATTLE_JOIN_BATCH_HIGH_SIZE
+        : waitingCount >= BATTLE_JOIN_BATCH_MEDIUM_QUEUE
+            ? BATTLE_JOIN_BATCH_MEDIUM_SIZE
+            : BATTLE_JOIN_BATCH_BASE_SIZE;
+    const slotIndex = Math.floor(Math.max(0, Number(ticketState.ticket) || 0) / batchSize);
     const slotStartsAtMs = state.openedAtMs + slotIndex * BATTLE_JOIN_BATCH_DELAY_MS;
     const retryAfterMs = Math.max(0, slotStartsAtMs - nowMs);
 
     return {
         queued: retryAfterMs > 0,
         retryAfterMs,
+        batchSize,
+        waitingCount,
     };
 }
 
@@ -547,6 +579,13 @@ async function getHeartbeatBattleSnapshot(battleId) {
     }
     const battle = await getBattleDocById(key);
     if (!battle) {
+        if (cached?.battle && String(cached.battle.status || '') === 'active') {
+            heartbeatBattleCache.set(key, {
+                battle: cached.battle,
+                expiresAtMs: nowMs + HEARTBEAT_BATTLE_CACHE_TTL_MS,
+            });
+            return cached.battle;
+        }
         heartbeatBattleCache.delete(key);
         return null;
     }
@@ -554,6 +593,33 @@ async function getHeartbeatBattleSnapshot(battleId) {
         battle,
         expiresAtMs: nowMs + HEARTBEAT_BATTLE_CACHE_TTL_MS,
     });
+    return battle;
+}
+
+async function getSummaryBattleSnapshot(battleId) {
+    const key = String(battleId || '').trim();
+    if (!key) return null;
+    const cached = summaryBattleCache.get(key);
+    const nowMs = Date.now();
+    if (cached && cached.expiresAtMs > nowMs) {
+        return cached.battle;
+    }
+
+    const battle = await getBattleDocById(key);
+    if (!battle) {
+        summaryBattleCache.delete(key);
+        return null;
+    }
+
+    if (String(battle.status || '') === 'finished') {
+        summaryBattleCache.set(key, {
+            battle,
+            expiresAtMs: nowMs + SUMMARY_BATTLE_CACHE_TTL_MS,
+        });
+    } else {
+        summaryBattleCache.delete(key);
+    }
+
     return battle;
 }
 
@@ -579,6 +645,53 @@ async function getBattleDocById(battleId) {
         .maybeSingle();
     if (error || !data) return null;
     return mapBattleRow(data);
+}
+
+async function getCachedBattleDocById(battleId, { ttlMs = SUMMARY_BATTLE_CACHE_TTL_MS } = {}) {
+    const safeBattleId = String(battleId || '').trim();
+    if (!safeBattleId) return null;
+    const nowMs = Date.now();
+    const heartbeatCached = heartbeatBattleCache.get(safeBattleId);
+    if (heartbeatCached?.battle && Number(heartbeatCached.expiresAtMs) > nowMs) {
+        return heartbeatCached.battle;
+    }
+    const summaryCached = summaryBattleCache.get(safeBattleId);
+    if (
+        summaryCached?.battle
+        && String(summaryCached.battle.status || '') === 'finished'
+        && Number(summaryCached.expiresAtMs) > nowMs
+    ) {
+        return summaryCached.battle;
+    }
+
+    if (battleDocRefreshPromises.has(safeBattleId)) {
+        return battleDocRefreshPromises.get(safeBattleId);
+    }
+
+    const refreshPromise = (async () => {
+        const fresh = await getBattleDocById(safeBattleId);
+        if (fresh) {
+            if (String(fresh.status || '') === 'finished') {
+                summaryBattleCache.set(safeBattleId, {
+                    battle: fresh,
+                    expiresAtMs: Date.now() + Math.max(1000, Number(ttlMs) || SUMMARY_BATTLE_CACHE_TTL_MS),
+                });
+            } else {
+                heartbeatBattleCache.set(safeBattleId, {
+                    battle: fresh,
+                    expiresAtMs: Date.now() + HEARTBEAT_BATTLE_CACHE_TTL_MS,
+                });
+                summaryBattleCache.delete(safeBattleId);
+            }
+            return fresh;
+        }
+
+        return summaryCached?.battle || heartbeatCached?.battle || null;
+    })().finally(() => {
+        battleDocRefreshPromises.delete(safeBattleId);
+    });
+    battleDocRefreshPromises.set(safeBattleId, refreshPromise);
+    return refreshPromise;
 }
 
 async function updateBattleDocById(battleId, nextBattle) {
@@ -758,6 +871,18 @@ async function getUserRowById(userId) {
 
 function getUserData(row) {
     return row?.data && typeof row.data === 'object' ? row.data : {};
+}
+
+function buildUserRowFromRequestUser(user) {
+    const userId = String(user?._id || user?.id || '').trim();
+    if (!userId) return null;
+    const data = user?.data && typeof user.data === 'object'
+        ? user.data
+        : user;
+    return {
+        id: userId,
+        data,
+    };
 }
 
 function setDeepValue(obj, path, value) {
@@ -1737,7 +1862,7 @@ async function ensureBattleAttendanceReady({
     joinedAt = null,
     resourceSnapshot = null,
 }) {
-    let entry = await battleRuntimeStore.getAttendanceState({ battleId, userId }).catch(() => null);
+    let entry = battleRuntimeStore.getCachedAttendanceState({ battleId, userId });
     let joinedAttendance = false;
     let startedByFirstJoin = false;
     let battleSnapshot = battle;
@@ -1749,19 +1874,12 @@ async function ensureBattleAttendanceReady({
         const safeResources = resourceSnapshot && typeof resourceSnapshot === 'object'
             ? resourceSnapshot
             : {};
-        let firstJoinBattle = null;
-        if (shouldEnsureFirstJoin) {
-            firstJoinBattle = await battleService.markFirstPlayerJoinIfNeeded(battleId, safeJoinedAt);
-            startedByFirstJoin = Boolean(firstJoinBattle);
-            if (firstJoinBattle) {
-                battleSnapshot = firstJoinBattle;
-            }
-        }
         const registration = await battleService.registerAttendance(battleId, userId, {
             joinedAt: safeJoinedAt,
-            battle: buildBattleSnapshotAfterAttendanceJoin({ battle, firstJoinBattle }),
+            battle: buildBattleSnapshotAfterAttendanceJoin({ battle }),
         });
         joinedAttendance = Boolean(registration?.joined);
+        startedByFirstJoin = Boolean(registration?.startedByFirstJoin);
         if (joinedAttendance) {
             battleSnapshot = registration?.battleSnapshot || battleSnapshot || battle;
             if (!registration?.appliedTimerUpdate) {
@@ -1922,9 +2040,9 @@ const CLIENT_SYNC_GRACE_MS = 15000;
 const SHARED_SHOT_TTL_MS = 60000;
 const PROCESSED_HIT_TTL_MS = 60000;
 const WEAPON_COMBAT_RULES = Object.freeze({
-    1: { damage: 6, costLumens: 10, maxHitsPerShot: 10, minShotGapMs: 35, maxAimDeviation: 85 },
-    2: { damage: 500, costLumens: 100, maxHitsPerShot: 2, minShotGapMs: 2600, maxAimDeviation: 45 },
-    3: { damage: 5000, costLumens: 500, maxHitsPerShot: 1, minShotGapMs: 4500, maxAimDeviation: 28 },
+    1: { damage: 6, costLumens: 10, maxHitsPerShot: 10, minShotGapMs: 16, maxAimDeviation: 85 },
+    2: { damage: 500, costLumens: 100, maxHitsPerShot: 2, minShotGapMs: 3000, maxAimDeviation: 45 },
+    3: { damage: 5000, costLumens: 500, maxHitsPerShot: 1, minShotGapMs: 5000, maxAimDeviation: 28 },
 });
 
 function getWeaponCombatRules(weaponId) {
@@ -2150,7 +2268,7 @@ exports.getCurrentBattle = async (req, res) => {
         });
 
         const endsAtMs = battle?.endsAt ? new Date(battle.endsAt).getTime() : NaN;
-        const battlePublic = serializeBattleForClient(battle, { includeScenario: true });
+        const battlePublic = serializeBattleForClient(battle, { includeScenario: false });
         const timeLeftMs = Number.isFinite(endsAtMs) ? Math.max(0, endsAtMs - nowMs) : 0;
 
         if (Number.isFinite(endsAtMs) && nowMs >= endsAtMs) {
@@ -2243,7 +2361,10 @@ exports.getBattleSummary = async (req, res) => {
         }
         const nowMs = Date.now();
 
-        const preparedSummary = await battleRuntimeStore.getFinalSummary({
+        const preparedSummary = battleRuntimeStore.getCachedFinalSummary({
+            battleId,
+            userId: req.user?._id,
+        }) || await battleRuntimeStore.getFinalSummary({
             battleId,
             userId: req.user?._id,
         }).catch(() => null);
@@ -2253,7 +2374,10 @@ exports.getBattleSummary = async (req, res) => {
             return res.json(await attachBattleRewardBoost({ payload, userId: req.user?._id, userLang }));
         }
 
-        let battle = await getHeartbeatBattleSnapshot(battleId);
+        let battle = await getSummaryBattleSnapshot(battleId);
+        if (!battle) {
+            battle = await getCachedBattleDocById(battleId, { ttlMs: SUMMARY_BATTLE_CACHE_TTL_MS }).catch(() => null);
+        }
         if (!battle) {
             return res.status(404).json({ message: pickLang(userLang, 'Бой не найден', 'Battle not found') });
         }
@@ -2280,9 +2404,35 @@ exports.getBattleSummary = async (req, res) => {
             if (Number.isFinite(reportAcceptEndsAtMs) && nowMs >= reportAcceptEndsAtMs) {
                 battleService.tryFinalizeBattleIfReady(battleId).catch(() => {});
                 battle = await getBattleDocById(battleId);
+                if (battle && String(battle.status || '') === 'finished') {
+                    summaryBattleCache.set(String(battleId), {
+                        battle,
+                        expiresAtMs: Date.now() + SUMMARY_BATTLE_CACHE_TTL_MS,
+                    });
+                }
                 attendance = Array.isArray(battle?.attendance) ? battle.attendance : [];
                 userAttendanceEntry = attendance.find((row) => String(row?.user || '') === String(req.user?._id)) || null;
             }
+        }
+
+        if (!userAttendanceEntry && String(battle?.status || '') === 'finished') {
+            const freshBattle = await getBattleDocById(battleId).catch(() => null);
+            if (freshBattle) {
+                battle = freshBattle;
+                summaryBattleCache.set(String(battleId), {
+                    battle,
+                    expiresAtMs: Date.now() + SUMMARY_BATTLE_CACHE_TTL_MS,
+                });
+                attendance = Array.isArray(battle?.attendance) ? battle.attendance : [];
+                userAttendanceEntry = attendance.find((row) => String(row?.user || '') === String(req.user?._id)) || null;
+            }
+        }
+
+        if (!userAttendanceEntry) {
+            userAttendanceEntry = await getAttendanceRuntimeSnapshot({
+                battleId,
+                userId: req.user?._id,
+            }).catch(() => null);
         }
 
         if (!userAttendanceEntry) {
@@ -2290,7 +2440,10 @@ exports.getBattleSummary = async (req, res) => {
             return res.status(404).json({ message: pickLang(userLang, 'Участник боя не найден', 'Battle participant not found') });
         }
 
-        const acceptedFinalReport = await battleRuntimeStore.getFinalReport({
+        const acceptedFinalReport = battleRuntimeStore.getCachedFinalReport({
+            battleId,
+            userId: req.user?._id,
+        }) || await battleRuntimeStore.getFinalReport({
             battleId,
             userId: req.user?._id,
         }).catch(() => null);
@@ -2337,22 +2490,38 @@ exports.submitDamage = async (req, res) => {
             return res.status(400).json({ message: pickLang(userLang, 'Не указан battleId', 'Missing battleId') });
         }
 
-        const battle = await getBattleDocById(battleId);
+        let battle = await getCachedBattleDocById(battleId);
         if (!battle) {
             return res.status(404).json({ message: pickLang(userLang, 'Бой не найден', 'Battle not found') });
         }
 
         const finalConfig = battleService.getBattleFinalWindowConfig();
-        const endsAtMs = battle.endsAt ? new Date(battle.endsAt).getTime() : NaN;
+        let endsAtMs = battle.endsAt ? new Date(battle.endsAt).getTime() : NaN;
+        const nowMs = Date.now();
+        if (Number.isFinite(endsAtMs) && nowMs < endsAtMs) {
+            const freshBattle = await getBattleDocById(battleId).catch(() => null);
+            const freshEndsAtMs = freshBattle?.endsAt ? new Date(freshBattle.endsAt).getTime() : NaN;
+            if (freshBattle && Number.isFinite(freshEndsAtMs) && freshEndsAtMs !== endsAtMs) {
+                battle = freshBattle;
+                endsAtMs = freshEndsAtMs;
+                summaryBattleCache.set(String(battleId), {
+                    battle,
+                    expiresAtMs: Date.now() + SUMMARY_BATTLE_CACHE_TTL_MS,
+                });
+                heartbeatBattleCache.set(String(battleId), {
+                    battle,
+                    expiresAtMs: Date.now() + HEARTBEAT_BATTLE_CACHE_TTL_MS,
+                });
+            }
+        }
         if (!Number.isFinite(endsAtMs)) {
             return res.status(400).json({ message: pickLang(userLang, 'Неизвестно время окончания боя', 'Battle end time missing') });
         }
-        const nowMs = Date.now();
         const reportAcceptEndsAtMs = endsAtMs + (finalConfig.reportAcceptSeconds * 1000);
         if (nowMs < endsAtMs) {
             return res.status(400).json({ message: pickLang(userLang, 'Бой ещё активен', 'Battle is still active') });
         }
-        // После конца боя ещё 60 секунд принимаем опоздавшие последние данные.
+        // После конца боя принимаем опоздавшие последние данные.
         // Дальше бой закрывается, а подробный разбор может дособираться отдельно без жёсткого лимита.
         if (nowMs > reportAcceptEndsAtMs) {
             return res.status(400).json({ message: pickLang(userLang, 'Окно финального отчёта закрыто', 'Final report window closed') });
@@ -2376,10 +2545,10 @@ exports.submitDamage = async (req, res) => {
             return res.json({ ok: true, accepted: false, ignored: true });
         }
 
-        const existingFinalReport = await battleRuntimeStore.getFinalReport({
+        const existingFinalReport = battleRuntimeStore.getCachedFinalReport({
             battleId,
             userId: req.user._id,
-        }).catch(() => null);
+        });
         const existingFinalSequence = Math.max(0, Math.floor(Number(existingFinalReport?.reportSequence) || 0));
         if (existingFinalSequence >= safeSequence) {
             return res.json({
@@ -2453,7 +2622,7 @@ exports.submitDamage = async (req, res) => {
             updatedAt: acceptedAtIso,
         }).catch(() => null);
 
-        const finalProgress = noteBattleFinalReportAccepted({
+        noteBattleFinalReportAccepted({
             battleId,
             userId: req.user?._id,
             expectedCount: Math.max(
@@ -2463,11 +2632,8 @@ exports.submitDamage = async (req, res) => {
             nowMs,
         });
 
-        if (finalProgress.complete) {
-            battleService.tryFinalizeBattleIfReady(battleId, {
-                allParticipantsReported: true,
-            }).catch(() => {});
-        }
+        // Финальный подсчёт запускается отдельным таймером после окна приёма.
+        // Приём отчётов не должен тормозиться тяжёлым пересчётом всего боя.
 
         return res.json({
             ok: true,
@@ -2485,7 +2651,26 @@ exports.joinBattle = async (req, res) => {
     let activeBattleId = null;
     try {
         const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.body?.language || 'ru');
-        const battle = await battleService.getCurrentBattle();
+        const requestedBattleId = String(req.body?.battleId || '').trim();
+        let battle = requestedBattleId
+            ? await getCachedBattleDocById(requestedBattleId, { ttlMs: HEARTBEAT_BATTLE_CACHE_TTL_MS })
+            : null;
+        if (battle && String(battle.status || '') !== 'active') {
+            battle = null;
+        }
+        if (battle) {
+            primeCurrentBattleSharedCache({ battle });
+        }
+        if (!battle) {
+            ({ battle } = await getCachedCurrentBattleShared());
+        }
+        if (!battle) {
+            currentBattleSharedCache.expiresAtMs = 0;
+            battle = await battleService.getCurrentBattle();
+            if (battle) {
+                primeCurrentBattleSharedCache({ battle });
+            }
+        }
         if (!battle) {
             return res.status(400).json({ message: pickLang(userLang, 'Нет активного боя', 'No active battle') });
         }
@@ -2510,7 +2695,7 @@ exports.joinBattle = async (req, res) => {
             });
         }
 
-        const userRow = await getUserRowById(req.user._id);
+        const userRow = buildUserRowFromRequestUser(req.user) || await getUserRowById(req.user._id);
         if (!userRow) {
             releaseBattleJoinSlot({ battleId: battle._id, userId: req.user._id });
             return res.status(404).json({ message: pickLang(userLang, 'Пользователь не найден', 'User not found') });
@@ -2545,18 +2730,12 @@ exports.joinBattle = async (req, res) => {
             ? Math.max(0, updatedEndsAtMs - responseNowMs)
             : Math.max(0, battleDurationSeconds * 1000);
         const sharedPayload = getBattleJoinSharedPayload(updatedBattle);
-        await battleService.ensureAttendanceInitForUser({
-            battleId: updatedBattle._id,
-            userId: req.user._id,
-            lumensAtStart: Number(userData?.lumens) || 0,
-            kAtStart: Number(userData?.k) || 0,
-            starsAtStart: Number(userData?.stars) || 0,
-        }).catch(() => {});
         await bindPendingBattleBoosts(req.user._id, updatedBattle._id, new Date(), { userRow });
         heartbeatBattleCache.set(String(updatedBattle._id), {
             battle: updatedBattle,
             expiresAtMs: Date.now() + HEARTBEAT_BATTLE_CACHE_TTL_MS,
         });
+        summaryBattleCache.delete(String(updatedBattle._id));
         primeCurrentBattleSharedCache({ battle: updatedBattle });
         clearCurrentBattlePersonalCache({ battleId: updatedBattle._id });
         releaseBattleJoinSlot({ battleId: updatedBattle._id, userId: req.user._id });
@@ -2610,7 +2789,18 @@ exports.battleHeartbeat = async (req, res) => {
             return res.status(400).json({ message: pickLang(userLang, 'Не указан battleId', 'Missing battleId') });
         }
 
-        const battle = await getHeartbeatBattleSnapshot(battleId);
+        let battle = await getHeartbeatBattleSnapshot(battleId);
+        if (battle && String(battle.status || '') !== 'active') {
+            heartbeatBattleCache.delete(String(battleId));
+            const freshBattle = await getBattleDocById(battleId).catch(() => null);
+            if (freshBattle && String(freshBattle.status || '') === 'active') {
+                battle = freshBattle;
+                heartbeatBattleCache.set(String(battleId), {
+                    battle,
+                    expiresAtMs: Date.now() + HEARTBEAT_BATTLE_CACHE_TTL_MS,
+                });
+            }
+        }
         if (!battle || battle.status !== 'active') {
             return res.status(400).json({ message: pickLang(userLang, 'Бой не активен', 'Battle is not active') });
         }
