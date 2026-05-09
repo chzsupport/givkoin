@@ -1083,7 +1083,8 @@
       "title": "Congratulations!",
       "body": "Your wish has come true! That's wonderful. 🌟",
       "reward_prefix": "The fulfiller will receive",
-      "reward_suffix": ", warmth stars, and gratitude in the feed."
+      "reward_suffix": ", warmth stars, and gratitude in the feed.",
+      "reward_notice": "The fulfiller will receive a reward from the world of GIVKOIN."
     },
     "limit_title": "Limit",
     "limit_fulfill_today_prefix": "You have reached today's fulfillment limit (",

@@ -1208,9 +1208,7 @@ export default function GalaxyPage() {
                   {t('galaxy.mark_fulfilled.body')}
                 </p>
                 <p className="text-label text-neutral-500 text-center">
-                  {t('galaxy.mark_fulfilled.reward_prefix')}{' '}
-                  <span className="text-emerald-400 font-bold">+{FULFILL_REWARD} K</span>
-                  {t('galaxy.mark_fulfilled.reward_suffix')}
+                  {t('galaxy.mark_fulfilled.reward_notice')}
                 </p>
               </div>
 
