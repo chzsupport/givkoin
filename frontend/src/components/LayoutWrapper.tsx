@@ -39,42 +39,6 @@ const AnomalyOverlay = dynamic(
 );
 
 const CRYSTAL_DEFAULT_Z_INDEX = 9999;
-const CRYSTAL_BELOW_MODAL_Z_INDEX = 49;
-const MODAL_MIN_Z_INDEX = 50;
-
-function getNumericZIndex(value: string) {
-    if (!value || value === 'auto') return null;
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-}
-
-function hasBlockingCenterLayer() {
-    if (typeof window === 'undefined' || typeof document === 'undefined' || !document.body) {
-        return false;
-    }
-
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    const elements = Array.from(document.body.querySelectorAll<HTMLElement>('*'));
-
-    return elements.some((element) => {
-        if (element.closest('[data-crystal-overlay="true"]')) return false;
-        if (element.hidden || element.getAttribute('aria-hidden') === 'true') return false;
-
-        const style = window.getComputedStyle(element);
-        if (style.position !== 'fixed') return false;
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
-        if (Number(style.opacity || 1) <= 0.01) return false;
-
-        const zIndex = getNumericZIndex(style.zIndex);
-        if (zIndex === null || zIndex < MODAL_MIN_Z_INDEX) return false;
-
-        const rect = element.getBoundingClientRect();
-        if (rect.width < 20 || rect.height < 20) return false;
-
-        return rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY;
-    });
-}
 
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -99,7 +63,6 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const lastNavigationIntentRef = useRef<{ path: string; at: number } | null>(null);
     const recentPathsRef = useRef<string[]>([]);
     const [shardPosition, setShardPosition] = useState<{ top: number; left: number } | null>(null);
-    const [isCrystalBelowModal, setIsCrystalBelowModal] = useState(false);
     const [adblockNoticeVisible, setAdblockNoticeVisible] = useState(false);
     const adblockCooldownTimerRef = useRef<number | null>(null);
     const adblockObserverRef = useRef<MutationObserver | null>(null);
@@ -386,40 +349,6 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
         };
     }, [pathname, currentPageShard]);
 
-    useEffect(() => {
-        if (!currentPageShard || typeof window === 'undefined' || typeof document === 'undefined' || !document.body) {
-            setIsCrystalBelowModal(false);
-            return;
-        }
-
-        let frame = 0;
-
-        const checkLayers = () => {
-            if (frame) window.cancelAnimationFrame(frame);
-            frame = window.requestAnimationFrame(() => {
-                frame = 0;
-                setIsCrystalBelowModal(hasBlockingCenterLayer());
-            });
-        };
-
-        checkLayers();
-
-        const observer = new MutationObserver(checkLayers);
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
-        });
-        window.addEventListener('resize', checkLayers);
-
-        return () => {
-            if (frame) window.cancelAnimationFrame(frame);
-            observer.disconnect();
-            window.removeEventListener('resize', checkLayers);
-        };
-    }, [pathname, currentPageShard]);
-
     // Глобальное отслеживание статуса (занятость в ЛК, чате или бою)
     useStatusTracking(user?._id);
 
@@ -650,7 +579,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                 position: 'absolute',
                 top: shardPosition.top,
                 left: shardPosition.left,
-                zIndex: isCrystalBelowModal ? CRYSTAL_BELOW_MODAL_Z_INDEX : CRYSTAL_DEFAULT_Z_INDEX,
+                zIndex: CRYSTAL_DEFAULT_Z_INDEX,
                 pointerEvents: 'auto',
                 // Плавная анимация перемещения при ресайзе
                 transition: 'top 0.3s ease-out, left 0.3s ease-out',
