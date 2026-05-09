@@ -45,16 +45,25 @@ function ensurePositive(amount) {
   }
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getUserRowById(userId) {
   if (!userId) return null;
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,data')
-    .eq('id', String(userId))
-    .maybeSingle();
-  if (error) return null;
-  return data || null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id,data')
+      .eq('id', String(userId))
+      .maybeSingle();
+    if (!error) return data || null;
+    if (attempt < 2) {
+      await wait(30 * (attempt + 1));
+    }
+  }
+  return null;
 }
 
 function getUserDataFromRow(row) {
@@ -71,14 +80,19 @@ async function updateUserDataById(userId, patch) {
   const nowIso = new Date().toISOString();
   const existingData = getUserDataFromRow(row);
   const nextData = { ...existingData, ...patch };
-  const { data, error } = await supabase
-    .from('users')
-    .update({ data: nextData, updated_at: nowIso })
-    .eq('id', String(userId))
-    .select('id,data')
-    .maybeSingle();
-  if (error) return null;
-  return data || null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from('users')
+      .update({ data: nextData, updated_at: nowIso })
+      .eq('id', String(userId))
+      .select('id,data')
+      .maybeSingle();
+    if (!error) return data || null;
+    if (attempt < 2) {
+      await wait(30 * (attempt + 1));
+    }
+  }
+  return null;
 }
 
 async function createTransaction({

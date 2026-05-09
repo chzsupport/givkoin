@@ -101,6 +101,32 @@ function offerToClient(offer) {
   };
 }
 
+async function getPendingAdBoostOffer({ userId, page = '' } = {}) {
+  const safeUserId = String(userId || '').trim();
+  if (!safeUserId) return null;
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from(DOC_TABLE)
+    .select('id,model,data,created_at,updated_at')
+    .eq('model', OFFER_MODEL)
+    .eq('data->>user', safeUserId)
+    .eq('data->>status', 'pending')
+    .order('updated_at', { ascending: false })
+    .limit(20);
+  if (error || !Array.isArray(data)) return null;
+
+  const wantedPage = normalizePage(page);
+  for (const row of data) {
+    const offer = mapDocRow(row);
+    const clientOffer = offerToClient(offer);
+    if (!clientOffer) continue;
+    if (!page || clientOffer.page === wantedPage || clientOffer.page === 'all') {
+      return clientOffer;
+    }
+  }
+  return null;
+}
+
 async function getUserRowById(userId) {
   if (!userId) return null;
   const supabase = getSupabaseClient();
@@ -761,6 +787,7 @@ module.exports = {
   createAdBoostOffer,
   completeAdBoost,
   offerToClient,
+  getPendingAdBoostOffer,
   parseVastXml,
   startAdBoost,
   SHOP_RANDOM_ITEM_KEYS,

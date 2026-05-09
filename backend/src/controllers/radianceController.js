@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { getOrLoadPage, makePageCacheKey, warmPage } = require('../services/pageCacheService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
@@ -53,7 +54,13 @@ exports.getHistory = async (req, res) => {
 
     const limit = Math.min(200, Math.max(1, toInt(req.query?.limit, 50)));
     const offset = toInt(req.query?.offset, 0);
-    const items = await listRadianceEarnings(userId, limit, offset);
+    const cacheKey = makePageCacheKey('radiance:history', { userId, limit, offset });
+    const { value: items } = await getOrLoadPage(cacheKey, () => listRadianceEarnings(userId, limit, offset));
+    if (Array.isArray(items) && items.length === limit) {
+      const nextOffset = offset + limit;
+      const nextKey = makePageCacheKey('radiance:history', { userId, limit, offset: nextOffset });
+      warmPage(nextKey, () => listRadianceEarnings(userId, limit, nextOffset));
+    }
     return res.json({ items, limit, offset });
   } catch (error) {
     return res.status(500).json({ message: error.message });

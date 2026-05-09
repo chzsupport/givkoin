@@ -24,6 +24,7 @@ const {
     getPendingCallRecord,
     getPendingCall,
     hasPendingCall,
+    hasOutgoingPendingCall,
     clearPendingCall: clearSharedPendingCall,
     clearPendingCallsForUser: clearSharedPendingCallsForUser,
     resetRuntimeState: resetSharedRuntimeState,
@@ -92,14 +93,18 @@ async function insertAppeal(doc) {
     const supabase = getSupabaseClient();
     const id = `app_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
     const nowIso = new Date().toISOString();
+    const appealData = {
+        status: 'pending',
+        ...doc,
+    };
     await supabase.from(DOC_TABLE).insert({
         model: 'Appeal',
         id,
-        data: doc,
+        data: appealData,
         created_at: nowIso,
         updated_at: nowIso,
     });
-    return { ...doc, _id: id };
+    return { ...appealData, _id: id };
 }
 
 function toId(value, depth = 0) {
@@ -263,6 +268,7 @@ async function updateUserDataByIdDeepPatch(userId, changes = {}) {
 const pendingCallTimeouts = new Map();
 const searchSessions = new Map();
 const searchPairLocks = new Set();
+const chatStartLocks = new Set();
 
 // Chat waiting timeouts: chatId -> timeoutId
 const chatWaitingTimeouts = new Map();
@@ -371,6 +377,7 @@ function resetRuntimeState() {
     pendingCallTimeouts.clear();
     searchSessions.clear();
     searchPairLocks.clear();
+    chatStartLocks.clear();
     for (const timeoutId of chatWaitingTimeouts.values()) clearTimeout(timeoutId);
     chatWaitingTimeouts.clear();
     for (const timeoutId of chatPreparationTimeouts.values()) clearTimeout(timeoutId);
@@ -484,6 +491,35 @@ function acquireSearchPairLock(firstUserId, secondUserId) {
 function releaseSearchPairLock(lockKey) {
     if (!lockKey) return;
     searchPairLocks.delete(lockKey);
+}
+
+function isUserStartingChat(userId) {
+    const userKey = normalizeUserId(userId);
+    return Boolean(userKey && chatStartLocks.has(userKey));
+}
+
+function acquireChatStartLock(userIds = []) {
+    const ids = [...new Set((Array.isArray(userIds) ? userIds : [userIds]).map(normalizeUserId).filter(Boolean))];
+    if (ids.length < 2) return null;
+    if (ids.some((id) => chatStartLocks.has(id) || userActiveChat.has(id))) return null;
+    ids.forEach((id) => chatStartLocks.add(id));
+    return ids;
+}
+
+function releaseChatStartLock(lockIds) {
+    if (!Array.isArray(lockIds)) return;
+    lockIds.forEach((id) => chatStartLocks.delete(normalizeUserId(id)));
+}
+
+async function startChatWithLock(io, user1Id, user2Id, options = {}) {
+    const lockIds = acquireChatStartLock([user1Id, user2Id]);
+    if (!lockIds) return false;
+    try {
+        await startChat(io, user1Id, user2Id, options);
+        return true;
+    } finally {
+        releaseChatStartLock(lockIds);
+    }
 }
 
 function clearCurrentCallForInitiator(initiatorId, targetId = null, callToken = null) {
@@ -1070,10 +1106,12 @@ function scheduleCallTimeout(io, targetId, initiatorId, callToken) {
     pendingCallTimeouts.set(targetKey, { timeoutId, initiatorId: initiatorKey, token: String(callToken || '') });
 }
 
-async function tryStartDirectMatch(io, initiatorId) {
+async function tryStartMutualSearchCall(io, initiatorId) {
     const initiatorKey = normalizeUserId(initiatorId);
     const initiatorSession = getSearchSession(initiatorKey);
     if (!initiatorSession || initiatorSession.currentTargetId) return false;
+    if (isUserStartingChat(initiatorKey) || userActiveChat.has(initiatorKey)) return false;
+    if (await hasPendingCall(initiatorKey) || await hasOutgoingPendingCall(initiatorKey)) return false;
 
     const directCandidates = await matchingService.findMatchCandidates(initiatorKey, {
         onlySearching: true,
@@ -1083,6 +1121,8 @@ async function tryStartDirectMatch(io, initiatorId) {
     for (const candidate of directCandidates) {
         const targetId = normalizeUserId(candidate?._id);
         if (!targetId || targetId === initiatorKey) continue;
+        if (isUserStartingChat(targetId) || userActiveChat.has(targetId)) continue;
+        if (await hasPendingCall(targetId) || await hasOutgoingPendingCall(targetId)) continue;
 
         const targetSession = getSearchSession(targetId);
         if (!targetSession || targetSession.currentTargetId) continue;
@@ -1102,7 +1142,18 @@ async function tryStartDirectMatch(io, initiatorId) {
             const targetProfile = matchingService.getOnlineProfile(targetId);
             if (!matchingService.areProfilesMutuallyCompatible(initiatorProfile, targetProfile)) continue;
 
-            await startChat(io, initiatorKey, targetId);
+            const callToken = `${initiatorKey}:${targetId}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+            const pendingSet = await setPendingCall(targetId, initiatorKey, SEARCH_CALL_TIMEOUT_MS, callToken);
+            if (!pendingSet) continue;
+
+            updateSearchSession(initiatorKey, {
+                currentTargetId: targetId,
+                currentCallToken: callToken,
+            });
+
+            io.to(getUserRoomName(targetId)).emit('incoming_call', { callerId: initiatorKey });
+            io.to(getUserRoomName(initiatorKey)).emit('calling_partner');
+            scheduleCallTimeout(io, targetId, initiatorKey, callToken);
             return true;
         } finally {
             releaseSearchPairLock(lockKey);
@@ -1116,15 +1167,16 @@ async function continueSearch(io, initiatorId) {
     const initiatorKey = normalizeUserId(initiatorId);
     const session = getSearchSession(initiatorKey);
     if (!session) return false;
+    if (isUserStartingChat(initiatorKey)) return true;
     if (userActiveChat.has(initiatorKey)) return false;
     if (!(await getQueuedUser(initiatorKey))) {
         clearSearchSession(initiatorKey);
         return false;
     }
-    if (await hasPendingCall(initiatorKey)) return true;
+    if (await hasPendingCall(initiatorKey) || await hasOutgoingPendingCall(initiatorKey)) return true;
     if (session.currentTargetId) return true;
 
-    if (await tryStartDirectMatch(io, initiatorKey)) {
+    if (await tryStartMutualSearchCall(io, initiatorKey)) {
         return true;
     }
 
@@ -1162,7 +1214,7 @@ async function continueSearch(io, initiatorId) {
                 candidateIndex: 0,
             });
 
-            if (await tryStartDirectMatch(io, initiatorKey)) {
+            if (await tryStartMutualSearchCall(io, initiatorKey)) {
                 return true;
             }
             continue;
@@ -1175,14 +1227,16 @@ async function continueSearch(io, initiatorId) {
 
         if (userActiveChat.has(initiatorKey)) return false;
         if (!targetId || targetId === initiatorKey) continue;
+        if (isUserStartingChat(targetId) || userActiveChat.has(targetId)) continue;
         if (!(await hasUserRoom(io, targetId))) continue;
-        if (await hasPendingCall(initiatorKey) || await hasPendingCall(targetId)) continue;
+        if (await hasPendingCall(initiatorKey) || await hasOutgoingPendingCall(initiatorKey)) continue;
+        if (await hasPendingCall(targetId) || await hasOutgoingPendingCall(targetId)) continue;
 
         const targetProfile = matchingService.getOnlineProfile(targetId);
         if (!targetProfile || targetProfile.chatStatus !== 'available') continue;
 
         if (targetProfile.isSearching) {
-            if (await tryStartDirectMatch(io, initiatorKey)) {
+            if (await tryStartMutualSearchCall(io, initiatorKey)) {
                 return true;
             }
             continue;
@@ -1211,7 +1265,7 @@ async function startPartnerSearch(io, userId, socketId) {
     if (getSearchSession(userKey)) {
         return true;
     }
-    if (await hasPendingCall(userKey)) {
+    if (await hasPendingCall(userKey) || await hasOutgoingPendingCall(userKey)) {
         return true;
     }
 
@@ -1463,8 +1517,10 @@ function initSocketService(io) {
             clearCurrentCallForInitiator(initiatorId, currentUserId);
 
             if (accepted) {
-                // Start chat!
-                await startChat(io, initiatorId, currentUserId);
+                const started = await startChatWithLock(io, initiatorId, currentUserId);
+                if (!started) {
+                    await continueSearch(io, initiatorId);
+                }
             } else {
                 // Declined
                 // 1. Set cooldown for decliner (currentUserId)
@@ -1737,6 +1793,28 @@ function initSocketService(io) {
                     return;
                 }
 
+                if (result.status === 'chat_too_short') {
+                    socket.emit('friend_request_error', buildSocketMessage(
+                        socket,
+                        'chat.friend_request_chat_too_short',
+                        'Добавить в друзья можно только после общения не меньше 5 минут',
+                        'You can add a friend only after at least 5 minutes of chat',
+                        { friendId: targetId }
+                    ));
+                    return;
+                }
+
+                if (result.status === 'rate_limited') {
+                    socket.emit('friend_request_error', buildSocketMessage(
+                        socket,
+                        'chat.friend_request_rate_limited',
+                        'Можно отправить не больше 12 заявок в друзья за час',
+                        'You can send no more than 12 friend requests per hour',
+                        { friendId: targetId }
+                    ));
+                    return;
+                }
+
                 if (result.status === 'already_friends') {
                     socket.emit('friend_added', { friendId: targetId });
                     io.to(`user-${targetId}`).emit('friend_added', { friendId: currentUserId });
@@ -1904,7 +1982,10 @@ function initSocketService(io) {
                         io.to(`user-${currentUserId}`).emit('invite_error', buildSocketMessageKey('friends.inviter_unavailable'));
                         return;
                     }
-                    await startChat(io, inviterId, currentUserId);
+                    const started = await startChatWithLock(io, inviterId, currentUserId, { isFriendSnapshot: true });
+                    if (!started) {
+                        io.to(`user-${currentUserId}`).emit('invite_error', buildSocketMessageKey('friends.inviter_unavailable'));
+                    }
                 } else {
                     // Notify inviter
                     io.to(`user-${inviterId}`).emit('invite_declined', buildSocketMessageKey('chat.invite_declined'));
@@ -1974,6 +2055,8 @@ function initSocketService(io) {
                     updateUserDataById(currentUserId, { blockedUsers: nextBlocked }),
                     updateUserDataById(opponentId, { blockedUsers: nextOpponentBlocked }),
                 ]);
+                matchingService.updateOnlineUser(currentUserId, { blockedUsers: nextBlocked });
+                matchingService.updateOnlineUser(opponentId, { blockedUsers: nextOpponentBlocked });
 
                 // Create Appeal entry for admin review if not exists (without messages snapshot until appeal)
                 const existingAppeal = await findAppealByChat(chatId, currentUserId, opponentId, 'pending');
@@ -2036,7 +2119,7 @@ function initSocketService(io) {
     }, CHAT_IDLE_SWEEP_INTERVAL_MS);
 }
 
-async function startChat(io, user1Id, user2Id) {
+async function startChat(io, user1Id, user2Id, options = {}) {
     await Promise.all([
         stopSearchForMatchedUser(user1Id),
         stopSearchForMatchedUser(user2Id),
@@ -2066,27 +2149,17 @@ async function startChat(io, user1Id, user2Id) {
         throw new Error('Failed to create chat');
     }
 
-    const [user1Row, user2Row] = await Promise.all([
-        getUserRowById(user1Id),
-        getUserRowById(user2Id),
-    ]);
-    const isFriendSnapshot = await friendService.areUsersFriends(user1Id, user2Id).catch(() => false);
+    const user1Profile = matchingService.getOnlineProfile(user1Id);
+    const user2Profile = matchingService.getOnlineProfile(user2Id);
+    const participantLanguages = {
+        [u1]: String(user1Profile?.language || 'ru'),
+        [u2]: String(user2Profile?.language || 'ru'),
+    };
+    const isFriendSnapshot = Boolean(options.isFriendSnapshot);
 
-    await chatService.touchChatActivity(String(createdRow.id), {
-        startedAt: readyAtIso,
-        lastActivityAt: new Date(now).toISOString(),
-        isFriendSnapshot,
-        participantLanguages: {
-            [u1]: getUserLanguageFromRow(user1Row),
-            [u2]: getUserLanguageFromRow(user2Row),
-        },
-    });
     setActiveChatContext(String(createdRow.id), {
         participants: [u1, u2],
-        participantLanguages: {
-            [u1]: getUserLanguageFromRow(user1Row),
-            [u2]: getUserLanguageFromRow(user2Row),
-        },
+        participantLanguages,
         startedAt: readyAtIso,
         status: 'active',
         isFriend: isFriendSnapshot,
@@ -2097,11 +2170,25 @@ async function startChat(io, user1Id, user2Id) {
     // Сохраняем связь userId -> chatId
     userActiveChat.set(u1, String(createdRow.id));
     userActiveChat.set(u2, String(createdRow.id));
+    matchingService.updateOnlineUser(u1, { chatStatus: 'in_chat', isSearching: false, searchStartedAt: 0 });
+    matchingService.updateOnlineUser(u2, { chatStatus: 'in_chat', isSearching: false, searchStartedAt: 0 });
+    matchingService.addRecentPartnerRuntime(u1, u2);
+    matchingService.addRecentPartnerRuntime(u2, u1);
 
-    await Promise.all([
-        setUsersChatStatus([user1Id, user2Id], 'in_chat'),
-        matchingService.updateChatHistory(user1Id, user2Id),
-    ]);
+    runDeferredChatFinalization(async () => {
+        const currentChat = await getChatById(createdRow.id);
+        const stillActive = currentChat?.status === 'active';
+        await Promise.all([
+            chatService.touchChatActivity(String(createdRow.id), {
+                startedAt: readyAtIso,
+                lastActivityAt: new Date(now).toISOString(),
+                isFriendSnapshot,
+                participantLanguages,
+            }),
+            stillActive ? setUsersChatStatus([user1Id, user2Id], 'in_chat') : null,
+            matchingService.updateChatHistory(user1Id, user2Id),
+        ]);
+    }, 'Deferred chat start persistence error:');
 
     const chatRoomName = `${CHAT_ROOM_PREFIX}${chatId}`;
     try {
@@ -2143,8 +2230,8 @@ async function startChat(io, user1Id, user2Id) {
                 ...(activeChatContexts.get(String(createdRow.id)) || {}),
                 participants: [u1, u2],
                 participantLanguages: {
-                    [u1]: getUserLanguageFromRow(user1Row),
-                    [u2]: getUserLanguageFromRow(user2Row),
+                    [u1]: participantLanguages[u1],
+                    [u2]: participantLanguages[u2],
                 },
                 startedAt: readyAtIso,
                 status: 'active',
@@ -2176,6 +2263,7 @@ function notifyChatClosed(io, chatId, data) {
 module.exports = {
     initSocketService,
     notifyChatClosed,
+    startPartnerSearch,
     getOnlineUserCount,
     isUserOnline,
     getOnlineUserIds,

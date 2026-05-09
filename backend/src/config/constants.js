@@ -12,8 +12,8 @@ module.exports = {
   NEWS_REPOST_LIMIT_PER_DAY: toNumber(process.env.NEWS_REPOST_LIMIT_PER_DAY, 24),
   NEWS_COMMENTS_PER_POST_LIMIT: toNumber(process.env.NEWS_COMMENTS_PER_POST_LIMIT, 3),
   NEWS_LIKE_REWARD: toNumber(process.env.NEWS_LIKE_REWARD, 0.5),
-  NEWS_COMMENT_REWARD: toNumber(process.env.NEWS_COMMENT_REWARD, 1.5),
-  NEWS_REPOST_REWARD: 1,
+  NEWS_COMMENT_REWARD: toNumber(process.env.NEWS_COMMENT_REWARD, 1),
+  NEWS_REPOST_REWARD: toNumber(process.env.NEWS_REPOST_REWARD, 1.5),
 
   BATTLE_DURATION_SECONDS: toNumber(process.env.BATTLE_DURATION_SECONDS, 900),
   BATTLE_CRON: process.env.BATTLE_CRON || '0 */48 * * *',

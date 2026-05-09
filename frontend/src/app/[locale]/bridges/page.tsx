@@ -253,7 +253,7 @@ export default function BridgesPage() {
       const statusQuery = tabOverride === 'completed' ? 'completed' : tabOverride === 'building' ? 'building' : '';
       const query = new URLSearchParams({
         page: String(pageOverride),
-        limit: '50',
+        limit: '5',
       });
       if (statusQuery) {
         query.set('status', statusQuery);

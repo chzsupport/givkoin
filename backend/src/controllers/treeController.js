@@ -9,6 +9,7 @@ const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const fruitRewardCache = new Map();
 
 function normalizeLang(value) {
     return value === 'en' ? 'en' : 'ru';
@@ -116,6 +117,68 @@ function keepPositiveReward(scaledReward, fallbackReward) {
     return safeFallback > 0 ? safeFallback : 0;
 }
 
+function getFruitRewardCacheKey(userId, dayStart) {
+    return `${String(userId)}:${dayStart.toISOString()}`;
+}
+
+function readPreparedFruitReward(userId, now = new Date()) {
+    const dayStart = getDayStart(now);
+    const key = getFruitRewardCacheKey(userId, dayStart);
+    const cached = fruitRewardCache.get(key);
+    if (!cached) return null;
+    const expiresAt = cached.expiresAt ? new Date(cached.expiresAt).getTime() : 0;
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        fruitRewardCache.delete(key);
+        return null;
+    }
+    return cached;
+}
+
+async function prepareFruitReward(userId, now = new Date()) {
+    const cached = readPreparedFruitReward(userId, now);
+    if (cached) return cached;
+
+    const dayStart = getDayStart(now);
+    const fruitWindow = getFruitWindow(now);
+    const roll = Math.floor(Math.random() * 3);
+    const rewardMultiplier = await getTotalRewardMultiplier(userId);
+    let rewardType = 'k';
+    let reward = 0;
+
+    if (roll === 0) {
+        rewardType = 'k';
+        const baseReward = Math.floor(Math.random() * 41) + 10;
+        reward = keepPositiveReward(
+            Math.max(0, Math.round(baseReward * rewardMultiplier * 1000) / 1000),
+            baseReward
+        );
+    } else if (roll === 1) {
+        rewardType = 'stars';
+        reward = 0.005;
+    } else {
+        rewardType = 'lumens';
+        const baseReward = Math.floor(Math.random() * 41) + 10;
+        reward = keepPositiveReward(
+            Math.max(0, Math.floor(baseReward * rewardMultiplier)),
+            baseReward
+        );
+    }
+
+    const prepared = {
+        rewardType,
+        reward,
+        dayStart: dayStart.toISOString(),
+        expiresAt: fruitWindow.end.toISOString(),
+        preparedAt: now.toISOString(),
+    };
+    fruitRewardCache.set(getFruitRewardCacheKey(userId, dayStart), prepared);
+    return prepared;
+}
+
+function clearPreparedFruitReward(userId, now = new Date()) {
+    fruitRewardCache.delete(getFruitRewardCacheKey(userId, getDayStart(now)));
+}
+
 exports.getTreeStatus = async (req, res) => {
     try {
         let tree = await getTreeDoc();
@@ -141,10 +204,20 @@ exports.getTreeStatus = async (req, res) => {
         const fruitWindow = getFruitWindow(now);
         const isInWindow = now >= fruitWindow.start && now < fruitWindow.end;
         const isFruitAvailable = isInWindow && !alreadyCollectedToday;
+        const preparedFruitReward = isFruitAvailable && user?._id
+            ? await prepareFruitReward(user._id, now).catch(() => null)
+            : null;
 
         res.json({
             ...tree,
             isFruitAvailable,
+            preparedFruitReward: preparedFruitReward
+                ? {
+                    rewardType: preparedFruitReward.rewardType,
+                    reward: preparedFruitReward.reward,
+                    expiresAt: preparedFruitReward.expiresAt,
+                }
+                : null,
             fruitWindow: {
                 start: fruitWindow.start,
                 end: fruitWindow.end
@@ -200,78 +273,84 @@ exports.healTree = async (req, res) => {
             stars: nextStars,
         });
 
-        const radianceResult = await awardRadianceForActivity({
-            userId,
-            units: lumens,
-            activityType: 'tree_heal_button',
-            meta: {
-                lumens,
-                radiance: radianceAmount,
-                conversionRate: 4,
-            },
-        });
+        const radianceResult = { queued: true, amount: radianceAmount };
 
-        // Achievements Logic
-        try {
-            const { grantAchievement } = require('../services/achievementService');
-            const now = new Date();
-            const stats = userData.achievementStats && typeof userData.achievementStats === 'object'
-                ? userData.achievementStats
-                : {};
-            const lastBattleAt = stats.lastBattleFinishedAt;
-            const lastBattleWon = stats.lastBattleWon;
-
-            // #86. Исцелитель мироздания (10к люменов суммарно)
-            const newTotalTreeLumens = (stats.totalLumensToTree || 0) + lumens;
-            await updateUserDataById(userId, {
-                achievementStats: { ...stats, totalLumensToTree: newTotalTreeLumens },
+        void (async () => {
+            await awardRadianceForActivity({
+                userId,
+                units: lumens,
+                activityType: 'tree_heal_button',
+                meta: {
+                    lumens,
+                    radiance: radianceAmount,
+                    conversionRate: 4,
+                },
             });
-            if (newTotalTreeLumens >= 10000) {
-                await grantAchievement({ userId, achievementId: 86 });
-            }
 
-            // #48. Целитель коры (Сразу после боя)
-            if (lastBattleAt) {
-                const diffMs = now.getTime() - new Date(lastBattleAt).getTime();
-                if (diffMs < 5 * 60 * 1000) { // 5 minutes window
-                    await grantAchievement({ userId, achievementId: 48 });
-                }
-            }
-
-            // #49. Великий лекарь (1001+ люмен после поражения)
-            if (lastBattleWon === false && lumens >= 1001) {
-                await grantAchievement({ userId, achievementId: 49 });
-            }
-
-            // #88. Спаситель ветви (Внести >30% от нужного сияния для травмы)
+            // Achievements Logic
             try {
-                const tree = await getTreeDoc();
-                if (tree && Array.isArray(tree.injuries) && tree.injuries.length > 0) {
-                    const LUMEN_TO_RADIANCE = 4;
-                    const userRadiance = lumens * LUMEN_TO_RADIANCE;
-                    // Суммарное нужное сияние по всем активным травмам
-                    const totalRequired = tree.injuries.reduce((acc, inj) => {
-                        const req = inj.requiredRadiance && inj.requiredRadiance > 0 ? inj.requiredRadiance : (inj.severityPercent || 0) * 1000;
-                        const healed = inj.healedRadiance || 0;
-                        return acc + Math.max(0, req - healed);
-                    }, 0);
-                    if (totalRequired > 0 && userRadiance / totalRequired >= 0.3) {
-                        await grantAchievement({ userId, achievementId: 88 });
+                const { grantAchievement } = require('../services/achievementService');
+                const now = new Date();
+                const stats = userData.achievementStats && typeof userData.achievementStats === 'object'
+                    ? userData.achievementStats
+                    : {};
+                const lastBattleAt = stats.lastBattleFinishedAt;
+                const lastBattleWon = stats.lastBattleWon;
+
+                // #86. Исцелитель мироздания (10к люменов суммарно)
+                const newTotalTreeLumens = (stats.totalLumensToTree || 0) + lumens;
+                await updateUserDataById(userId, {
+                    achievementStats: { ...stats, totalLumensToTree: newTotalTreeLumens },
+                });
+                if (newTotalTreeLumens >= 10000) {
+                    await grantAchievement({ userId, achievementId: 86 });
+                }
+
+                // #48. Целитель коры (Сразу после боя)
+                if (lastBattleAt) {
+                    const diffMs = now.getTime() - new Date(lastBattleAt).getTime();
+                    if (diffMs < 5 * 60 * 1000) { // 5 minutes window
+                        await grantAchievement({ userId, achievementId: 48 });
                     }
                 }
-            } catch (e) {
-                console.error('Achievement #88 error:', e);
-            }
-        } catch (e) {
-            console.error('Tree healing achievements error:', e);
-        }
 
-        recordActivity({
-            userId,
-            type: 'tree_heal',
-            minutes: 1,
-            meta: { lumens, radiance: radianceAmount, conversionRate: 4, starsAward },
-        }).catch(() => { });
+                // #49. Великий лекарь (1001+ люмен после поражения)
+                if (lastBattleWon === false && lumens >= 1001) {
+                    await grantAchievement({ userId, achievementId: 49 });
+                }
+
+                // #88. Спаситель ветви (Внести >30% от нужного сияния для травмы)
+                try {
+                    const tree = await getTreeDoc();
+                    if (tree && Array.isArray(tree.injuries) && tree.injuries.length > 0) {
+                        const LUMEN_TO_RADIANCE = 4;
+                        const userRadiance = lumens * LUMEN_TO_RADIANCE;
+                        // Суммарное нужное сияние по всем активным травмам
+                        const totalRequired = tree.injuries.reduce((acc, inj) => {
+                            const req = inj.requiredRadiance && inj.requiredRadiance > 0 ? inj.requiredRadiance : (inj.severityPercent || 0) * 1000;
+                            const healed = inj.healedRadiance || 0;
+                            return acc + Math.max(0, req - healed);
+                        }, 0);
+                        if (totalRequired > 0 && userRadiance / totalRequired >= 0.3) {
+                            await grantAchievement({ userId, achievementId: 88 });
+                        }
+                    }
+                } catch (e) {
+                    console.error('Achievement #88 error:', e);
+                }
+            } catch (e) {
+                console.error('Tree healing achievements error:', e);
+            }
+
+            recordActivity({
+                userId,
+                type: 'tree_heal',
+                minutes: 1,
+                meta: { lumens, radiance: radianceAmount, conversionRate: 4, starsAward },
+            }).catch(() => { });
+        })().catch((error) => {
+            console.error('Tree healing background work error:', error);
+        });
 
         res.json({
             ok: true,
@@ -320,32 +399,22 @@ exports.collectFruit = async (req, res) => {
             });
         }
 
-        // Award reward (PLAN.md): random 10–50 K OR 0.005 stars OR 10–50 Lm
-        const roll = Math.floor(Math.random() * 3); // 0..2
-        let rewardType = 'k';
-        let reward = 0;
-
-        const rewardMultiplier = await getTotalRewardMultiplier(userId);
+        const preparedFruitReward = await prepareFruitReward(userId, now);
+        let rewardType = preparedFruitReward.rewardType;
+        let reward = preparedFruitReward.reward;
 
         let nextK = Number(userData.k) || 0;
         let nextStars = Number(userData.stars) || 0;
         let nextLumens = Number(userData.lumens) || 0;
 
-        if (roll === 0) {
+        if (rewardType === 'k') {
             rewardType = 'k';
-            const baseReward = Math.floor(Math.random() * 41) + 10; // 10-50 K
-            reward = baseReward;
-            const finalK = keepPositiveReward(
-                Math.max(0, Math.round(baseReward * rewardMultiplier * 1000) / 1000),
-                baseReward
-            );
-            reward = finalK;
-            nextK += finalK;
+            nextK += reward;
             await recordTransaction({
                 userId,
                 type: 'fruit_collect',
                 direction: 'credit',
-                amount: finalK,
+                amount: reward,
                 currency: 'K',
                 description: pickLang(userLang, 'Сбор плода', 'Fruit collection'),
                 relatedEntity: tree._id,
@@ -353,13 +422,12 @@ exports.collectFruit = async (req, res) => {
             }).catch(() => null);
             awardReferralBlessingExternal({
                 receiverUserId: userId,
-                amount: finalK,
+                amount: reward,
                 sourceType: 'fruit_collect',
                 relatedEntity: tree._id,
             }).catch(() => { });
-        } else if (roll === 1) {
+        } else if (rewardType === 'stars') {
             rewardType = 'stars';
-            reward = 0.005;
             const resStars = await applyStarsDelta({
                 userId,
                 delta: reward,
@@ -371,14 +439,7 @@ exports.collectFruit = async (req, res) => {
             if (resStars?.stars != null) nextStars = resStars.stars;
         } else {
             rewardType = 'lumens';
-            const baseReward = Math.floor(Math.random() * 41) + 10; // 10-50 Lm
-            reward = baseReward;
-            const finalLm = keepPositiveReward(
-                Math.max(0, Math.floor(baseReward * rewardMultiplier)),
-                baseReward
-            );
-            reward = finalLm;
-            nextLumens = (Number(nextLumens) || 0) + finalLm;
+            nextLumens = (Number(nextLumens) || 0) + reward;
         }
 
         await updateUserDataById(userId, {
@@ -388,6 +449,7 @@ exports.collectFruit = async (req, res) => {
             lastFruitCollectedAt: now.toISOString(),
             lastMissedFruitNotificationAt: null,
         });
+        clearPreparedFruitReward(userId, now);
 
         awardRadianceForActivity({
             userId,

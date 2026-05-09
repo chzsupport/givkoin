@@ -1,7 +1,7 @@
-const matchingService = require('../services/matchingService');
 const { recordActivity } = require('../services/activityService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const friendService = require('../services/friendService');
+const socketService = require('../services/socketService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
 function normalizeLang(value) {
@@ -139,20 +139,32 @@ async function findMatch(req, res, next) {
     if (!userId) {
       return res.status(401).json({ message: 'Требуется авторизация' });
     }
+    const userLang = normalizeLang(req.user?.language || req.user?.data?.language || 'ru');
+    const io = req.app.get('io');
+    if (!io || !socketService.isUserOnline(userId)) {
+      return res.status(409).json({
+        status: 'socket_required',
+        message: pickLang(
+          userLang,
+          'Поиск собеседника работает через живое соединение страницы. Обновите страницу и попробуйте снова.',
+          'Partner search works through the live page connection. Refresh the page and try again.'
+        ),
+      });
+    }
+
     // Лог активности: поиск собеседника
     recordActivity({ userId, type: 'match_search', minutes: 1 }).catch(() => { });
-    const partner = await matchingService.findMatchForUser(userId);
-    if (!partner) {
-      return res.status(404).json({ message: 'Подходящий собеседник не найден' });
+    const started = await socketService.startPartnerSearch(io, userId, null);
+    if (!started) {
+      return res.status(404).json({
+        status: 'no_partner',
+        message: pickLang(userLang, 'Подходящий собеседник не найден', 'Suitable partner was not found'),
+      });
     }
-    const chat = await matchingService.createChat(userId, partner._id);
+
     return res.json({
-      chatId: chat._id,
-      partner: {
-        id: partner._id,
-        nickname: partner.nickname,
-        gender: partner.gender,
-      },
+      status: 'searching',
+      message: pickLang(userLang, 'Поиск запущен. Чат начнётся только после принятия вызова.', 'Search started. Chat starts only after the call is accepted.'),
     });
   } catch (error) {
     return next(error);
@@ -188,6 +200,26 @@ module.exports = {
         return res.json({
           message: pickLang(requesterLang, 'Заявка уже ждёт принятия в ЛК', 'The request is already waiting for acceptance'),
           status: 'pending_acceptance',
+        });
+      }
+      if (result.status === 'chat_too_short') {
+        return res.status(400).json({
+          message: pickLang(
+            requesterLang,
+            'Добавить в друзья можно только после общения не меньше 5 минут',
+            'You can add a friend only after at least 5 minutes of chat'
+          ),
+          status: 'chat_too_short',
+        });
+      }
+      if (result.status === 'rate_limited') {
+        return res.status(429).json({
+          message: pickLang(
+            requesterLang,
+            'Можно отправить не больше 12 заявок в друзья за час',
+            'You can send no more than 12 friend requests per hour'
+          ),
+          status: 'rate_limited',
         });
       }
 

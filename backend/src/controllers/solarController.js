@@ -8,6 +8,7 @@ const {
 } = require('../services/kService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { createAdBoostOffer } = require('../services/adBoostService');
+const { createNotification } = require('./notificationController');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 
@@ -47,6 +48,15 @@ function keepPositiveReward(scaledReward, fallbackReward) {
     const safeFallback = Number(fallbackReward) || 0;
     if (safeScaled > 0) return safeScaled;
     return safeFallback > 0 ? safeFallback : 0;
+}
+
+function estimateStarsAfter(currentStars, delta) {
+    const scale = 1000;
+    const min = Math.round(0.01 * scale);
+    const max = 5 * scale;
+    const current = Math.round((Number(currentStars) || 0) * scale);
+    const add = Math.round((Number(delta) || 0) * scale);
+    return Math.min(max, Math.max(min, current + add)) / scale;
 }
 
 async function getSolarChargeRowByUserId(userId) {
@@ -277,6 +287,109 @@ exports.getSolarStatus = async (req, res) => {
     }
 };
 
+async function finishSolarCollectBackground({
+    userId,
+    userRow,
+    charge,
+    userLang,
+    now,
+    finalKAward,
+    finalLmAward,
+    baseLmAward,
+    extraLm,
+    achievementStats,
+}) {
+    if (finalKAward > 0) {
+        await recordTransaction({
+            userId: userRow.id,
+            type: 'solar_collect',
+            direction: 'credit',
+            amount: finalKAward,
+            currency: 'K',
+            description: pickLang(userLang, 'Сбор солнечного заряда', 'Solar charge collection'),
+            relatedEntity: charge._id,
+            occurredAt: now,
+        }).catch(() => null);
+    }
+
+    const hourStart = new Date(now);
+    hourStart.setMinutes(0, 0, 0);
+
+    awardRadianceForActivity({
+        userId,
+        amount: 10,
+        activityType: 'solar_collect',
+        meta: { solarChargeId: charge._id },
+        dedupeKey: `solar_collect:${charge._id}:${hourStart.toISOString()}`,
+    }).catch(() => { });
+
+    recordActivity({
+        userId,
+        type: 'solar_collect',
+        minutes: 5,
+        meta: {
+            earnedLm: finalLmAward,
+            earnedK: finalKAward,
+            baseLmAward,
+            extraLm,
+        },
+    }).catch(() => { });
+
+    try {
+        const supabase = getSupabaseClient();
+        const { data: battleRows, error: battleError } = await supabase
+            .from(DOC_TABLE)
+            .select('id,data')
+            .eq('model', 'Battle')
+            .eq('data->>status', 'active')
+            .limit(100);
+
+        if (!battleError && Array.isArray(battleRows)) {
+            for (const row of battleRows) {
+                const attendance = row.data?.attendance || [];
+                const idx = attendance.findIndex((a) => String(a.user) === String(userId));
+                if (idx >= 0) {
+                    attendance[idx].exitedAndReturnedWithSolarCharge = true;
+                    await supabase
+                        .from(DOC_TABLE)
+                        .update({ data: { ...row.data, attendance }, updated_at: new Date().toISOString() })
+                        .eq('id', row.id);
+                    break;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Achievement #26 track error:', e);
+    }
+
+    try {
+        const { grantAchievement } = require('../services/achievementService');
+        const lastChargeAt = achievementStats?.lastSolarChargeAt;
+        let chargeCount = (achievementStats?.dailySolarChargesCount || 0) + 1;
+
+        if (lastChargeAt) {
+            const gapMs = now.getTime() - new Date(lastChargeAt).getTime();
+            if (gapMs > 120 * 60 * 1000) {
+                chargeCount = 1;
+            }
+        }
+
+        await updateUserDataById(userRow.id, {
+            achievementStats: {
+                ...achievementStats,
+                dailySolarChargesCount: chargeCount,
+                lastSolarChargeAt: now,
+            },
+        });
+
+        if (chargeCount >= 24) {
+            await grantAchievement({ userId: userRow.id, achievementId: 90 });
+        }
+    } catch (e) {
+        console.error('Achievement solar collect error:', e);
+    }
+}
+
 // POST /solar/collect
 exports.collectSolarCharge = async (req, res) => {
     try {
@@ -338,18 +451,6 @@ exports.collectSolarCharge = async (req, res) => {
             k: nextK,
             shopBoosts: nextShopBoosts,
         });
-        if (finalKAward > 0) {
-            await recordTransaction({
-                userId: userRow.id,
-                type: 'solar_collect',
-                direction: 'credit',
-                amount: finalKAward,
-                currency: 'K',
-                description: pickLang(userLang, 'Сбор солнечного заряда', 'Solar charge collection'),
-                relatedEntity: charge._id,
-                occurredAt: now,
-            }).catch(() => null);
-        }
         await upsertSolarChargeByUserId(req.user._id, {
             current_lm: 0,
             last_collected_at: now.toISOString(),
@@ -357,86 +458,20 @@ exports.collectSolarCharge = async (req, res) => {
             total_collected_lm: nextTotalCollectedLm,
         });
 
-        const hourStart = new Date(now);
-        hourStart.setMinutes(0, 0, 0);
-
-        awardRadianceForActivity({
+        finishSolarCollectBackground({
             userId: req.user._id,
-            amount: 10,
-            activityType: 'solar_collect',
-            meta: { solarChargeId: charge._id },
-            dedupeKey: `solar_collect:${charge._id}:${hourStart.toISOString()}`,
-        }).catch(() => { });
-
-        // Лог активности для «Тихого ночного дозора»
-        recordActivity({
-            userId: req.user._id,
-            type: 'solar_collect',
-            minutes: 5,
-            meta: {
-                earnedLm: finalLmAward,
-                earnedK: finalKAward,
-                baseLmAward,
-                extraLm,
-            },
-        }).catch(() => { });
-
-        // Ачивка #26. Второе дыхание (Вернуться в бой после зарядки)
-        try {
-            const supabase = getSupabaseClient();
-            const { data: battleRows, error: battleError } = await supabase
-                .from(DOC_TABLE)
-                .select('id,data')
-                .eq('model', 'Battle')
-                .eq('data->>status', 'active')
-                .limit(100);
-            
-            if (!battleError && Array.isArray(battleRows)) {
-                for (const row of battleRows) {
-                    const attendance = row.data?.attendance || [];
-                    const idx = attendance.findIndex((a) => String(a.user) === String(req.user._id));
-                    if (idx >= 0) {
-                        attendance[idx].exitedAndReturnedWithSolarCharge = true;
-                        await supabase
-                            .from(DOC_TABLE)
-                            .update({ data: { ...row.data, attendance }, updated_at: new Date().toISOString() })
-                            .eq('id', row.id);
-                        break;
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Achievement #26 track error:', e);
-        }
-
-        // Достижение #90. Светоносец дня
-        try {
-            const { grantAchievement } = require('../services/achievementService');
-            const lastChargeAt = achievementStats?.lastSolarChargeAt;
-            let chargeCount = (achievementStats?.dailySolarChargesCount || 0) + 1;
-
-            if (lastChargeAt) {
-                const gapMs = now.getTime() - new Date(lastChargeAt).getTime();
-                // Если пропуск более 2 часов (120 минут) - сброс
-                if (gapMs > 120 * 60 * 1000) {
-                    chargeCount = 1;
-                }
-            }
-
-            await updateUserDataById(userRow.id, {
-                achievementStats: {
-                    ...achievementStats,
-                    dailySolarChargesCount: chargeCount,
-                    lastSolarChargeAt: now,
-                },
-            });
-
-            if (chargeCount >= 24) {
-                await grantAchievement({ userId: userRow.id, achievementId: 90 });
-            }
-        } catch (e) {
-            console.error('Achievement solar collect error:', e);
-        }
+            userRow,
+            charge,
+            userLang,
+            now,
+            finalKAward,
+            finalLmAward,
+            baseLmAward,
+            extraLm,
+            achievementStats,
+        }).catch((error) => {
+            console.error('Solar collect background work error:', error);
+        });
 
         const boostOffer = await createAdBoostOffer({
             userId: userRow.id,
@@ -472,12 +507,157 @@ exports.collectSolarCharge = async (req, res) => {
     }
 };
 
+async function deliverSolarLumensInBackground({ senderId, amountLm, userLang, io, now }) {
+    const recipient = await pickRandomRecipient(senderId);
+    if (!recipient?._id) return null;
+
+    const receiverRow = await getUserRowById(recipient._id);
+    if (!receiverRow) return null;
+
+    const receiverData = getUserData(receiverRow);
+    const nextReceiverLumens = (Number(receiverData.lumens) || 0) + amountLm;
+    await updateUserDataById(receiverRow.id, { lumens: nextReceiverLumens });
+
+    await createNotification({
+        userId: receiverRow.id,
+        type: 'system',
+        title: pickLang(userLang, 'С вами поделились Люменами', 'Lumens were shared with you'),
+        message: pickLang(
+            userLang,
+            `Вам отправили ${amountLm} Lm.`,
+            `${amountLm} Lm were sent to you.`
+        ),
+        link: '/tree',
+        io,
+    }).catch(() => null);
+
+    // Ачивка #27. Альтруист боя
+    try {
+        const supabase = getSupabaseClient();
+        const { data: battleRows, error: battleError } = await supabase
+            .from(DOC_TABLE)
+            .select('id,data')
+            .eq('model', 'Battle')
+            .eq('data->>status', 'active')
+            .limit(100);
+
+        if (!battleError && Array.isArray(battleRows)) {
+            for (const row of battleRows) {
+                const attendance = row.data?.attendance || [];
+                const idx = attendance.findIndex((a) => String(a.user) === String(receiverRow.id));
+                if (idx >= 0) {
+                    attendance[idx].receivedGiftInBattle = true;
+                    await supabase
+                        .from(DOC_TABLE)
+                        .update({ data: { ...row.data, attendance }, updated_at: new Date().toISOString() })
+                        .eq('id', row.id);
+                    break;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Achievement #27 recipient track error:', e);
+    }
+
+    return { receiverId: receiverRow.id, deliveredAt: now.toISOString() };
+}
+
+async function finishSolarShareBackground({ senderRow, amountLm, finalKAward, starsAward, senderAchievementStats, userLang, io, now }) {
+    let delivery = null;
+    try {
+        delivery = await deliverSolarLumensInBackground({
+            senderId: senderRow.id,
+            amountLm,
+            userLang,
+            io,
+            now,
+        });
+    } catch (e) {
+        console.error('Solar share recipient delivery error:', e);
+    }
+
+    const relatedEntity = delivery?.receiverId || 'solar_share_pending';
+
+    if (finalKAward > 0) {
+        await recordTransaction({
+            userId: senderRow.id,
+            type: 'solar_share',
+            direction: 'credit',
+            amount: finalKAward,
+            currency: 'K',
+            description: pickLang(userLang, 'Передача Люменов', 'Lumens transfer'),
+            relatedEntity,
+            occurredAt: now,
+        }).catch(() => null);
+    }
+
+    awardReferralBlessingExternal({
+        receiverUserId: senderRow.id,
+        amount: finalKAward,
+        sourceType: 'solar_share',
+        relatedEntity,
+    }).catch(() => { });
+
+    awardRadianceForActivity({
+        userId: senderRow.id,
+        amount: 10,
+        activityType: 'solar_share',
+        meta: { amountLm, recipientId: relatedEntity },
+        dedupeKey: `solar_share:${senderRow.id}:${relatedEntity}:${now.toISOString()}`,
+    }).catch(() => { });
+
+    try {
+        const { grantAchievement } = require('../services/achievementService');
+        const nextAchievementStats = { ...senderAchievementStats };
+
+        const lastBattleAt = nextAchievementStats?.lastBattleFinishedAt;
+        if (lastBattleAt) {
+            const diffMs = now.getTime() - new Date(lastBattleAt).getTime();
+            if (diffMs < 5 * 60 * 1000) {
+                nextAchievementStats.sharesAfterLastBattle = (Number(nextAchievementStats.sharesAfterLastBattle) || 0) + 1;
+                if (nextAchievementStats.sharesAfterLastBattle >= 5) {
+                    await grantAchievement({ userId: senderRow.id, achievementId: 28 });
+                }
+            }
+        }
+
+        nextAchievementStats.totalEnergyShared = (Number(nextAchievementStats.totalEnergyShared) || 0) + amountLm;
+        if (nextAchievementStats.totalEnergyShared >= 5000) {
+            await grantAchievement({ userId: senderRow.id, achievementId: 87 });
+        }
+
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const lastShareAt = nextAchievementStats.lastEnergyShareAt;
+        let streak = Number(nextAchievementStats.consecutiveEnergyShareDays) || 0;
+        if (lastShareAt) {
+            if (isSameLocalDay(lastShareAt, yesterday)) {
+                streak += 1;
+            } else if (!isSameLocalDay(lastShareAt, now)) {
+                streak = 1;
+            }
+        } else {
+            streak = 1;
+        }
+        nextAchievementStats.consecutiveEnergyShareDays = streak;
+        nextAchievementStats.lastEnergyShareAt = now;
+        if (streak >= 7) {
+            await grantAchievement({ userId: senderRow.id, achievementId: 73 });
+        }
+
+        await updateUserDataById(senderRow.id, {
+            achievementStats: nextAchievementStats,
+        });
+    } catch (e) {
+        console.error('Solar share achievements background error:', e);
+    }
+}
+
 // POST /solar/share
 exports.shareSolarLumens = async (req, res) => {
     try {
         const DAILY_LIMIT = 5;
         const amountLm = Number(req.body?.amountLm);
-
         const userLang = normalizeLang(getRequestLanguage(req));
 
         if (!Number.isFinite(amountLm) || amountLm < 1 || amountLm > 100) {
@@ -486,9 +666,10 @@ exports.shareSolarLumens = async (req, res) => {
 
         const now = new Date();
         const dayStart = getDayStart(now);
-        const [shareCountToday, senderRow] = await Promise.all([
-            getSolarShareCountToday(req.user._id, now, { useCache: false }),
+        const [shareCountToday, senderRow, rewardMultiplier] = await Promise.all([
+            getSolarShareCountToday(req.user._id, now, { useCache: true }),
             getUserRowById(req.user._id),
+            getTotalRewardMultiplier(req.user._id),
         ]);
 
         if (shareCountToday >= DAILY_LIMIT) {
@@ -504,114 +685,55 @@ exports.shareSolarLumens = async (req, res) => {
             return res.status(400).json({ message: pickLang(userLang, 'Недостаточно Люменов', 'Not enough Lumens') });
         }
 
-        const recipient = await pickRandomRecipient(senderRow.id);
-
-        if (!recipient?._id) {
-            return res.status(400).json({ message: pickLang(userLang, 'Нет доступных получателей', 'No available recipients') });
-        }
-
-        const [receiverRow, rewardMultiplier] = await Promise.all([
-            getUserRowById(recipient._id),
-            getTotalRewardMultiplier(senderRow.id),
-        ]);
-        if (!receiverRow) {
-            return res.status(400).json({ message: pickLang(userLang, 'Получатель недоступен', 'Recipient is unavailable') });
-        }
-
         const kAward = 5;
-
         const finalKAward = keepPositiveReward(
             Math.max(0, Math.round(kAward * rewardMultiplier * 1000) / 1000),
             kAward
         );
-        const starsAward = Math.round((Math.random() * (0.01 - 0.001) + 0.001) * 1000) / 1000;
-
+        const baseStarsAward = Math.round((Math.random() * (0.01 - 0.001) + 0.001) * 1000) / 1000;
+        const starsAward = keepPositiveReward(
+            Math.round(baseStarsAward * rewardMultiplier * 1000) / 1000,
+            baseStarsAward
+        );
         const nextSenderLumens = (Number(senderData.lumens) || 0) - amountLm;
         const nextSenderK = (Number(senderData.k) || 0) + finalKAward;
 
-        const resStars = await applyStarsDelta({
-            userId: senderRow.id,
-            delta: starsAward,
-            type: 'solar_share',
-            description: pickLang(userLang, 'Передача Люменов', 'Lumens transfer'),
-            relatedEntity: receiverRow.id,
-            occurredAt: now,
-        });
-        const nextSenderStars = resStars?.stars;
-
-        const receiverData = getUserData(receiverRow);
-        const nextReceiverLumens = (Number(receiverData.lumens) || 0) + amountLm;
-
-        const [updatedSenderRow] = await Promise.all([
-            updateUserDataById(senderRow.id, {
-                lumens: nextSenderLumens,
-                k: nextSenderK,
-                ...(nextSenderStars != null ? { stars: nextSenderStars } : {}),
-            }),
-            updateUserDataById(receiverRow.id, {
-                lumens: nextReceiverLumens,
-            }),
-        ]);
-        if (finalKAward > 0) {
-            await recordTransaction({
-                userId: senderRow.id,
-                type: 'solar_share',
-                direction: 'credit',
-                amount: finalKAward,
-                currency: 'K',
-                description: pickLang(userLang, 'Передача Люменов', 'Lumens transfer'),
-                relatedEntity: receiverRow.id,
-                occurredAt: now,
-            }).catch(() => null);
-        }
-
-        // Ачивка #27. Альтруист боя
+        let nextSenderStars = estimateStarsAfter(senderData.stars, starsAward);
         try {
-            const supabase = getSupabaseClient();
-            const { data: battleRows, error: battleError } = await supabase
-                .from(DOC_TABLE)
-                .select('id,data')
-                .eq('model', 'Battle')
-                .eq('data->>status', 'active')
-                .limit(100);
-            
-            if (!battleError && Array.isArray(battleRows)) {
-                for (const row of battleRows) {
-                    const attendance = row.data?.attendance || [];
-                    const idx = attendance.findIndex((a) => String(a.user) === String(receiverRow.id));
-                    if (idx >= 0) {
-                        attendance[idx].receivedGiftInBattle = true;
-                        await supabase
-                            .from(DOC_TABLE)
-                            .update({ data: { ...row.data, attendance }, updated_at: new Date().toISOString() })
-                            .eq('id', row.id);
-                        break;
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Achievement #27 recipient track error:', e);
+            const resStars = await applyStarsDelta({
+                userId: senderRow.id,
+                delta: starsAward,
+                skipDebuff: true,
+                type: 'solar_share',
+                description: pickLang(userLang, 'Передача Люменов', 'Lumens transfer'),
+                relatedEntity: 'solar_share_pending',
+                occurredAt: now,
+            });
+            if (resStars?.stars != null) nextSenderStars = resStars.stars;
+        } catch (error) {
+            console.error('Solar share stars update fallback:', error);
         }
 
-        awardReferralBlessingExternal({
-            receiverUserId: senderRow.id,
-            amount: finalKAward,
-            sourceType: 'solar_share',
-            relatedEntity: receiverRow.id,
-        }).catch(() => { });
+        const updatedSenderRow = await updateUserDataById(senderRow.id, {
+            lumens: nextSenderLumens,
+            k: nextSenderK,
+            stars: nextSenderStars,
+        });
 
-        // IMPORTANT: record synchronously to enforce DAILY_LIMIT without race conditions
-        await recordActivity({
+        // Эта запись нужна для дневного лимита, но она не должна ломать уже принятое действие.
+        recordActivity({
             userId: senderRow.id,
             type: 'solar_share',
             minutes: 1,
             meta: {
                 amountLm,
-                recipientId: receiverRow.id,
                 kAward: finalKAward,
                 starsAward,
+                delivery: 'background',
             },
             createdAt: now,
+        }).catch((error) => {
+            console.error('Solar share activity record error:', error);
         });
         setCachedSolarShareCount(
             getSolarShareCountCacheKey(senderRow.id, dayStart),
@@ -620,83 +742,18 @@ exports.shareSolarLumens = async (req, res) => {
             now.getTime()
         );
 
-        awardRadianceForActivity({
-            userId: senderRow.id,
-            amount: 10,
-            activityType: 'solar_share',
-            meta: { amountLm, recipientId: receiverRow.id },
-            dedupeKey: `solar_share:${senderRow.id}:${receiverRow.id}:${now.toISOString()}`,
-        }).catch(() => { });
-
-
-        // Достижение #28. Сияющий донор
-        try {
-            const lastBattleAt = senderAchievementStats?.lastBattleFinishedAt;
-            if (lastBattleAt) {
-                const diffMs = now.getTime() - new Date(lastBattleAt).getTime();
-                if (diffMs < 5 * 60 * 1000) { // В течение 5 минут после боя
-                    // Любое действие? Мы проверяем только донорство тут.
-                    const sharesAfter = (senderAchievementStats?.sharesAfterLastBattle || 0) + 1;
-                    await updateUserDataById(senderRow.id, {
-                        achievementStats: { ...senderAchievementStats, sharesAfterLastBattle: sharesAfter },
-                    });
-                    if (sharesAfter >= 5) {
-                        const { grantAchievement } = require('../services/achievementService');
-                        await grantAchievement({ userId: senderRow.id, achievementId: 28 });
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Achievement #28 track error:', e);
-        }
-
-        // Достижение #87. Щедрая душа (5000 люмен раздал)
-        try {
-            const { grantAchievement } = require('../services/achievementService');
-            const totalShared = (senderAchievementStats?.totalEnergyShared || 0) + amountLm;
-            await updateUserDataById(senderRow.id, {
-                achievementStats: { ...senderAchievementStats, totalEnergyShared: totalShared },
-            });
-
-            if (totalShared >= 5000) {
-                await grantAchievement({ userId: senderRow.id, achievementId: 87 });
-            }
-        } catch (e) {
-            console.error('Achievement #87 track error:', e);
-        }
-
-        // Достижение #73. Постоянство Света (7 дней подряд)
-        try {
-            const yesterday = new Date(now);
-            yesterday.setDate(yesterday.getDate() - 1);
-            const lastShareAt = senderAchievementStats?.lastEnergyShareAt;
-            let streak = senderAchievementStats?.consecutiveEnergyShareDays || 0;
-
-            if (lastShareAt) {
-                if (isSameLocalDay(lastShareAt, yesterday)) {
-                    streak += 1;
-                } else if (!isSameLocalDay(lastShareAt, now)) {
-                    streak = 1;
-                }
-            } else {
-                streak = 1;
-            }
-
-            await updateUserDataById(senderRow.id, {
-                achievementStats: {
-                    ...senderAchievementStats,
-                    consecutiveEnergyShareDays: streak,
-                    lastEnergyShareAt: now,
-                },
-            });
-
-            if (streak >= 7) {
-                const { grantAchievement } = require('../services/achievementService');
-                await grantAchievement({ userId: senderRow.id, achievementId: 73 });
-            }
-        } catch (e) {
-            console.error('Achievement #73 track error:', e);
-        }
+        finishSolarShareBackground({
+            senderRow,
+            amountLm,
+            finalKAward,
+            starsAward,
+            senderAchievementStats,
+            userLang,
+            io: req.app.get('io'),
+            now,
+        }).catch((error) => {
+            console.error('Solar share background work error:', error);
+        });
 
         res.json({
             message: pickLang(userLang, 'Свет отправлен!', 'Light sent!'),
@@ -705,6 +762,7 @@ exports.shareSolarLumens = async (req, res) => {
             starsAward,
             shareCountToday: shareCountToday + 1,
             shareDailyLimit: DAILY_LIMIT,
+            delivery: 'background',
             user: {
                 k: updatedSenderRow?.data?.k ?? nextSenderK,
                 lumens: updatedSenderRow?.data?.lumens ?? nextSenderLumens,

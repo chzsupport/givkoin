@@ -1,11 +1,18 @@
 const crypto = require('crypto');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { createAdBoostOffer } = require('../services/adBoostService');
+const { getOrLoadPage, makePageCacheKey, warmPage } = require('../services/pageCacheService');
 
 const DAILY_LIMIT = 10;
 const MANUAL_REFERRAL_STEP_COUNT = 3;
 const MANUAL_REFERRAL_PERCENT = 5;
 const MANUAL_REFERRAL_HOURS = 24;
+
+function parsePositiveInt(value, fallback) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
 
 const generateReferralCode = () => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -175,6 +182,8 @@ async function getReferralInfo(req, res, next) {
     const row = ensured.row;
     const code = ensured.code;
     const userData = getUserData(row);
+    const limit = Math.min(10, Math.max(1, parsePositiveInt(req.query?.limit, 10)));
+    const offset = Math.max(0, parsePositiveInt(req.query?.offset, 0));
 
     const supabase = getSupabaseClient();
     const { count: totalInvitedRaw } = await supabase
@@ -183,25 +192,54 @@ async function getReferralInfo(req, res, next) {
       .eq('inviter_id', String(userId));
     const totalInvited = Math.max(0, Number(totalInvitedRaw) || 0);
 
-    const { data: referralRows } = await supabase
+    const { count: activeCountRaw } = await supabase
       .from('referrals')
-      .select('*')
+      .select('id', { head: true, count: 'exact' })
       .eq('inviter_id', String(userId))
-      .order('created_at', { ascending: false })
-      .limit(10);
-    const list = Array.isArray(referralRows) ? referralRows : [];
+      .eq('status', 'active');
+    const activeCount = Math.max(0, Number(activeCountRaw) || 0);
 
-    const inviteeIds = Array.from(new Set(list.map((r) => String(r?.invitee_id || '')).filter(Boolean)));
-    let inviteesById = new Map();
-    if (inviteeIds.length) {
-      const { data: invitees } = await supabase
-        .from('users')
-        .select('id,nickname,status')
-        .in('id', inviteeIds);
-      inviteesById = new Map((Array.isArray(invitees) ? invitees : []).map((u) => [String(u.id), u]));
+    const loadReferralPage = async (pageOffset = offset) => {
+      const { data: referralRows } = await supabase
+        .from('referrals')
+        .select('*')
+        .eq('inviter_id', String(userId))
+        .order('created_at', { ascending: false })
+        .range(pageOffset, pageOffset + limit);
+      const rawList = Array.isArray(referralRows) ? referralRows : [];
+      const list = rawList.slice(0, limit);
+
+      const inviteeIds = Array.from(new Set(list.map((r) => String(r?.invitee_id || '')).filter(Boolean)));
+      let inviteesById = new Map();
+      if (inviteeIds.length) {
+        const { data: invitees } = await supabase
+          .from('users')
+          .select('id,nickname,status')
+          .in('id', inviteeIds);
+        inviteesById = new Map((Array.isArray(invitees) ? invitees : []).map((u) => [String(u.id), u]));
+      }
+
+      return {
+        hasMore: rawList.length > limit,
+        referrals: list.map((r) => {
+          const inv = inviteesById.get(String(r.invitee_id)) || null;
+          return {
+            nickname: inv?.nickname || 'Unknown',
+            date: r.created_at,
+            status: r.status,
+          };
+        }),
+      };
+    };
+
+    const cacheKey = makePageCacheKey('referrals:list', { userId, offset, limit });
+    const { value: referralPage } = await getOrLoadPage(cacheKey, () => loadReferralPage(offset));
+    if (referralPage?.hasMore) {
+      const nextOffset = offset + limit;
+      const nextKey = makePageCacheKey('referrals:list', { userId, offset: nextOffset, limit });
+      warmPage(nextKey, () => loadReferralPage(nextOffset));
     }
 
-    const activeCount = list.filter((r) => String(r?.status) === 'active').length;
     const totalEarned = await sumReferralEarningsK({ userId });
 
     return res.json({
@@ -211,14 +249,10 @@ async function getReferralInfo(req, res, next) {
       activeCount,
       totalEarned,
       manualBoost: getManualReferralStatus(userData),
-      referrals: list.map((r) => {
-        const inv = inviteesById.get(String(r.invitee_id)) || null;
-        return {
-          nickname: inv?.nickname || 'Unknown',
-          date: r.created_at,
-          status: r.status,
-        };
-      }),
+      limit,
+      offset,
+      hasMore: Boolean(referralPage?.hasMore),
+      referrals: Array.isArray(referralPage?.referrals) ? referralPage.referrals : [],
     });
   } catch (error) {
     return next(error);

@@ -1,5 +1,9 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
+const MIN_CHAT_SECONDS_BEFORE_FRIEND_REQUEST = 5 * 60;
+const FRIEND_REQUEST_LIMIT_PER_HOUR = 12;
+const FRIEND_REQUEST_WINDOW_MS = 60 * 60 * 1000;
+
 function toId(value, depth = 0) {
   if (depth > 3) return '';
   if (value === null || value === undefined) return '';
@@ -147,6 +151,40 @@ async function areUsersFriends(userAId, userBId) {
   return rel.isFriend;
 }
 
+function getChatDurationSeconds(row) {
+  const savedDuration = Number(row?.duration || 0);
+  if (Number.isFinite(savedDuration) && savedDuration >= MIN_CHAT_SECONDS_BEFORE_FRIEND_REQUEST) {
+    return savedDuration;
+  }
+
+  if (row?.status === 'active' && row?.started_at) {
+    const startedAtMs = new Date(row.started_at).getTime();
+    if (Number.isFinite(startedAtMs)) {
+      return Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+    }
+  }
+
+  return Math.max(0, savedDuration || 0);
+}
+
+async function hasEnoughChatForFriendRequest(userAId, userBId) {
+  const a = toId(userAId);
+  const b = toId(userBId);
+  if (!a || !b || a === b) return false;
+
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('chats')
+    .select('id,status,participants,started_at,ended_at,duration,created_at')
+    .contains('participants', [a, b])
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error || !Array.isArray(data)) return false;
+
+  return data.some((row) => getChatDurationSeconds(row) >= MIN_CHAT_SECONDS_BEFORE_FRIEND_REQUEST);
+}
+
 function removeRequestFrom(userDoc, requesterId) {
   const requester = toId(requesterId);
   if (!Array.isArray(userDoc.friendRequests)) {
@@ -169,6 +207,17 @@ function addFriendBothSides(userA, userB) {
   if (!includesId(userB.friends, userAId)) {
     userB.friends.push(userA._id);
   }
+}
+
+function getRecentFriendRequestLog(data, nowMs = Date.now()) {
+  const raw = Array.isArray(data?.friendRequestSentAt) ? data.friendRequestSentAt : [];
+  return raw
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const timeMs = new Date(value).getTime();
+      return Number.isFinite(timeMs) && nowMs - timeMs < FRIEND_REQUEST_WINDOW_MS;
+    });
 }
 
 async function sendFriendRequestOrAutoAccept({ fromUserId, toUserId }) {
@@ -205,11 +254,29 @@ async function sendFriendRequestOrAutoAccept({ fromUserId, toUserId }) {
     return { status: 'already_requested', fromUser, toUser };
   }
 
+  const hasEnoughChat = await hasEnoughChatForFriendRequest(fromId, toIdValue);
+  if (!hasEnoughChat) {
+    return { status: 'chat_too_short', fromUser, toUser };
+  }
+
+  const now = new Date();
+  const recentRequests = getRecentFriendRequestLog(fromUser.data, now.getTime());
+  if (recentRequests.length >= FRIEND_REQUEST_LIMIT_PER_HOUR) {
+    return { status: 'rate_limited', fromUser, toUser };
+  }
+
   if (!Array.isArray(toUser.friendRequests)) {
     toUser.friendRequests = [];
   }
-  toUser.friendRequests.push({ from: fromUser._id });
-  await saveUserSocialDoc(toUser);
+  toUser.friendRequests.push({ from: fromUser._id, createdAt: now.toISOString() });
+  fromUser.data = {
+    ...(fromUser.data || {}),
+    friendRequestSentAt: [...recentRequests, now.toISOString()],
+  };
+  await Promise.all([
+    saveUserSocialDoc(fromUser),
+    saveUserSocialDoc(toUser),
+  ]);
 
   return { status: 'request_sent', fromUser, toUser };
 }

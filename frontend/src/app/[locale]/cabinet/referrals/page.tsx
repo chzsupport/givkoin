@@ -15,6 +15,7 @@ type ReferralStats = {
   activeCount: number;
   totalEarned: number;
   manualBoost?: ManualReferralBoostStatus;
+  hasMore?: boolean;
   referrals: Array<{ nickname: string; date: string; status: string }>;
 };
 
@@ -26,6 +27,8 @@ type ManualReferralBoostStatus = {
   percent: number;
   completed: boolean;
 };
+
+const REFERRAL_PAGE_LIMIT = 10;
 
 function emitRewardOffer(offer: unknown) {
   if (typeof window === 'undefined') return;
@@ -41,6 +44,7 @@ export default function CabinetReferralsPage() {
   const [boostModalOpen, setBoostModalOpen] = useState(false);
   const [manualBoost, setManualBoost] = useState<ManualReferralBoostStatus | null>(null);
   const [loadingStep, setLoadingStep] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Use user.nickname for the link if available, otherwise fallback or wait
   const referralLink = user?.nickname
@@ -50,7 +54,7 @@ export default function CabinetReferralsPage() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const data = await apiGet<ReferralStats>('/referrals');
+        const data = await apiGet<ReferralStats>(`/referrals?limit=${REFERRAL_PAGE_LIMIT}&offset=0`);
         setStats(data);
         setManualBoost(data.manualBoost || null);
       } catch (error) {
@@ -62,6 +66,23 @@ export default function CabinetReferralsPage() {
       fetchStats();
     }
   }, [user]);
+
+  const loadMoreReferrals = async () => {
+    if (!stats?.hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await apiGet<ReferralStats>(`/referrals?limit=${REFERRAL_PAGE_LIMIT}&offset=${stats.referrals.length}`);
+      setStats((prev) => prev ? {
+        ...prev,
+        ...data,
+        referrals: [...prev.referrals, ...(data.referrals || [])],
+      } : data);
+    } catch (error) {
+      console.error('Failed to load more referrals', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleCopy = () => {
     if (!user?.nickname) return;
@@ -225,6 +246,18 @@ export default function CabinetReferralsPage() {
                 </tbody>
               </table>
             </div>
+            {stats?.hasMore && (
+              <div className="border-t border-white/10 px-6 py-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => void loadMoreReferrals()}
+                  disabled={loadingMore}
+                  className="rounded-xl border border-white/10 bg-white/5 px-5 py-2 text-tiny font-bold uppercase tracking-widest text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                >
+                  {loadingMore ? t('common.loading') : t('referrals.show_more')}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

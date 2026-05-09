@@ -5,8 +5,8 @@ const { getDocById, listDocsByModel, toIso, upsertDoc } = require('./documentSto
 
 const STATE_MODEL = 'ChatTranscriptState';
 const TRANSCRIPT_DIR = path.resolve(__dirname, '../../tmp/chat-transcripts');
-const BUFFER_FLUSH_INTERVAL_MS = 10 * 1000;
-const BUFFER_FLUSH_MESSAGE_COUNT = 5;
+const BUFFER_FLUSH_INTERVAL_MS = 60 * 1000;
+const BUFFER_FLUSH_MESSAGE_COUNT = 10;
 
 const transcriptBuffers = new Map();
 const transcriptStateCache = new Map();

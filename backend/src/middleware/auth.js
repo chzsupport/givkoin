@@ -15,13 +15,11 @@ const { evaluateAccessRestriction } = require('../services/securityService');
 const {
   isActiveRestriction,
   isUserFrozen,
-  handleAuthenticatedSessionMultiAccount,
 } = require('../services/multiAccountService');
 const { isAdminEmail } = require('../utils/accountRole');
 const { getRequestLanguage, pickRequestLanguage } = require('../utils/requestLanguage');
 const { JWT_SECRET } = require('../config/auth');
 
-const SESSION_MULTI_ACCOUNT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const AUTH_RUNTIME_CACHE_TTL_MS = Math.max(60 * 1000, Number(process.env.AUTH_RUNTIME_CACHE_TTL_MS) || (15 * 60 * 1000));
 const AUTH_RUNTIME_DB_CHECK_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.AUTH_RUNTIME_DB_CHECK_INTERVAL_MS) || (15 * 60 * 1000));
 const AUTH_RUNTIME_ONLINE_WRITE_INTERVAL_MS = Math.max(15 * 1000, Number(process.env.AUTH_RUNTIME_ONLINE_WRITE_INTERVAL_MS) || (60 * 1000));
@@ -455,21 +453,9 @@ const auth = async (req, res, next) => {
     const now = new Date(nowMs);
     const { ip, deviceId, fingerprint, weakFingerprint } = client;
     const currentData = user?.data && typeof user.data === 'object' ? user.data : {};
-    const lastSecurityCheckAtMs = currentData.lastSecuritySignalCheckAt
-      ? new Date(currentData.lastSecuritySignalCheckAt).getTime()
-      : 0;
-    const shouldRunSecurityCheck = !isBattleRequest
-      && user.role !== 'admin'
-      && Boolean(ip || deviceId || fingerprint || weakFingerprint)
-      && (
-        !Number.isFinite(lastSecurityCheckAtMs)
-        || !lastSecurityCheckAtMs
-        || (now.getTime() - lastSecurityCheckAtMs) >= SESSION_MULTI_ACCOUNT_CHECK_INTERVAL_MS
-      );
     const nextData = {
       ...currentData,
       lastWeakFingerprint: weakFingerprint || currentData.lastWeakFingerprint || '',
-      ...(shouldRunSecurityCheck ? { lastSecuritySignalCheckAt: now.toISOString() } : {}),
     };
     const update = {
       last_online_at: now.toISOString(),
@@ -478,52 +464,7 @@ const auth = async (req, res, next) => {
       last_fingerprint: fingerprint || user.lastFingerprint || null,
       data: nextData,
     };
-    const userPresenceUpdate = updateUserById(user._id, update);
-    if (shouldRunSecurityCheck) {
-      await userPresenceUpdate;
-    } else {
-      userPresenceUpdate.catch(() => { });
-    }
-
-    if (shouldRunSecurityCheck) {
-      const sessionCheckResult = await handleAuthenticatedSessionMultiAccount({
-        user: {
-          ...user,
-          lastIp: update.last_ip,
-          lastDeviceId: update.last_device_id,
-          lastFingerprint: update.last_fingerprint,
-          lastWeakFingerprint: nextData.lastWeakFingerprint,
-          data: nextData,
-        },
-        req,
-        signals: {
-          ip,
-          deviceId,
-          fingerprint,
-          weakFingerprint,
-          email: user.email,
-          userAgent: client.userAgent,
-        },
-      });
-
-      if (sessionCheckResult?.frozen) {
-        if (decoded?.sid) {
-          await revokeSession({
-            sessionId: decoded.sid,
-            revokedBy: user._id,
-            reason: 'multi_account_group_frozen',
-          });
-        }
-        return res.status(403).json({
-          message: pickRequestLanguage(
-            req,
-            'Аккаунт временно заморожен из-за подозрительных действий. Проверка обычно занимает до 24 часов. Не создавайте новые аккаунты и дождитесь решения модератора.',
-            'This account was temporarily frozen due to suspicious activity. The review usually takes up to 24 hours. Please do not create new accounts and wait for the moderator decision.',
-          ),
-          groupId: sessionCheckResult.groupId || null,
-        });
-      }
-    }
+    updateUserById(user._id, update).catch(() => { });
 
     setCachedAuthRuntime({
       decoded,

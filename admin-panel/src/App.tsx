@@ -3638,8 +3638,10 @@ function WishesSection() {
     text: '',
     status: 'open',
     supportCount: 0,
-    supportK: 0
+    supportK: 0,
+    executorContact: ''
   });
+  const pendingFulfillmentCount = wishes.filter((wish) => wish.status === 'pending' && wish.executor).length;
 
   const loadWishes = async () => {
     setLoading(true);
@@ -3663,7 +3665,8 @@ function WishesSection() {
         text: editingWish.text,
         status: editingWish.status,
         supportCount: editingWish.supportCount,
-        supportK: editingWish.supportK
+        supportK: editingWish.supportK,
+        executorContact: editingWish.executorContact || ''
       });
     }
   }, [editingWish]);
@@ -3692,8 +3695,22 @@ function WishesSection() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-white">Управление желаниями</h2>
+        <div>
+          <h2 className="text-xl font-bold text-white">Управление желаниями</h2>
+          {pendingFulfillmentCount > 0 && (
+            <div className="mt-1 text-sm text-amber-300">
+              Заявок на исполнение ждёт ручной проверки: {pendingFulfillmentCount}
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('pending')}
+            className="btn-secondary"
+          >
+            Заявки на исполнение
+          </button>
           <select
             className="input-field w-48"
             value={statusFilter}
@@ -3728,11 +3745,11 @@ function WishesSection() {
             <tbody className="divide-y divide-white/5">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-slate-500">Загрузка...</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-slate-500">Загрузка...</td>
                 </tr>
               ) : wishes.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-slate-500">Желания не найдены</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-slate-500">Желания не найдены</td>
                 </tr>
               ) : wishes.map((wish) => (
                 <tr key={wish._id} className="group hover:bg-white/5 transition-colors">
@@ -3745,6 +3762,14 @@ function WishesSection() {
                       <>
                         <div className="font-medium text-blue-400">{wish.executor.nickname}</div>
                         <div className="text-caption text-slate-500">{wish.executor.email}</div>
+                        {wish.status === 'pending' && (
+                          <div className="mt-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-caption text-amber-200">
+                            Нужна ручная проверка модератора
+                          </div>
+                        )}
+                        {wish.executorContact && (
+                          <div className="mt-1 text-caption text-amber-300 break-all">Контакт: {wish.executorContact}</div>
+                        )}
                       </>
                     ) : (
                       <span className="text-slate-600">—</span>
@@ -3814,6 +3839,11 @@ function WishesSection() {
             >
               <h3 className="text-xl font-bold text-white mb-6">Редактирование желания</h3>
               <div className="space-y-6">
+                {editingWish.status === 'pending' && editingWish.executor && (
+                  <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+                    Это заявка на исполнение. Контакт исполнителя передаётся автору только после ручной проверки модератором.
+                  </div>
+                )}
                 <div className="space-y-2">
                   <label className="text-sm text-slate-400">Текст желания</label>
                   <textarea
@@ -3846,6 +3876,15 @@ function WishesSection() {
                       onChange={(e) => setEditForm({ ...editForm, supportK: Number(e.target.value) })}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-slate-400">Контакт исполнителя</label>
+                  <input
+                    className="input-field"
+                    value={editForm.executorContact}
+                    onChange={(e) => setEditForm({ ...editForm, executorContact: e.target.value })}
+                    placeholder="Телеграм, почта или другой контакт"
+                  />
                 </div>
               </div>
               <div className="mt-8 flex gap-3">

@@ -63,6 +63,11 @@ type SolarShareResponse = {
   starsAward: number;
   shareCountToday?: number;
   shareDailyLimit?: number;
+  user?: {
+    k?: number;
+    stars?: number;
+    lumens?: number;
+  };
 };
 
 type CollectFruitResponse = {
@@ -359,7 +364,10 @@ export default function TreePage() {
       setShareDailyLimit(typeof data?.shareDailyLimit === 'number' ? data.shareDailyLimit : null);
 
       toast.success(t('tree.light_sent'), `−${data.amountLm} Lm, +${data.kAward} K, +${data.starsAward} ⭐`);
-      await refreshUser();
+      syncUserResources(data?.user);
+      void refreshUser().catch((e) => {
+        console.error('Failed to refresh user after lumens share:', e);
+      });
       setIsShareOpen(false);
     } catch (e: unknown) {
       toast.error(t('common.error'), getErrorMessage(e) || t('tree.failed_send_light'));
@@ -383,7 +391,9 @@ export default function TreePage() {
       }
       setIsFruitAvailable(false);
       syncUserResources(data?.user);
-      await refreshUser();
+      void refreshUser().catch((e) => {
+        console.error('Failed to refresh user after fruit collection:', e);
+      });
       // Reload tree data to update fruit availability status
       await loadTreeStatus();
     } catch (e: unknown) {
@@ -515,7 +525,9 @@ export default function TreePage() {
             setSolarDeadlineAt(nextDeadlineAt);
             setSolarTimeLeft(3600);
             syncUserResources(data?.user);
-            await refreshUser();
+            void refreshUser().catch((e) => {
+              console.error('Failed to refresh user after solar collect:', e);
+            });
           })
           .catch((e) => {
             console.error('Collect failed:', e);

@@ -1,26 +1,9 @@
-const crypto = require('crypto');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 
 const cooldowns = new Map(); // userId -> expiration timestamp
 const onlineProfiles = new Map();
 const onlineProfilesByGenderAge = new Map();
-
-function mapChatRow(row) {
-    if (!row) return null;
-    return {
-        _id: row.id,
-        participants: Array.isArray(row.participants) ? row.participants : [],
-        status: row.status,
-        startedAt: row.started_at ? new Date(row.started_at) : null,
-        endedAt: row.ended_at ? new Date(row.ended_at) : null,
-        duration: Number(row.duration || 0),
-        kAwarded: Boolean(row.k_awarded),
-        waitingState: row.waiting_state && typeof row.waiting_state === 'object' ? row.waiting_state : null,
-        disconnectionCount: row.disconnection_count && typeof row.disconnection_count === 'object' ? row.disconnection_count : {},
-        createdAt: row.created_at ? new Date(row.created_at) : null,
-        updatedAt: row.updated_at ? new Date(row.updated_at) : null,
-    };
-}
+const RECENT_PARTNER_COOLDOWN_MS = 72 * 60 * 60 * 1000;
 
 function normalizeGender(gender) {
     const normalized = String(gender || '').toLowerCase().trim();
@@ -124,6 +107,29 @@ function getBlockedUserIds(data) {
     return blockedList.filter(Boolean);
 }
 
+function getRecentAvoidedPartnerIds(data, nowMs = Date.now()) {
+    const result = new Set();
+    const safeData = data && typeof data === 'object' ? data : {};
+
+    const friends = Array.isArray(safeData.friends) ? safeData.friends : [];
+    for (const friendId of friends) {
+        const id = normalizeUserId(friendId);
+        if (id) result.add(id);
+    }
+
+    const chatHistory = Array.isArray(safeData.chatHistory) ? safeData.chatHistory : [];
+    for (const entry of chatHistory) {
+        const partnerId = normalizeUserId(entry?.partnerId);
+        if (!partnerId) continue;
+        const lastChatAtMs = new Date(entry?.lastChatAt || 0).getTime();
+        if (Number.isFinite(lastChatAtMs) && nowMs - lastChatAtMs <= RECENT_PARTNER_COOLDOWN_MS) {
+            result.add(partnerId);
+        }
+    }
+
+    return Array.from(result);
+}
+
 function getAgeGenderKey(gender, age) {
     return `${normalizeGender(gender)}:${Number(age) || 0}`;
 }
@@ -158,12 +164,18 @@ function buildOnlineProfile(userId, source = {}, previousProfile = null) {
     const blockedUserIds = Array.isArray(rawData.blockedUserIds)
         ? rawData.blockedUserIds.map((id) => String(id || '')).filter(Boolean)
         : (userData.blockedUsers !== undefined ? getBlockedUserIds(userData) : (previousProfile?.blockedUserIds || []));
+    const recentPartnerIds = Array.isArray(rawData.recentPartnerIds)
+        ? rawData.recentPartnerIds.map((id) => String(id || '')).filter(Boolean)
+        : ((userData.friends !== undefined || userData.chatHistory !== undefined)
+            ? getRecentAvoidedPartnerIds(userData)
+            : (previousProfile?.recentPartnerIds || []));
 
     return {
         userId: normalizeUserId(userId || source?.id || previousProfile?.userId),
         _id: normalizeUserId(userId || source?.id || previousProfile?.userId),
         id: normalizeUserId(userId || source?.id || previousProfile?.userId),
-        nickname: String(rawData.nickname || previousProfile?.nickname || '').trim(),
+        nickname: String(rawData.nickname || userData.nickname || previousProfile?.nickname || '').trim(),
+        language: String(rawData.language || userData.language || previousProfile?.language || 'ru').trim() || 'ru',
         birthDate: userData.birthDate || previousProfile?.birthDate || null,
         gender: normalizeGender(userData.gender || previousProfile?.gender),
         age: Number.isFinite(age) ? age : (Number.isFinite(previousProfile?.age) ? previousProfile.age : null),
@@ -179,6 +191,7 @@ function buildOnlineProfile(userId, source = {}, previousProfile = null) {
                 : (rawData.chatStatus !== undefined ? rawData.chatStatus : (previousProfile?.chatStatus || 'available'))
         ),
         blockedUserIds,
+        recentPartnerIds,
         isSearching: typeof rawData.isSearching === 'boolean'
             ? rawData.isSearching
             : Boolean(previousProfile?.isSearching),
@@ -289,7 +302,20 @@ function areProfilesMutuallyCompatible(firstProfile, secondProfile) {
     if (!profileMatchesCandidate(secondProfile, firstProfile)) return false;
     if ((firstProfile.blockedUserIds || []).includes(secondProfile.userId)) return false;
     if ((secondProfile.blockedUserIds || []).includes(firstProfile.userId)) return false;
+    if ((firstProfile.recentPartnerIds || []).includes(secondProfile.userId)) return false;
+    if ((secondProfile.recentPartnerIds || []).includes(firstProfile.userId)) return false;
     return true;
+}
+
+function addRecentPartnerRuntime(userId, partnerId) {
+    const userKey = normalizeUserId(userId);
+    const partnerKey = normalizeUserId(partnerId);
+    if (!userKey || !partnerKey) return null;
+    const profile = getOnlineProfile(userKey);
+    if (!profile) return null;
+    const recent = Array.isArray(profile.recentPartnerIds) ? profile.recentPartnerIds.map(String) : [];
+    const nextRecent = recent.includes(partnerKey) ? recent : [...recent, partnerKey];
+    return updateOnlineUser(userKey, { recentPartnerIds: nextRecent });
 }
 
 async function getSearchProfile(userId) {
@@ -364,6 +390,8 @@ async function findMatchCandidates(userId, options = {}) {
         if (onlySearching && !candidateProfile.isSearching) continue;
         if (isUserInCooldown(candidateKey)) continue;
         if (!profileMatchesCandidate(initiatorProfile, candidateProfile)) continue;
+        if ((initiatorProfile.recentPartnerIds || []).includes(candidateKey)) continue;
+        if ((candidateProfile.recentPartnerIds || []).includes(initiatorProfile.userId)) continue;
         if (requireMutual && !areProfilesMutuallyCompatible(initiatorProfile, candidateProfile)) continue;
 
         candidates.push(mapCandidateProfile(candidateProfile));
@@ -384,55 +412,6 @@ async function findMatchForUser(userId, triedSet = new Set()) {
     return findMatch(userId, triedSet);
 }
 
-async function createChat(userId, partnerId) {
-    if (!userId || !partnerId) {
-        throw new Error('userId and partnerId are required');
-    }
-
-    const supabase = getSupabaseClient();
-    const a = String(userId);
-    const b = String(partnerId);
-    const { data: existingRow } = await supabase
-        .from('chats')
-        .select('*')
-        .contains('participants', [a, b])
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    if (existingRow) return mapChatRow(existingRow);
-
-    const chatId = crypto.randomBytes(12).toString('hex');
-    const nowIso = new Date().toISOString();
-    const { data: createdRow, error } = await supabase
-        .from('chats')
-        .insert({
-            id: chatId,
-            participants: [a, b],
-            status: 'active',
-            started_at: nowIso,
-            created_at: nowIso,
-            updated_at: nowIso,
-        })
-        .select('*')
-        .maybeSingle();
-    if (error || !createdRow) {
-        throw new Error('Failed to create chat');
-    }
-
-    const chat = mapChatRow(createdRow);
-
-    // Best-effort status update; chat creation should not fail because of it.
-    Promise.all([
-        updateUserDataById(userId, { chatStatus: 'in_chat' }),
-        updateUserDataById(partnerId, { chatStatus: 'in_chat' }),
-    ]).catch(() => { });
-    updateOnlineUser(userId, { chatStatus: 'in_chat', isSearching: false, searchStartedAt: 0 });
-    updateOnlineUser(partnerId, { chatStatus: 'in_chat', isSearching: false, searchStartedAt: 0 });
-
-    return chat;
-}
-
 function setCooldown(userId, durationSeconds) {
     cooldowns.set(userId, Date.now() + durationSeconds * 1000);
 }
@@ -441,17 +420,7 @@ async function isNewPartner(userId, partnerId) {
     const userRow = await getUserRowById(userId);
     if (!userRow) return false;
     const data = getUserData(userRow);
-    const friends = Array.isArray(data.friends) ? data.friends : [];
-
-    const isFriend = friends.map(String).includes(String(partnerId));
-    if (isFriend) return false;
-
-    const chatHistory = Array.isArray(data.chatHistory) ? data.chatHistory : [];
-    const lastChat = chatHistory.find((h) => String(h?.partnerId) === String(partnerId));
-    if (!lastChat) return true; // Never chatted
-
-    const hoursSinceLastChat = (Date.now() - new Date(lastChat.lastChatAt).getTime()) / (1000 * 60 * 60);
-    return hoursSinceLastChat > 72;
+    return !getRecentAvoidedPartnerIds(data).includes(String(partnerId));
 }
 
 async function upsertChatHistory(userId, partnerId, at) {
@@ -470,6 +439,9 @@ async function upsertChatHistory(userId, partnerId, at) {
     }
 
     await updateUserDataById(userId, { chatHistory: history });
+    updateOnlineUser(userId, {
+        recentPartnerIds: getRecentAvoidedPartnerIds({ ...data, chatHistory: history }),
+    });
 }
 
 async function updateChatHistory(userId, partnerId) {
@@ -486,7 +458,6 @@ module.exports = {
     scoreRecency,
     findMatchForUser,
     findMatchCandidates,
-    createChat,
     findMatch,
     isNewPartner,
     updateChatHistory,
@@ -495,6 +466,7 @@ module.exports = {
     unregisterOnlineUser,
     updateOnlineUser,
     getOnlineProfile,
+    addRecentPartnerRuntime,
     areProfilesMutuallyCompatible,
 };
 

@@ -11,6 +11,12 @@ const { broadcastNotificationByPresence } = require('../services/notificationSer
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+    clearPageCacheByPrefix,
+    getOrLoadPage,
+    makePageCacheKey,
+    warmPage,
+} = require('../services/pageCacheService');
 
 const { deleteBridgeTotally } = require('../services/adminCleanupService');
 
@@ -612,9 +618,21 @@ exports.getMyBridges = async (req, res) => {
 
         const status = String(req.query?.status || '').trim() || null;
 
-        const result = await listBridges({ createdBy: req.user._id, status }, { limit, offset });
-
-        await hydrateBridgeContributors(result.bridges);
+        const filters = { createdBy: req.user._id, status };
+        const loadPage = async (pageOffset = offset) => {
+            const pageResult = await listBridges(filters, { limit, offset: pageOffset });
+            await hydrateBridgeContributors(pageResult.bridges);
+            return pageResult;
+        };
+        const cacheKey = makePageCacheKey('bridges:my', { userId: req.user._id, status, page, limit, offset });
+        const { value: result } = await getOrLoadPage(cacheKey, () => loadPage(offset));
+        const hasMore = offset + result.bridges.length < result.total;
+        if (hasMore) {
+            const nextOffset = offset + limit;
+            const nextPage = page + 1;
+            const nextKey = makePageCacheKey('bridges:my', { userId: req.user._id, status, page: nextPage, limit, offset: nextOffset });
+            warmPage(nextKey, () => loadPage(nextOffset));
+        }
 
         res.json({
 
@@ -628,7 +646,7 @@ exports.getMyBridges = async (req, res) => {
 
                 total: result.total,
 
-                hasMore: offset + result.bridges.length < result.total,
+                hasMore,
 
             },
 
@@ -658,9 +676,21 @@ exports.getAllBridges = async (req, res) => {
 
         const status = String(req.query?.status || '').trim() || null;
 
-        const result = await listBridges({ status }, { limit, offset });
-
-        await hydrateBridgeContributors(result.bridges);
+        const filters = { status };
+        const loadPage = async (pageOffset = offset) => {
+            const pageResult = await listBridges(filters, { limit, offset: pageOffset });
+            await hydrateBridgeContributors(pageResult.bridges);
+            return pageResult;
+        };
+        const cacheKey = makePageCacheKey('bridges:all', { userId: req.user._id, status, page, limit, offset });
+        const { value: result } = await getOrLoadPage(cacheKey, () => loadPage(offset));
+        const hasMore = offset + result.bridges.length < result.total;
+        if (hasMore) {
+            const nextOffset = offset + limit;
+            const nextPage = page + 1;
+            const nextKey = makePageCacheKey('bridges:all', { userId: req.user._id, status, page: nextPage, limit, offset: nextOffset });
+            warmPage(nextKey, () => loadPage(nextOffset));
+        }
 
         res.json({
 
@@ -674,7 +704,7 @@ exports.getAllBridges = async (req, res) => {
 
                 total: result.total,
 
-                hasMore: offset + result.bridges.length < result.total,
+                hasMore,
 
             },
 
@@ -969,6 +999,8 @@ exports.createBridge = async (req, res) => {
         }).catch(() => { });
 
 
+
+        clearPageCacheByPrefix('bridges:');
 
         res.status(201).json({
 
@@ -1432,6 +1464,8 @@ exports.contributeToBridge = async (req, res) => {
 
 
 
+        clearPageCacheByPrefix('bridges:');
+
         res.json({
 
             bridge,
@@ -1497,6 +1531,7 @@ exports.deleteBridge = async (req, res) => {
 
 
         await deleteBridgeTotally(bridgeId);
+        clearPageCacheByPrefix('bridges:');
 
 
 

@@ -70,6 +70,17 @@ type EconomyHistoryItem = {
   occurredAt?: string;
 };
 
+type ChatHistoryResponse = {
+  chats: ChatHistoryEntry[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+const CHAT_INITIAL_LIMIT = 100;
+const CHAT_MORE_LIMIT = 10;
+const HISTORY_PAGE_LIMIT = 20;
+
 // Модальное окно для просмотра переписки
 function ChatViewModal({
   isOpen,
@@ -131,6 +142,8 @@ export default function CabinetHistoryPage() {
   const [chats, setChats] = useState<ChatHistoryEntry[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [chatHasMore, setChatHasMore] = useState(false);
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false);
   const [showDispute, setShowDispute] = useState(false);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showChatView, setShowChatView] = useState(false);
@@ -140,10 +153,13 @@ export default function CabinetHistoryPage() {
   const [loadingBattles, setLoadingBattles] = useState(false);
   const [radianceHistory, setRadianceHistory] = useState<RadianceHistoryItem[]>([]);
   const [radianceTotal, setRadianceTotal] = useState<number>(0);
+  const [radianceHasMore, setRadianceHasMore] = useState(false);
   const [kHistory, setKHistory] = useState<EconomyHistoryItem[]>([]);
   const [kTotal, setKTotal] = useState<number>(0);
+  const [kHasMore, setKHasMore] = useState(false);
   const [starsHistory, setStarsHistory] = useState<EconomyHistoryItem[]>([]);
   const [starsTotal, setStarsTotal] = useState<number>(0);
+  const [starsHasMore, setStarsHasMore] = useState(false);
 
   const RADIANCE_ACTIVITY_NAMES: Record<string, string | ((amount: number) => string)> = {
     chat_1h: t('history.chat_1h'),
@@ -288,6 +304,79 @@ export default function CabinetHistoryPage() {
     if (row.description) return row.description;
     return row.type || t('history.credit');
   };
+
+  const loadChatHistoryPage = async ({
+    offset = 0,
+    limit = CHAT_INITIAL_LIMIT,
+    append = false,
+  }: {
+    offset?: number;
+    limit?: number;
+    append?: boolean;
+  } = {}) => {
+    const data = await apiGet<ChatHistoryResponse>(`/chats/history?limit=${limit}&offset=${offset}`);
+    const nextChats = Array.isArray(data?.chats) ? data.chats : [];
+    setChats((prev) => append ? [...prev, ...nextChats] : nextChats);
+    setChatHasMore(Boolean(data?.hasMore));
+  };
+
+  const loadMoreChats = async () => {
+    if (loadingMoreChats || loadingChats || !chatHasMore) return;
+    setLoadingMoreChats(true);
+    try {
+      await loadChatHistoryPage({ offset: chats.length, limit: CHAT_MORE_LIMIT, append: true });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '';
+      toast.error(t('common.error'), message || t('history.chat_load_error'));
+    } finally {
+      setLoadingMoreChats(false);
+    }
+  };
+
+  const loadMoreRadiance = async () => {
+    if (loadingRadiance || !radianceHasMore) return;
+    setLoadingRadiance(true);
+    try {
+      const historyRes = await apiGet<{ items: RadianceHistoryItem[] }>(
+        `/radiance/history?limit=${HISTORY_PAGE_LIMIT}&offset=${radianceHistory.length}`
+      );
+      const nextItems = historyRes?.items || [];
+      setRadianceHistory((prev) => [...prev, ...nextItems]);
+      setRadianceHasMore(nextItems.length >= HISTORY_PAGE_LIMIT);
+    } finally {
+      setLoadingRadiance(false);
+    }
+  };
+
+  const loadMoreK = async () => {
+    if (loadingK || !kHasMore) return;
+    setLoadingK(true);
+    try {
+      const historyRes = await apiGet<{ items: EconomyHistoryItem[] }>(
+        `/economy/history?currency=K&direction=credit&limit=${HISTORY_PAGE_LIMIT}&offset=${kHistory.length}`
+      );
+      const nextItems = historyRes?.items || [];
+      setKHistory((prev) => [...prev, ...nextItems]);
+      setKHasMore(nextItems.length >= HISTORY_PAGE_LIMIT);
+    } finally {
+      setLoadingK(false);
+    }
+  };
+
+  const loadMoreStars = async () => {
+    if (loadingStars || !starsHasMore) return;
+    setLoadingStars(true);
+    try {
+      const historyRes = await apiGet<{ items: EconomyHistoryItem[] }>(
+        `/economy/history?currency=STAR&direction=credit&limit=${HISTORY_PAGE_LIMIT}&offset=${starsHistory.length}`
+      );
+      const nextItems = historyRes?.items || [];
+      setStarsHistory((prev) => [...prev, ...nextItems]);
+      setStarsHasMore(nextItems.length >= HISTORY_PAGE_LIMIT);
+    } finally {
+      setLoadingStars(false);
+    }
+  };
   const [loadingRadiance, setLoadingRadiance] = useState(false);
   const [loadingK, setLoadingK] = useState(false);
   const [loadingStars, setLoadingStars] = useState(false);
@@ -304,8 +393,7 @@ export default function CabinetHistoryPage() {
       setLoadingChats(true);
       setChatError('');
       try {
-        const data = await apiGet<ChatHistoryEntry[]>('/chats/history');
-        if (!cancelled) setChats(data || []);
+        await loadChatHistoryPage({ offset: 0, limit: CHAT_INITIAL_LIMIT });
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : '';
         if (!cancelled) setChatError(message || t('history.chat_load_error'));
@@ -346,16 +434,19 @@ export default function CabinetHistoryPage() {
       setLoadingRadiance(true);
       try {
         const [historyRes, totalRes] = await Promise.all([
-          apiGet<{ items: RadianceHistoryItem[] }>('/radiance/history?limit=100&offset=0'),
+          apiGet<{ items: RadianceHistoryItem[] }>(`/radiance/history?limit=${HISTORY_PAGE_LIMIT}&offset=0`),
           apiGet<{ total: number }>('/radiance/total-earned'),
         ]);
         if (!cancelled) {
-          setRadianceHistory(historyRes?.items || []);
+          const nextItems = historyRes?.items || [];
+          setRadianceHistory(nextItems);
+          setRadianceHasMore(nextItems.length >= HISTORY_PAGE_LIMIT);
           setRadianceTotal(Number(totalRes?.total) || 0);
         }
       } catch {
         if (!cancelled) {
           setRadianceHistory([]);
+          setRadianceHasMore(false);
           setRadianceTotal(0);
         }
       } finally {
@@ -375,16 +466,19 @@ export default function CabinetHistoryPage() {
       setLoadingK(true);
       try {
         const [historyRes, totalRes] = await Promise.all([
-          apiGet<{ items: EconomyHistoryItem[] }>('/economy/history?currency=K&direction=credit&limit=100&offset=0'),
+          apiGet<{ items: EconomyHistoryItem[] }>(`/economy/history?currency=K&direction=credit&limit=${HISTORY_PAGE_LIMIT}&offset=0`),
           apiGet<{ total: number }>('/economy/total-earned?currency=K&direction=credit'),
         ]);
         if (!cancelled) {
-          setKHistory(historyRes?.items || []);
+          const nextItems = historyRes?.items || [];
+          setKHistory(nextItems);
+          setKHasMore(nextItems.length >= HISTORY_PAGE_LIMIT);
           setKTotal(Number(totalRes?.total) || 0);
         }
       } catch {
         if (!cancelled) {
           setKHistory([]);
+          setKHasMore(false);
           setKTotal(0);
         }
       } finally {
@@ -404,16 +498,19 @@ export default function CabinetHistoryPage() {
       setLoadingStars(true);
       try {
         const [historyRes, totalRes] = await Promise.all([
-          apiGet<{ items: EconomyHistoryItem[] }>('/economy/history?currency=STAR&direction=credit&limit=100&offset=0'),
+          apiGet<{ items: EconomyHistoryItem[] }>(`/economy/history?currency=STAR&direction=credit&limit=${HISTORY_PAGE_LIMIT}&offset=0`),
           apiGet<{ total: number }>('/economy/total-earned?currency=STAR&direction=credit'),
         ]);
         if (!cancelled) {
-          setStarsHistory(historyRes?.items || []);
+          const nextItems = historyRes?.items || [];
+          setStarsHistory(nextItems);
+          setStarsHasMore(nextItems.length >= HISTORY_PAGE_LIMIT);
           setStarsTotal(Number(totalRes?.total) || 0);
         }
       } catch {
         if (!cancelled) {
           setStarsHistory([]);
+          setStarsHasMore(false);
           setStarsTotal(0);
         }
       } finally {
@@ -443,8 +540,7 @@ export default function CabinetHistoryPage() {
 
     try {
       await apiPost(`/appeals/${selectedChatId}/appeal-text`, { appealText: text });
-      const data = await apiGet<ChatHistoryEntry[]>('/chats/history');
-      setChats(data || []);
+      await loadChatHistoryPage({ offset: 0, limit: CHAT_INITIAL_LIMIT });
       setShowDispute(false);
       setSelectedChatId(null);
       toast.success(t('common.sent'), t('chat.appeal_submitted'));
@@ -717,6 +813,7 @@ export default function CabinetHistoryPage() {
                 <div>
                   <h2 className="text-h3">{t('history.chat_history')}</h2>
                   <p className="text-secondary text-white/70">{t('history.complaints_visible')}</p>
+                  <p className="mt-1 text-tiny text-white/50">{t('history.chat_retention_notice')}</p>
                 </div>
                 {loadingChats && <span className="text-tiny text-white/60">{t('common.loading')}</span>}
               </div>
@@ -816,6 +913,18 @@ export default function CabinetHistoryPage() {
                     {t('history.chat_history_empty')}
                   </div>
                 )}
+                {chatHasMore && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreChats()}
+                      disabled={loadingMoreChats}
+                      className="rounded-xl border border-white/10 bg-white/5 px-5 py-2 text-tiny font-bold uppercase tracking-widest text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {loadingMoreChats ? t('common.loading') : t('history.show_more')}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -863,6 +972,18 @@ export default function CabinetHistoryPage() {
                     {t('history.no_earnings')}
                   </div>
                 )}
+                {radianceHasMore && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreRadiance()}
+                      disabled={loadingRadiance}
+                      className="rounded-xl border border-white/10 bg-white/5 px-5 py-2 text-tiny font-bold uppercase tracking-widest text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {loadingRadiance ? t('common.loading') : t('history.show_more')}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -904,6 +1025,18 @@ export default function CabinetHistoryPage() {
                     {t('history.no_earnings')}
                   </div>
                 )}
+                {kHasMore && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreK()}
+                      disabled={loadingK}
+                      className="rounded-xl border border-white/10 bg-white/5 px-5 py-2 text-tiny font-bold uppercase tracking-widest text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {loadingK ? t('common.loading') : t('history.show_more')}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -943,6 +1076,18 @@ export default function CabinetHistoryPage() {
                 {starsHistory.length === 0 && !loadingStars && (
                   <div className="rounded-xl border border-white/10 bg-black/30 p-4 text-secondary text-white/70">
                     {t('history.no_earnings')}
+                  </div>
+                )}
+                {starsHasMore && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreStars()}
+                      disabled={loadingStars}
+                      className="rounded-xl border border-white/10 bg-white/5 px-5 py-2 text-tiny font-bold uppercase tracking-widest text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {loadingStars ? t('common.loading') : t('history.show_more')}
+                    </button>
                   </div>
                 )}
               </div>

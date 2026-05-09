@@ -143,10 +143,26 @@ async function getQueueSize() {
     return Number(await client.zCard(SEARCH_QUEUE_INDEX_KEY)) || 0;
 }
 
+async function hasOutgoingPendingCall(initiatorId) {
+    const initiatorKey = normalizeUserId(initiatorId);
+    if (!initiatorKey) return false;
+
+    const client = getStateClient();
+    if (!client) {
+        for (const record of pendingCalls.values()) {
+            if (record?.initiatorId === initiatorKey) return true;
+        }
+        return false;
+    }
+
+    return (Number(await client.sCard(pendingInitiatorKey(initiatorKey))) || 0) > 0;
+}
+
 async function setPendingCall(targetId, initiatorId, ttlMs, token = '') {
     const targetKey = normalizeUserId(targetId);
     const initiatorKey = normalizeUserId(initiatorId);
     if (!targetKey || !initiatorKey) return false;
+    if (await hasOutgoingPendingCall(initiatorKey)) return false;
 
     const record = {
         initiatorId: initiatorKey,
@@ -267,6 +283,7 @@ module.exports = {
     getPendingCallRecord,
     getPendingCall,
     hasPendingCall,
+    hasOutgoingPendingCall,
     clearPendingCall,
     clearPendingCallsForUser,
     acquireQueueSweepLock,

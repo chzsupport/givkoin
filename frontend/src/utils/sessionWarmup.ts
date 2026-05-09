@@ -248,10 +248,10 @@ async function warmupUserSession(userId: string) {
     {
       delayMs: 900,
       tasks: [
-        () => apiGet<CachedBridgeListResponse>('/bridges?status=building&page=1&limit=50').then((data) => {
+        () => apiGet<CachedBridgeListResponse>('/bridges?status=building&page=1&limit=5').then((data) => {
           setCachedBridgeList(userId, 'building', data);
         }),
-        () => apiGet<CachedBridgeListResponse>('/bridges/my?page=1&limit=50').then((data) => {
+        () => apiGet<CachedBridgeListResponse>('/bridges/my?page=1&limit=5').then((data) => {
           setCachedBridgeList(userId, 'my', data);
         }),
       ],

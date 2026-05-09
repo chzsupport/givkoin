@@ -4,12 +4,12 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageBackground } from '@/components/PageBackground';
 import Link from 'next/link';
-import { apiGet, apiPost } from '@/utils/api';
+import { apiGet, apiPatch, apiPost } from '@/utils/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
 import { formatUserK } from '@/utils/formatters';
-import { Sparkles } from 'lucide-react';
+import { HandHeart, Sparkles } from 'lucide-react';
 import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
@@ -25,22 +25,42 @@ type WishDto = {
   supportK: number;
   authorId: string | null;
   executorId: string | null;
+  executorName?: string | null;
+  executor?: { id: string; nickname?: string | null } | null;
   createdAt: string;
+  updatedAt?: string | null;
   takenAt?: string | null;
   fulfilledAt?: string | null;
+  canEditUntil?: string | null;
 };
 
 type Wish = {
   id: string;
   text: string;
   date: string;
+  createdAt: string;
+  canEditUntil: string | null;
   supports: number;
   supportK: number;
   status: WishStatus;
   isMine: boolean;
+  executorId: string | null;
+  executorName: string | null;
+};
+
+type WishFeedResponse = {
+  wishes: WishDto[];
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  };
 };
 
 const MAX_CHARS = 1000;
+const WISH_PAGE_SIZE = 10;
+const WISH_PREVIEW_WORDS = 20;
 const COST_PER_WISH = 100;
 const DAILY_WISH_LIMIT = 3;
 const DAILY_FULFILL_LIMIT = 3;
@@ -54,6 +74,13 @@ export default function GalaxyPage() {
 
   const [activeTab, setActiveTab] = useState<'create' | 'others' | 'mine'>('others');
   const [wishes, setWishes] = useState<Wish[]>([]);
+  const [wishPages, setWishPages] = useState({ others: 1, mine: 1 });
+  const [wishHasMore, setWishHasMore] = useState({ others: false, mine: false });
+  const [loadingMoreWishes, setLoadingMoreWishes] = useState<'others' | 'mine' | null>(null);
+  const [selectedWish, setSelectedWish] = useState<Wish | null>(null);
+  const [editWish, setEditWish] = useState<Wish | null>(null);
+  const [editWishText, setEditWishText] = useState('');
+  const [isSavingWishEdit, setIsSavingWishEdit] = useState(false);
   const [wishText, setWishText] = useState('');
   const [createdToday, setCreatedToday] = useState(0);
   const [sending, setSending] = useState(false);
@@ -108,19 +135,46 @@ export default function GalaxyPage() {
       id: dto.id,
       text: dto.text,
       date,
+      createdAt: dto.createdAt,
+      canEditUntil: dto.canEditUntil || null,
       supports: dto.supportCount || 0,
       supportK: dto.supportK || 0,
       status: normalizedStatus,
       isMine: !!currentUserId && dto.authorId === currentUserId,
+      executorId: dto.executorId || null,
+      executorName: dto.executorName || dto.executor?.nickname || null,
     };
   }
+
+  function mergeWishList(current: Wish[], incoming: Wish[]) {
+    const byId = new Map(current.map((wish) => [wish.id, wish]));
+    for (const wish of incoming) {
+      byId.set(wish.id, wish);
+    }
+    return Array.from(byId.values())
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  }
+
+  function getWishPreview(text: string) {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    if (words.length <= WISH_PREVIEW_WORDS) return text;
+    return `${words.slice(0, WISH_PREVIEW_WORDS).join(' ')}...`;
+  }
+
+  function isWishEditable(wish: Wish) {
+    if (!wish.isMine || wish.status === 'fulfilled' || !wish.canEditUntil) return false;
+    return Date.now() <= new Date(wish.canEditUntil).getTime();
+  }
+
+  const mineWishes = useMemo(() => wishes.filter(w => w.isMine), [wishes]);
+  const otherWishes = useMemo(() => wishes.filter(w => !w.isMine && w.status !== 'fulfilled'), [wishes]);
 
   async function loadAll() {
     if (!user) return;
     try {
       const [othersRes, mineRes, stats] = await Promise.all([
-        apiGet<{ wishes: WishDto[] }>('/wishes?scope=others'),
-        apiGet<{ wishes: WishDto[] }>('/wishes?scope=mine'),
+        apiGet<WishFeedResponse>(`/wishes?scope=others&page=1&limit=${WISH_PAGE_SIZE}`),
+        apiGet<WishFeedResponse>(`/wishes?scope=mine&page=1&limit=${WISH_PAGE_SIZE}`),
         apiGet<{ createdToday: number; executedToday: number; executedLast30: number; userK?: number }>('/wishes/stats'),
       ]);
 
@@ -128,6 +182,11 @@ export default function GalaxyPage() {
       const mappedMine = (mineRes.wishes || []).map((w) => mapDtoToWish(w, user._id));
 
       setWishes([...mappedMine, ...mappedOthers]);
+      setWishPages({ others: 1, mine: 1 });
+      setWishHasMore({
+        others: Boolean(othersRes.pagination?.hasMore),
+        mine: Boolean(mineRes.pagination?.hasMore),
+      });
       setCreatedToday(stats.createdToday ?? 0);
       setFulfilledToday(stats.executedToday ?? 0);
       setFulfilledThisMonth(stats.executedLast30 ?? 0);
@@ -137,6 +196,23 @@ export default function GalaxyPage() {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Failed to load wishes', e);
+    }
+  }
+
+  async function loadMoreWishes(scope: 'others' | 'mine') {
+    if (!user || loadingMoreWishes || !wishHasMore[scope]) return;
+    const nextPage = wishPages[scope] + 1;
+    setLoadingMoreWishes(scope);
+    try {
+      const res = await apiGet<WishFeedResponse>(`/wishes?scope=${scope}&page=${nextPage}&limit=${WISH_PAGE_SIZE}`);
+      const mapped = (res.wishes || []).map((w) => mapDtoToWish(w, user._id));
+      setWishes(prev => mergeWishList(prev, mapped));
+      setWishPages(prev => ({ ...prev, [scope]: nextPage }));
+      setWishHasMore(prev => ({ ...prev, [scope]: Boolean(res.pagination?.hasMore) }));
+    } catch (e) {
+      console.error('Failed to load more wishes', e);
+    } finally {
+      setLoadingMoreWishes(null);
     }
   }
 
@@ -320,6 +396,30 @@ export default function GalaxyPage() {
       console.error('mark fulfilled failed', e);
     } finally {
       setMarkFulfilledWish(null);
+    }
+  };
+
+  const openWishEdit = (wish: Wish) => {
+    setSelectedWish(null);
+    setEditWish(wish);
+    setEditWishText(wish.text);
+  };
+
+  const handleSaveWishEdit = async () => {
+    if (!editWish || !user || isSavingWishEdit) return;
+    const nextText = editWishText.trim();
+    if (!nextText || nextText.length > MAX_CHARS) return;
+    setIsSavingWishEdit(true);
+    try {
+      const res = await apiPatch<{ wish: WishDto }>(`/wishes/${editWish.id}`, { text: nextText });
+      const updatedWish = mapDtoToWish(res.wish, user._id);
+      setWishes(prev => prev.map(w => (w.id === updatedWish.id ? updatedWish : w)));
+      setEditWish(null);
+      setEditWishText('');
+    } catch (e) {
+      console.error('update wish failed', e);
+    } finally {
+      setIsSavingWishEdit(false);
     }
   };
 
@@ -610,20 +710,20 @@ export default function GalaxyPage() {
                 exit={{ opacity: 0 }}
                 className={`grid gap-3 lg:gap-4 ${isLandscape ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}
               >
-                {wishes.filter(w => w.isMine).length === 0 ? (
+                {mineWishes.length === 0 ? (
                   <div className="col-span-full text-center py-20">
                     <div className="text-6xl mb-6">🌠</div>
                     <p className="text-h2 text-neutral-400 uppercase tracking-widest">{t('galaxy.mine.empty_title')}</p>
                     <p className="text-body text-neutral-600 mt-4">{t('galaxy.mine.empty_desc')}</p>
                   </div>
                 ) : (
-                  wishes.filter(w => w.isMine).map((wish, index) => (
+                  mineWishes.map((wish, index) => (
                     <motion.div
                       key={wish.id}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: index * 0.05 }}
-                      className="group relative flex flex-col bg-neutral-900/50 border border-emerald-500/20 backdrop-blur-xl rounded-xl lg:rounded-2xl p-4 lg:p-5 shadow-xl hover:border-emerald-500/40 transition-all overflow-hidden"
+                      className="group relative flex min-h-[260px] flex-col bg-neutral-900/50 border border-emerald-500/20 backdrop-blur-xl rounded-xl lg:rounded-2xl p-4 lg:p-5 shadow-xl hover:border-emerald-500/40 hover:-translate-y-1 transition-all overflow-hidden"
                     >
                       <div className="absolute -top-12 -right-6 w-32 h-32 rounded-full bg-gradient-to-br from-emerald-500/10 via-blue-500/10 to-transparent blur-2xl opacity-80 transition-all group-hover:scale-110 pointer-events-none" />
                       <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.08),transparent_40%)] pointer-events-none" />
@@ -643,14 +743,18 @@ export default function GalaxyPage() {
                         </span>
                       </div>
 
-                      <p className="text-secondary text-neutral-200 leading-relaxed mb-6 flex-1 italic" data-no-translate>
-                        &quot;{wish.text}&quot;
+                      <p
+                        className="text-secondary text-neutral-200 leading-relaxed mb-6 flex-1 italic cursor-pointer"
+                        data-no-translate
+                        onClick={() => setSelectedWish(wish)}
+                      >
+                        &quot;{getWishPreview(wish.text)}&quot;
                       </p>
 
                       <div className="space-y-3">
                         <div className="flex items-center gap-3 text-tiny text-neutral-400 font-bold uppercase tracking-widest border-b border-white/5 pb-3">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-rose-500">❤️</span> {wish.supports}
+                            <HandHeart className="h-4 w-4 text-amber-300" /> {wish.supports}
                           </div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-blue-400">✨</span> {formatUserK(wish.supportK)} K
@@ -669,9 +773,30 @@ export default function GalaxyPage() {
                             {t('galaxy.mine.mark_fulfilled_btn')}
                           </button>
                         )}
+                        {isWishEditable(wish) && (
+                          <button
+                            type="button"
+                            onClick={() => openWishEdit(wish)}
+                            className="w-full py-2.5 bg-white/5 border border-white/10 rounded-lg text-tiny font-bold uppercase tracking-widest hover:bg-white/10 transition-all cursor-pointer"
+                          >
+                            {t('common.edit')}
+                          </button>
+                        )}
                       </div>
                     </motion.div>
                   ))
+                )}
+                {mineWishes.length > 0 && (
+                  <div className="col-span-full">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreWishes('mine')}
+                      disabled={!wishHasMore.mine || loadingMoreWishes === 'mine'}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-tiny font-bold uppercase tracking-widest text-neutral-200 transition-all hover:bg-white/10 disabled:opacity-45"
+                    >
+                      {loadingMoreWishes === 'mine' ? t('common.loading') : wishHasMore.mine ? t('bridges.show_more') : t('bridges.all_shown')}
+                    </button>
+                  </div>
                 )}
               </motion.div>
             ) : (
@@ -682,13 +807,13 @@ export default function GalaxyPage() {
                 exit={{ opacity: 0 }}
                 className={`grid gap-3 lg:gap-4 ${isLandscape ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}
               >
-                {wishes.filter(w => !w.isMine && w.status !== 'fulfilled').map((wish, index) => (
+                {otherWishes.map((wish, index) => (
                   <motion.div
                     key={wish.id}
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: index * 0.05 }}
-                    className="group relative flex flex-col bg-neutral-900/50 border border-white/10 backdrop-blur-xl rounded-xl lg:rounded-2xl p-4 lg:p-5 shadow-xl hover:border-white/20 transition-all overflow-hidden"
+                    className="group relative flex min-h-[260px] flex-col bg-neutral-900/50 border border-white/10 backdrop-blur-xl rounded-xl lg:rounded-2xl p-4 lg:p-5 shadow-xl hover:border-white/20 hover:-translate-y-1 transition-all overflow-hidden"
                   >
                     <div className="absolute -top-12 -right-6 w-32 h-32 rounded-full bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-transparent blur-2xl opacity-80 transition-all group-hover:scale-110 pointer-events-none" />
                     <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.08),transparent_40%)] pointer-events-none" />
@@ -708,14 +833,18 @@ export default function GalaxyPage() {
                       </span>
                     </div>
 
-                    <p className="text-secondary text-neutral-200 leading-relaxed mb-6 flex-1 italic" data-no-translate>
-                      &quot;{wish.text}&quot;
+                    <p
+                      className="text-secondary text-neutral-200 leading-relaxed mb-6 flex-1 italic cursor-pointer"
+                      data-no-translate
+                      onClick={() => setSelectedWish(wish)}
+                    >
+                      &quot;{getWishPreview(wish.text)}&quot;
                     </p>
 
                     <div className="space-y-3">
                       <div className="flex items-center gap-3 text-tiny text-neutral-400 font-bold uppercase tracking-widest border-b border-white/5 pb-3">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-rose-500">❤️</span> {wish.supports}
+                          <HandHeart className="h-4 w-4 text-amber-300" /> {wish.supports}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-blue-400">✨</span> {formatUserK(wish.supportK)} K
@@ -747,6 +876,18 @@ export default function GalaxyPage() {
                     </div>
                   </motion.div>
                 ))}
+                {otherWishes.length > 0 && (
+                  <div className="col-span-full">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreWishes('others')}
+                      disabled={!wishHasMore.others || loadingMoreWishes === 'others'}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-tiny font-bold uppercase tracking-widest text-neutral-200 transition-all hover:bg-white/10 disabled:opacity-45"
+                    >
+                      {loadingMoreWishes === 'others' ? t('common.loading') : wishHasMore.others ? t('bridges.show_more') : t('bridges.all_shown')}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -775,6 +916,99 @@ export default function GalaxyPage() {
         {/* Правый рекламный блок - Show only in landscape on large screens */}
         <StickySideAdRail adSlot={sideAdSlot} page="galaxy" placement="galaxy_sidebar_right" />
       </div>
+
+      {/* Full Wish Modal */}
+      <AnimatePresence>
+        {selectedWish && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setSelectedWish(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-2xl bg-neutral-900 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl"
+            >
+              <h3 className="text-h3 font-bold text-white mb-5 uppercase tracking-widest">{t('galaxy.full_modal.title')}</h3>
+              <p className="text-secondary text-neutral-200 leading-relaxed italic whitespace-pre-wrap" data-no-translate>
+                &quot;{selectedWish.text}&quot;
+              </p>
+              {selectedWish.status === 'fulfilled' && (selectedWish.executorName || selectedWish.executorId) && (
+                <p className="mt-5 text-tiny font-bold uppercase tracking-widest text-emerald-300">
+                  {t('galaxy.full_modal.fulfilled_by')} {selectedWish.executorName || selectedWish.executorId?.slice(-6)}
+                </p>
+              )}
+              <div className="mt-8 flex flex-wrap gap-3">
+                {isWishEditable(selectedWish) && (
+                  <button
+                    type="button"
+                    onClick={() => openWishEdit(selectedWish)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-tiny font-bold uppercase tracking-widest text-white hover:bg-white/10"
+                  >
+                    {t('common.edit')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedWish(null)}
+                  className="ml-auto rounded-2xl bg-blue-600 px-5 py-3 text-tiny font-bold uppercase tracking-widest text-white"
+                >
+                  {t('common.close')}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Wish Modal */}
+      <AnimatePresence>
+        {editWish && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setEditWish(null)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-2xl bg-neutral-900 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl"
+            >
+              <h3 className="text-h3 font-bold text-white mb-3 uppercase tracking-widest">{t('galaxy.edit_modal.title')}</h3>
+              <p className="mb-5 text-tiny uppercase tracking-widest text-neutral-500">{t('galaxy.edit_modal.hint')}</p>
+              <textarea
+                value={editWishText}
+                onChange={(e) => setEditWishText(e.target.value.slice(0, MAX_CHARS))}
+                className="min-h-[180px] w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-body text-white focus:border-blue-500/50 focus:outline-none"
+                data-no-translate
+              />
+              <div className="mt-2 text-right text-tiny text-neutral-500">{editWishText.trim().length}/{MAX_CHARS}</div>
+              <div className="mt-8 flex gap-3">
+                <button
+                  onClick={() => setEditWish(null)}
+                  className="flex-1 py-4 text-tiny font-bold uppercase tracking-widest text-neutral-500 hover:text-white transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleSaveWishEdit}
+                  disabled={isSavingWishEdit || !editWishText.trim()}
+                  className="flex-1 py-4 bg-blue-600 rounded-2xl text-tiny font-bold uppercase tracking-widest text-white shadow-lg shadow-blue-600/20 disabled:opacity-50 transition-all"
+                >
+                  {isSavingWishEdit ? t('common.loading') : t('common.save')}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Support Modal */}
       <AnimatePresence>

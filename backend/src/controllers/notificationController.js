@@ -1,4 +1,10 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+    clearPageCacheByPrefix,
+    getOrLoadPage,
+    makePageCacheKey,
+    warmPage,
+} = require('../services/pageCacheService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
@@ -203,6 +209,7 @@ async function insertNotification(doc) {
         created_at: nowIso,
         updated_at: nowIso,
     });
+    clearPageCacheByPrefix('notifications:list:');
     return { ...doc, _id: id, createdAt: nowIso };
 }
 
@@ -215,7 +222,18 @@ exports.getNotifications = async (req, res, next) => {
         const type = parseMultiValueFilter(req.query.type);
         const eventKey = parseMultiValueFilter(req.query.eventKey);
 
-        const { notifications, total, unreadCount } = await listNotifications(userId, { type, eventKey }, page, limit);
+        const filters = { type, eventKey };
+        const loadPage = (pageNumber = page) => listNotifications(userId, filters, pageNumber, limit);
+        const cacheKey = makePageCacheKey('notifications:list', { userId, type, eventKey, page, limit });
+        const { value: pageData } = await getOrLoadPage(cacheKey, () => loadPage(page));
+        const notifications = Array.isArray(pageData?.notifications) ? pageData.notifications : [];
+        const total = Math.max(0, Number(pageData?.total) || 0);
+        const unreadCount = Math.max(0, Number(pageData?.unreadCount) || 0);
+        if (page * limit < total) {
+            const nextPage = page + 1;
+            const nextKey = makePageCacheKey('notifications:list', { userId, type, eventKey, page: nextPage, limit });
+            warmPage(nextKey, () => loadPage(nextPage));
+        }
 
         res.json({
             notifications,
@@ -256,6 +274,7 @@ exports.markAsRead = async (req, res, next) => {
             type: parsedType,
             eventKey: parsedEventKey,
         });
+        clearPageCacheByPrefix('notifications:list:');
 
         res.json({ success: true });
     } catch (error) {

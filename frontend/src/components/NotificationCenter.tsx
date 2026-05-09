@@ -97,7 +97,7 @@ export function NotificationCenter() {
         if (!socket) return;
 
         socket.on('new_notification', (notification: Notification) => {
-            setNotifications((prev) => [notification, ...prev]);
+            setNotifications((prev) => [notification, ...prev].slice(0, 10));
             setUnreadCount((prev) => prev + 1);
         });
 
@@ -150,8 +150,8 @@ export function NotificationCenter() {
             >
                 <Bell size={24} />
                 {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-caption font-bold text-white ring-2 ring-black">
-                        {unreadCount > 9 ? '9+' : unreadCount}
+                    <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-caption font-bold text-white ring-2 ring-black">
+                        {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                 )}
             </button>

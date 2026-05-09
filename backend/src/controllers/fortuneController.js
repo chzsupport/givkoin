@@ -36,6 +36,8 @@ const {
 
     rollbackPersonalLuckClaim,
 
+    hasClaimedPersonalLuckToday,
+
 } = require('../services/personalLuckService');
 
 
@@ -914,19 +916,13 @@ async function findFortuneSpinByUser(userId) {
 
         .eq('model', 'FortuneSpin')
 
-        .limit(500);
+        .eq('data->>user', String(userId))
 
-    if (error || !Array.isArray(data)) return null;
+        .maybeSingle();
 
-    
+    if (error || !data) return null;
 
-    return data.find((row) => {
-
-        const d = row.data || {};
-
-        return String(d.user) === String(userId);
-
-    }) || null;
+    return data;
 
 }
 
@@ -1620,7 +1616,7 @@ exports.spin = async (req, res) => {
 
 
 
-        await recordFortuneWin({
+        recordFortuneWin({
 
             userId: req.user._id,
 
@@ -1648,7 +1644,7 @@ exports.spin = async (req, res) => {
 
             },
 
-        });
+        }).catch(() => null);
 
 
 
@@ -1821,6 +1817,8 @@ exports.spin = async (req, res) => {
         });
 
     } catch (error) {
+
+        console.error('Roulette spin error:', error);
 
         const userLang = normalizeLang(getRequestLanguage(req));
 

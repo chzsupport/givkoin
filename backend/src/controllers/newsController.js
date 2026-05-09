@@ -15,6 +15,12 @@ const {
 } = require('../config/constants');
 const { adminAudit } = require('../middleware/adminAudit');
 const { deleteNewsPostTotally } = require('../services/adminCleanupService');
+const {
+  clearPageCacheByPrefix,
+  getOrLoadPage,
+  makePageCacheKey,
+  warmPage,
+} = require('../services/pageCacheService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const NEWS_FEED_LIMIT = 100;
@@ -243,6 +249,10 @@ const NEWS_VIEW_BATCH_KEY_TTL_MS = Math.max(
   60 * 1000,
   Number(process.env.NEWS_VIEW_BATCH_KEY_TTL_MS) || 7 * 24 * 60 * 60 * 1000
 );
+const NEWS_LAST_READ_TTL_MS = Math.max(
+  60 * 1000,
+  Number(process.env.NEWS_LAST_READ_TTL_MS) || 3 * 60 * 60 * 1000
+);
 const NEWS_VIEW_BATCH_KEY_SECRET = String(process.env.NEWS_VIEW_BATCH_KEY_SECRET || JWT_SECRET).trim();
 const NEWS_ACHIEVEMENT_DELAY_MIN_MS = Math.max(
   1000,
@@ -412,6 +422,11 @@ function scheduleAchievementGrant({ userId, achievementId, meta = null } = {}) {
   }, delay);
 }
 
+function isRecentNewsLastRead(value, nowMs = Date.now()) {
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) && time > 0 && nowMs - time <= NEWS_LAST_READ_TTL_MS;
+}
+
 function buildNewsUserCardFromCounter(counter, dateKey, extra = {}) {
   const dailyLikesUsed = Math.max(0, Number(counter?.likes) || 0);
   const dailyCommentsUsed = Math.max(0, Number(counter?.comments) || 0);
@@ -419,7 +434,10 @@ function buildNewsUserCardFromCounter(counter, dateKey, extra = {}) {
   const likedPostIds = Array.from(new Set((Array.isArray(extra?.likedPostIds) ? extra.likedPostIds : []).map(toId).filter(Boolean)));
   const repostedPostIds = Array.from(new Set((Array.isArray(extra?.repostedPostIds) ? extra.repostedPostIds : []).map(toId).filter(Boolean)));
   const viewedPostIds = normalizeViewBucketPostIds(extra?.viewedPostIds);
-  const lastReadPostId = toId(extra?.lastReadPostId) || null;
+  const rawLastReadPostId = toId(extra?.lastReadPostId) || null;
+  const lastReadPostId = rawLastReadPostId && isRecentNewsLastRead(extra?.lastReadUpdatedAt)
+    ? rawLastReadPostId
+    : null;
 
   return {
     dateKey,
@@ -548,6 +566,7 @@ async function incrementPostStats(postId, delta, currentPost = null) {
   if (!post) return null;
   const normalized = normalizePostStats(post);
   const nextStats = applyStatsDelta(normalized?.stats, delta);
+  clearPageCacheByPrefix('news:posts:');
   return upsertModelDoc('NewsPost', normalized._id, { ...normalized, stats: nextStats, updatedAt: new Date() });
 }
 
@@ -914,6 +933,7 @@ async function getNewsUserCard({ userId, now = new Date() }) {
     repostedPostIds: marks?.repostedPostIds,
     viewedPostIds: viewBucket?.postIds,
     lastReadPostId: viewBucket?.lastReadPostId,
+    lastReadUpdatedAt: viewBucket?.lastReadUpdatedAt || viewBucket?.updatedAt,
   });
 }
 
@@ -1204,41 +1224,57 @@ async function listPosts(req, res, next) {
   try {
     const now = new Date();
     const status = String(req.query.status || 'published');
-    const posts = status === 'all'
-      ? (await maybePublishScheduledPosts(now), await listNewsPosts({ status: 'all' }))
-      : await loadPublishedPosts(now);
+    const userId = req.user?._id;
+    const limit = clampFeedLimit(req.query?.limit);
+    const cursor = decodeFeedCursor(req.query?.cursor);
 
-    const feedPage = paginateFeedPosts(posts, {
-      limit: req.query?.limit,
-      cursor: req.query?.cursor,
-    });
+    const loadPage = async (pageCursor = cursor) => {
+      const posts = status === 'all'
+        ? (await maybePublishScheduledPosts(now), await listNewsPosts({ status: 'all' }))
+        : await loadPublishedPosts(now);
 
-    if (!feedPage.items.length) {
-      return res.json({ items: [], nextCursor: null, hasMore: false });
+      const feedPage = paginateFeedPosts(posts, {
+        limit,
+        cursor: pageCursor,
+      });
+
+      if (!feedPage.items.length) {
+        return { items: [], nextCursor: null, hasMore: false };
+      }
+
+      const out = feedPage.items.map((post) => {
+        const normalized = normalizePostStats(post);
+        return {
+          ...normalized,
+          stats: normalized?.stats || createEmptyPostStats(),
+        };
+      });
+      return {
+        items: out,
+        nextCursor: feedPage.nextCursor,
+        hasMore: feedPage.hasMore,
+      };
+    };
+
+    const cacheKey = makePageCacheKey('news:posts', { status, limit, cursor });
+    const { value: pageData } = await getOrLoadPage(cacheKey, () => loadPage(cursor));
+    if (pageData?.hasMore && pageData?.nextCursor) {
+      const nextKey = makePageCacheKey('news:posts', { status, limit, cursor: pageData.nextCursor });
+      warmPage(nextKey, () => loadPage(pageData.nextCursor));
     }
 
-    const userId = req.user?._id;
-    const out = feedPage.items.map((post) => {
-      const normalized = normalizePostStats(post);
-      return {
-        ...normalized,
-        stats: normalized?.stats || createEmptyPostStats(),
-      };
-    });
-    const viewBatchKey = userId && status === 'published'
+    const safePageData = pageData || { items: [], nextCursor: null, hasMore: false };
+    const viewBatchKey = userId && status === 'published' && Array.isArray(safePageData.items) && safePageData.items.length > 0
       ? createNewsViewBatchKey({
         userId,
-        postIds: feedPage.items.map((post) => post?._id),
+        postIds: safePageData.items.map((post) => post?._id),
         now,
       })
       : null;
-
     const newsCard = userId ? await getNewsUserCard({ userId, now }).catch(() => null) : null;
 
     return res.json({
-      items: out,
-      nextCursor: feedPage.nextCursor,
-      hasMore: feedPage.hasMore,
+      ...safePageData,
       viewBatchKey,
       newsCard,
     });
@@ -1257,40 +1293,53 @@ async function listComments(req, res, next) {
     }
     const limit = clampCommentLimit(req.query?.limit);
     const cursor = decodeCommentCursor(req.query?.cursor);
-    const supabase = getSupabaseClient();
-    let query = supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', 'NewsInteraction')
-      .eq('data->>type', 'comment')
-      .eq('data->>post', String(postId));
 
-    if (cursor) {
-      query = query.or(
-        `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
-      );
+    const loadPage = async (pageCursor = cursor) => {
+      const supabase = getSupabaseClient();
+      let query = supabase
+        .from(DOC_TABLE)
+        .select('id,data,created_at,updated_at')
+        .eq('model', 'NewsInteraction')
+        .eq('data->>type', 'comment')
+        .eq('data->>post', String(postId));
+
+      if (pageCursor) {
+        query = query.or(
+          `created_at.lt.${pageCursor.createdAt},and(created_at.eq.${pageCursor.createdAt},id.lt.${pageCursor.id})`
+        );
+      }
+
+      query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
+
+      const { data, error } = await query.range(0, limit);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore ? encodeCommentCursor(pageRows[pageRows.length - 1]) : null;
+
+      const comments = pageRows.map(mapDocRow).filter(Boolean);
+      await hydrateCommentUsers(comments);
+
+      return {
+        comments: comments.map((comment) => mapCommentDto(comment, userLang)),
+        nextCursor,
+        hasMore,
+      };
+    };
+
+    const cacheKey = makePageCacheKey('news:comments', { postId, limit, cursor, lang: userLang });
+    const { value: pageData } = await getOrLoadPage(cacheKey, () => loadPage(cursor));
+    if (pageData?.hasMore && pageData?.nextCursor) {
+      const nextCursor = decodeCommentCursor(pageData.nextCursor);
+      const nextKey = makePageCacheKey('news:comments', { postId, limit, cursor: nextCursor, lang: userLang });
+      warmPage(nextKey, () => loadPage(nextCursor));
     }
 
-    query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
-
-    const { data, error } = await query.range(0, limit);
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const rows = Array.isArray(data) ? data : [];
-    const hasMore = rows.length > limit;
-    const pageRows = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore ? encodeCommentCursor(pageRows[pageRows.length - 1]) : null;
-
-    const comments = pageRows.map(mapDocRow).filter(Boolean);
-    await hydrateCommentUsers(comments);
-
-    return res.json({
-      comments: comments.map((comment) => mapCommentDto(comment, userLang)),
-      nextCursor,
-      hasMore,
-    });
+    return res.json(pageData || { comments: [], nextCursor: null, hasMore: false });
   } catch (err) {
     return next(err);
   }
@@ -1323,6 +1372,7 @@ async function updateComment(req, res, next) {
     }
 
     const saved = await updateModelDoc('NewsInteraction', commentId, { content: content.trim(), updatedAt: new Date() });
+    clearPageCacheByPrefix('news:comments:');
 
     const commentObj = saved || { ...comment, content: content.trim(), updatedAt: new Date() };
     await hydrateCommentUsers([commentObj]);
@@ -1344,6 +1394,7 @@ async function deleteComment(req, res, next) {
     await deleteModelDoc('NewsInteraction', commentId);
     await incrementPostStats(postId, { comments: -1 });
     updateCachedNewsFeedPostStats(postId, { comments: -1 });
+    clearPageCacheByPrefix('news:comments:');
     adminAudit('news.comment.delete', req, { postId, commentId });
     return res.json({ ok: true });
   } catch (err) {
@@ -1384,10 +1435,12 @@ async function saveViewsForUser({ userId, postIds, lastReadPostId = null, now = 
   const existingIds = normalizeViewBucketPostIds(bucket?.postIds);
   const viewedSet = new Set(existingIds.map((pid) => String(pid)));
   const previousLastReadPostId = toId(bucket?.lastReadPostId) || null;
+  const previousLastReadUpdatedAt = bucket?.lastReadUpdatedAt || bucket?.updatedAt || null;
 
   const toAdd = publishedIds.filter((pid) => !viewedSet.has(String(pid)));
   const nextLastReadPostId = validatedLastReadPostId || previousLastReadPostId;
-  if (!toAdd.length && nextLastReadPostId === previousLastReadPostId) {
+  const nextLastReadUpdatedAt = validatedLastReadPostId ? now.toISOString() : previousLastReadUpdatedAt;
+  if (!toAdd.length && !validatedLastReadPostId && nextLastReadPostId === previousLastReadPostId) {
     return { saved: 0, alreadyViewed: publishedIds.length, lastReadPostId: nextLastReadPostId };
   }
 
@@ -1398,6 +1451,7 @@ async function saveViewsForUser({ userId, postIds, lastReadPostId = null, now = 
     dateKey: today,
     postIds: nextIds,
     lastReadPostId: nextLastReadPostId,
+    lastReadUpdatedAt: nextLastReadUpdatedAt,
     updatedAt: new Date(),
   });
 
@@ -1586,6 +1640,7 @@ async function interact(req, res, next) {
           }),
         ]);
         updateCachedNewsFeedPostStats(postId, { comments: 1 });
+        clearPageCacheByPrefix('news:comments:');
         const user = await creditK({ userId, amount: NEWS_COMMENT_REWARD, type: 'news', description: pickLang(userLang, 'Комментарий к новости', 'News comment'), relatedEntity: postId });
         awardRadianceForActivity({
           userId,

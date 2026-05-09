@@ -5,6 +5,12 @@ const { adminAudit } = require('../middleware/adminAudit');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const crypto = require('crypto');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+  clearPageCacheByPrefix,
+  getOrLoadPage,
+  makePageCacheKey,
+  warmPage,
+} = require('../services/pageCacheService');
 
 const WISH_STATS_CACHE_TTL_MS = Math.max(1000, Number(process.env.WISH_STATS_CACHE_TTL_MS) || 10000);
 const DAILY_WISH_LIMIT = 3;
@@ -13,6 +19,10 @@ const MONTHLY_FULFILL_LIMIT = 10;
 const WISH_COST_K = 100;
 const FULFILL_REWARD_K = 100;
 const FULFILL_REWARD_STARS = 0.1;
+const WISH_LIST_DEFAULT_LIMIT = 10;
+const WISH_LIST_MAX_LIMIT = 50;
+const WISH_TEXT_MAX_LENGTH = 1000;
+const WISH_EDIT_WINDOW_MS = 60 * 60 * 1000;
 
 function normalizeLang(value) {
   return value === 'en' ? 'en' : 'ru';
@@ -65,6 +75,19 @@ function mapWishRowToDoc(row) {
   };
 }
 
+function parsePositiveInt(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.floor(n));
+}
+
+function parseWishPagination(query = {}) {
+  const page = parsePositiveInt(query.page, 1);
+  const limit = Math.max(1, Math.min(WISH_LIST_MAX_LIMIT, parsePositiveInt(query.limit, WISH_LIST_DEFAULT_LIMIT)));
+  const offset = (page - 1) * limit;
+  return { page, limit, offset };
+}
+
 async function getWishRowById(wishId) {
   const id = toId(wishId);
   if (!id) return null;
@@ -104,6 +127,31 @@ async function getUserRowById(userId) {
     .maybeSingle();
   if (error) return null;
   return data || null;
+}
+
+async function getPublicUsersByIds(userIds = []) {
+  const ids = Array.from(new Set((Array.isArray(userIds) ? userIds : [])
+    .map((id) => toId(id))
+    .filter(Boolean)));
+  if (!ids.length) return new Map();
+
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('users')
+    .select('id,nickname')
+    .in('id', ids);
+  if (error || !Array.isArray(data)) return new Map();
+
+  const result = new Map();
+  for (const row of data) {
+    const id = toId(row?.id);
+    if (!id) continue;
+    result.set(id, {
+      id,
+      nickname: String(row?.nickname || '').trim() || 'Пользователь',
+    });
+  }
+  return result;
 }
 
 async function updateUserDataById(userId, patch) {
@@ -183,8 +231,15 @@ function setCachedWishStatsForUser(userId, stats, now = new Date()) {
   return setCachedWishStats(cacheKey, stats, dayStart, now.getTime());
 }
 
-function mapWishDto(wish) {
+function mapWishDto(wish, options = {}) {
   if (!wish) return null;
+  const usersById = options.usersById instanceof Map ? options.usersById : new Map();
+  const executorId = wish.executor ? wish.executor.toString() : null;
+  const executor = executorId ? usersById.get(executorId) || null : null;
+  const createdAtMs = wish.createdAt ? new Date(wish.createdAt).getTime() : NaN;
+  const canEditUntil = Number.isFinite(createdAtMs)
+    ? new Date(createdAtMs + WISH_EDIT_WINDOW_MS).toISOString()
+    : null;
   return {
     id: wish._id.toString(),
     text: wish.text,
@@ -192,10 +247,14 @@ function mapWishDto(wish) {
     supportCount: wish.supportCount || 0,
     supportK: wish.supportK || 0,
     authorId: wish.author ? wish.author.toString() : null,
-    executorId: wish.executor ? wish.executor.toString() : null,
+    executorId,
+    executor,
+    executorName: executor?.nickname || null,
     createdAt: wish.createdAt,
+    updatedAt: wish.updatedAt || null,
     takenAt: wish.takenAt || null,
     fulfilledAt: wish.fulfilledAt || null,
+    canEditUntil,
   };
 }
 
@@ -252,7 +311,7 @@ async function createWish(req, res, next) {
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ message: pickLang(userLang, 'Текст желания обязателен', 'Wish text is required') });
     }
-    if (text.trim().length > 1000) {
+    if (text.trim().length > WISH_TEXT_MAX_LENGTH) {
       return res.status(400).json({ message: pickLang(userLang, 'Желание не должно превышать 1000 символов', 'Wish text must not exceed 1000 characters') });
     }
 
@@ -326,6 +385,7 @@ async function createWish(req, res, next) {
     });
     setCachedWishStatsForUser(req.user._id, nextStats, now);
 
+    clearPageCacheByPrefix('wishes:list:');
     return res.status(201).json({ wish: mapWishDto(wish), user: updatedUser, stats: nextStats });
   } catch (error) {
     return next(error);
@@ -336,20 +396,113 @@ async function listWishes(req, res, next) {
   try {
     const { scope } = req.query;
     const userId = req.user._id;
+    const { page, limit, offset } = parseWishPagination(req.query);
 
     const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.query?.language || 'ru');
 
-    const supabase = getSupabaseClient();
-    let query = supabase.from('wishes').select('*');
-    if (scope === 'mine') {
-      query = query.eq('author_id', String(userId)).neq('status', 'archived');
-    } else {
-      query = query.neq('author_id', String(userId)).in('status', ['open', 'supported', 'pending']);
+    const normalizedScope = scope === 'mine' ? 'mine' : 'others';
+    const loadPage = async (pageOffset = offset) => {
+      const supabase = getSupabaseClient();
+      let query = supabase.from('wishes').select('*', { count: 'exact' });
+      if (normalizedScope === 'mine') {
+        query = query.eq('author_id', String(userId)).neq('status', 'archived');
+      } else {
+        query = query.neq('author_id', String(userId)).in('status', ['open', 'supported', 'pending']);
+      }
+      const { data, error, count } = await query
+        .order('created_at', { ascending: false })
+        .range(pageOffset, pageOffset + limit - 1);
+      if (error) {
+        const err = new Error(pickLang(userLang, 'Не удалось получить желания', 'Failed to fetch wishes'));
+        err.status = 500;
+        throw err;
+      }
+      const docs = (Array.isArray(data) ? data : []).map((row) => mapWishRowToDoc(row));
+      const usersById = await getPublicUsersByIds(docs.map((wish) => wish?.executor).filter(Boolean));
+      return {
+        wishes: docs.map((wish) => mapWishDto(wish, { usersById })),
+        total: Number(count || 0),
+      };
+    };
+
+    const cacheKey = makePageCacheKey('wishes:list', { userId, scope: normalizedScope, page, limit, offset });
+    const { value: pageData } = await getOrLoadPage(cacheKey, () => loadPage(offset));
+    const wishes = Array.isArray(pageData?.wishes) ? pageData.wishes : [];
+    const total = Number(pageData?.total || 0);
+    const hasMore = offset + wishes.length < total;
+    if (hasMore) {
+      const nextOffset = offset + limit;
+      const nextPage = page + 1;
+      const nextKey = makePageCacheKey('wishes:list', { userId, scope: normalizedScope, page: nextPage, limit, offset: nextOffset });
+      warmPage(nextKey, () => loadPage(nextOffset));
     }
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) return res.status(500).json({ message: pickLang(userLang, 'Не удалось получить желания', 'Failed to fetch wishes') });
-    const wishes = (Array.isArray(data) ? data : []).map((row) => mapWishDto(mapWishRowToDoc(row)));
-    return res.json({ wishes });
+
+    return res.json({
+      wishes,
+      pagination: {
+        page,
+        limit,
+        total,
+        hasMore,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function updateWishText(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { text } = req.body || {};
+    const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.body?.language || 'ru');
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ message: pickLang(userLang, 'Текст желания обязателен', 'Wish text is required') });
+    }
+    const nextText = text.trim();
+    if (nextText.length > WISH_TEXT_MAX_LENGTH) {
+      return res.status(400).json({ message: pickLang(userLang, 'Желание не должно превышать 1000 символов', 'Wish text must not exceed 1000 characters') });
+    }
+
+    const wishRow = await getWishRowById(id);
+    const wish = mapWishRowToDoc(wishRow);
+    if (!wish) {
+      return res.status(404).json({ message: pickLang(userLang, 'Желание не найдено', 'Wish not found') });
+    }
+    if (String(wish.author) !== String(req.user._id)) {
+      return res.status(403).json({ message: pickLang(userLang, 'Можно редактировать только своё желание', 'You can edit only your own wish') });
+    }
+    if (['fulfilled', 'archived'].includes(wish.status)) {
+      return res.status(400).json({ message: pickLang(userLang, 'Это желание уже нельзя редактировать', 'This wish can no longer be edited') });
+    }
+    const createdAtMs = wish.createdAt ? new Date(wish.createdAt).getTime() : NaN;
+    if (!Number.isFinite(createdAtMs) || Date.now() - createdAtMs > WISH_EDIT_WINDOW_MS) {
+      return res.status(400).json({ message: pickLang(userLang, 'Редактировать желание можно только в течение 1 часа', 'A wish can be edited only within 1 hour') });
+    }
+
+    const supabase = getSupabaseClient();
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .from('wishes')
+      .update({
+        text: nextText,
+        updated_at: nowIso,
+      })
+      .eq('id', String(wish._id))
+      .select('*')
+      .maybeSingle();
+    if (error || !updated) {
+      return res.status(500).json({ message: pickLang(userLang, 'Не удалось обновить желание', 'Failed to update wish') });
+    }
+
+    adminAudit('wish.update_text', req, {
+      wishId: wish._id,
+      authorId: wish.author,
+    });
+
+    clearPageCacheByPrefix('wishes:list:');
+    return res.json({ wish: mapWishDto(mapWishRowToDoc(updated)) });
   } catch (error) {
     return next(error);
   }
@@ -476,6 +629,7 @@ async function supportWish(req, res, next) {
       amount: value,
     });
 
+    clearPageCacheByPrefix('wishes:list:');
     return res.json({ wish: mapWishDto(wish), user: updatedUser, stats });
   } catch (error) {
     return next(error);
@@ -582,7 +736,11 @@ async function takeForFulfillment(req, res, next) {
       executorId: wish.executor,
     });
 
-    return res.json({ wish: mapWishDto(wish), stats: nextStats });
+    clearPageCacheByPrefix('wishes:list:');
+    {
+      const usersById = await getPublicUsersByIds([wish.executor]);
+      return res.json({ wish: mapWishDto(wish, { usersById }), stats: nextStats });
+    }
   } catch (error) {
     return next(error);
   }
@@ -700,7 +858,11 @@ async function markFulfilled(req, res, next) {
       executorId: wish.executor,
     });
 
-    return res.json({ wish: mapWishDto(wish), stats: userStats });
+    clearPageCacheByPrefix('wishes:list:');
+    {
+      const usersById = await getPublicUsersByIds([wish.executor]);
+      return res.json({ wish: mapWishDto(wish, { usersById }), stats: userStats });
+    }
   } catch (error) {
     return next(error);
   }
@@ -722,6 +884,7 @@ async function getStats(req, res, next) {
 module.exports = {
   createWish,
   listWishes,
+  updateWishText,
   supportWish,
   takeForFulfillment,
   markFulfilled,

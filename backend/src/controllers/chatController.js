@@ -2,6 +2,7 @@ const { sendComplaintNotification } = require('../services/emailService');
 const { isComplaintBlocked } = require('../utils/penalties');
 const chatService = require('../services/chatService');
 const friendService = require('../services/friendService');
+const matchingService = require('../services/matchingService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 const { normalizeComplaintReason } = require('../utils/complaintReason');
@@ -18,6 +19,12 @@ function normalizeLang(value) {
 
 function pickLang(lang, ru, en) {
     return normalizeLang(lang) === 'en' ? en : ru;
+}
+
+function parsePositiveInt(value, fallback) {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return parsed;
 }
 
 async function findPendingAppealByUser(againstUser) {
@@ -38,14 +45,18 @@ async function insertAppeal(doc) {
     const supabase = getSupabaseClient();
     const id = `app_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
     const nowIso = new Date().toISOString();
+    const appealData = {
+        status: 'pending',
+        ...doc,
+    };
     await supabase.from(DOC_TABLE).insert({
         model: 'Appeal',
         id,
-        data: doc,
+        data: appealData,
         created_at: nowIso,
         updated_at: nowIso,
     });
-    return { _id: id, ...doc };
+    return { _id: id, ...appealData };
 }
 
 function toId(value, depth = 0) {
@@ -355,19 +366,25 @@ async function getActiveChat(req, res) {
 async function getChatHistory(req, res) {
     try {
         const userId = req.user._id || req.user.userId;
+        const limit = Math.min(100, Math.max(1, parsePositiveInt(req.query?.limit, 100)));
+        const offset = Math.max(0, parsePositiveInt(req.query?.offset, 0));
+        const retentionCutoffIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
         const supabase = getSupabaseClient();
         const { data: rows, error } = await supabase
             .from('chats')
             .select('*')
             .contains('participants', [String(userId)])
+            .gte('created_at', retentionCutoffIso)
             .order('created_at', { ascending: false })
-            .limit(50);
+            .range(offset, offset + limit);
         if (error) {
             return res.status(500).json({ message: 'Error fetching chat history', error: error.message });
         }
 
-        const mapped = (Array.isArray(rows) ? rows : []).map(mapChatRow);
+        const rawRows = Array.isArray(rows) ? rows : [];
+        const pageRows = rawRows.slice(0, limit);
+        const mapped = pageRows.map(mapChatRow);
         const visible = mapped.filter((chat) => !(Array.isArray(chat.hiddenFor) && chat.hiddenFor.map(String).includes(String(userId))));
 
         const safeChats = await hydrateChatsParticipants(visible);
@@ -387,7 +404,12 @@ async function getChatHistory(req, res) {
             };
         });
 
-        res.json(chatsWithRelationship);
+        res.json({
+            chats: chatsWithRelationship,
+            limit,
+            offset,
+            hasMore: rawRows.length > limit,
+        });
     } catch (error) {
         console.error('Get chat history error:', error);
         res.status(500).json({ message: 'Error fetching chat history', error: error.message });
@@ -680,6 +702,10 @@ async function submitComplaint(req, res) {
             updateUserDataById(userId, { blockedUsers: nextUserBlocked }),
             opponentUserId ? updateUserDataById(opponentUserId, { blockedUsers: nextOpponentBlocked }) : null,
         ]);
+        matchingService.updateOnlineUser(userId, { blockedUsers: nextUserBlocked });
+        if (opponentUserId) {
+            matchingService.updateOnlineUser(opponentUserId, { blockedUsers: nextOpponentBlocked });
+        }
 
         // Отправляем уведомление через socket обоим участникам чата сразу,
         // а тяжёлую служебную часть добиваем уже после ответа.

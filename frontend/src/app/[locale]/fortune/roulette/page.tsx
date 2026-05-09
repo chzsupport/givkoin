@@ -31,10 +31,15 @@ const ROULETTE_SECTORS = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
-const ROULETTE_LOADING_SPIN_DURATION = 0.55;
-const ROULETTE_SETTLE_DURATION_MS = 1150;
+const ROULETTE_ACCEL_DURATION_MS = 2000;
+const ROULETTE_CRUISE_DURATION_MS = 2000;
+const ROULETTE_SETTLE_DURATION_MS = 2000;
+const ROULETTE_ACCEL_DURATION_SEC = ROULETTE_ACCEL_DURATION_MS / 1000;
+const ROULETTE_CRUISE_DURATION_SEC = ROULETTE_CRUISE_DURATION_MS / 1000;
 const ROULETTE_SETTLE_DURATION_SEC = ROULETTE_SETTLE_DURATION_MS / 1000;
-const ROULETTE_RESULT_TURNS = 1;
+const ROULETTE_ACCEL_TURNS = 1.35;
+const ROULETTE_CRUISE_TURNS = 2;
+const ROULETTE_RESULT_TURNS = 2;
 
 const normalizeRotation = (value: number) => ((value % 360) + 360) % 360;
 
@@ -50,7 +55,7 @@ const WheelComponent = ({
     isSpinning: boolean;
     rotation: number;
     spinDuration: number;
-    spinMode: 'idle' | 'loading' | 'settling';
+    spinMode: 'idle' | 'accelerating' | 'cruising' | 'settling';
     onRotationUpdate?: (rotation: number) => void;
 }) => {
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
@@ -64,8 +69,10 @@ const WheelComponent = ({
             <motion.div
                 className="w-full h-full rounded-full border-[5px] border-yellow-600/50 shadow-2xl relative overflow-hidden bg-[#1a1a2e]"
                 animate={{ rotate: rotation }}
-                transition={spinMode === 'loading'
-                    ? { duration: ROULETTE_LOADING_SPIN_DURATION, ease: [0.2, 0.72, 0.2, 1] }
+                transition={spinMode === 'accelerating'
+                    ? { duration: spinDuration, ease: [0.42, 0, 1, 1] }
+                    : spinMode === 'cruising'
+                        ? { duration: spinDuration, ease: 'linear' }
                     : spinMode === 'settling'
                         ? { duration: spinDuration, ease: [0.16, 0.76, 0.24, 1] }
                         : { duration: 0 }}
@@ -165,7 +172,7 @@ export default function RoulettePage() {
     const toast = useToast();
     const { t, localePath } = useI18n();
     const [isSpinning, setIsSpinning] = useState(false);
-    const [spinMode, setSpinMode] = useState<'idle' | 'loading' | 'settling'>('idle');
+    const [spinMode, setSpinMode] = useState<'idle' | 'accelerating' | 'cruising' | 'settling'>('idle');
     const [rotation, setRotation] = useState(0);
     const [spinDuration, setSpinDuration] = useState(ROULETTE_SETTLE_DURATION_SEC);
     const [winResult, setWinResult] = useState<{ label: string; type: string; value: number | string } | null>(null);
@@ -184,6 +191,21 @@ export default function RoulettePage() {
     const rotationRef = useRef(0);
     const spinFinishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
+
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const animateWheelStep = async (
+        mode: 'accelerating' | 'cruising',
+        turns: number,
+        durationMs: number
+    ) => {
+        const targetRotation = rotationRef.current + 360 * turns;
+        rotationRef.current = targetRotation;
+        setSpinMode(mode);
+        setSpinDuration(durationMs / 1000);
+        setRotation(targetRotation);
+        await wait(durationMs);
+    };
 
     useEffect(() => {
         rotationRef.current = rotation;
@@ -364,7 +386,7 @@ export default function RoulettePage() {
     const handleSpin = async () => {
         if (!user || spinsLeft <= 0 || isSpinning) return;
         setIsSpinning(true);
-        setSpinMode('loading');
+        setSpinMode('accelerating');
         setWinResult(null);
 
         if (spinFinishTimeoutRef.current) {
@@ -372,11 +394,24 @@ export default function RoulettePage() {
             spinFinishTimeoutRef.current = null;
         }
 
-        const loadingRotationTarget = rotationRef.current + 360;
-        setRotation(loadingRotationTarget);
+        let requestDone = false;
+        const spinRequest = apiPost<unknown>('/fortune/spin', {}, { suppressBoostOffer: true })
+            .then((res) => ({ res }))
+            .catch((error: unknown) => ({ error }))
+            .finally(() => {
+                requestDone = true;
+            });
 
         try {
-            const res = await apiPost<unknown>('/fortune/spin', {}, { suppressBoostOffer: true });
+            await animateWheelStep('accelerating', ROULETTE_ACCEL_TURNS, ROULETTE_ACCEL_DURATION_MS);
+            await animateWheelStep('cruising', ROULETTE_CRUISE_TURNS, ROULETTE_CRUISE_DURATION_MS);
+            while (!requestDone) {
+                await animateWheelStep('cruising', ROULETTE_CRUISE_TURNS, ROULETTE_CRUISE_DURATION_MS);
+            }
+
+            const spinResponse = await spinRequest;
+            if ('error' in spinResponse) throw spinResponse.error;
+            const res = spinResponse.res;
             if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
             const winningIndex = Number((res as { sectorIndex?: unknown }).sectorIndex);
             const serverResult = (res as { result?: unknown }).result as { label?: string; type?: string; value?: number | string };

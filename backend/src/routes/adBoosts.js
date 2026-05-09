@@ -5,6 +5,7 @@ const adBoostController = require('../controllers/adBoostController');
 const router = express.Router();
 
 router.use(auth);
+router.get('/pending', adBoostController.pending);
 router.post('/start', adBoostController.start);
 router.post('/complete', adBoostController.complete);
 

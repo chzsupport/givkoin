@@ -14,7 +14,7 @@ const findMatchRateLimit = createRateLimiter({
 });
 const friendRequestRateLimit = createRateLimiter({
   windowMs: 60 * 60 * 1000,
-  max: 20,
+  max: 12,
   keyBuilder: buildUserOrIpKey,
   scope: 'POST:/match/friends/request',
   message: 'Слишком много запросов в друзья. Подождите немного.',

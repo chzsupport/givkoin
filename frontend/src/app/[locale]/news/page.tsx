@@ -85,6 +85,53 @@ const COMMENT_EDIT_WINDOW_MS = 60 * 60 * 1000;
 const COMMENTS_PAGE_SIZE = 5;
 const POSTS_PAGE_SIZE = 5;
 const VIEW_BATCH_INTERVAL_MS = 25000;
+const MAX_POSTS_IN_MEMORY = 20;
+const LAST_READ_TTL_MS = 3 * 60 * 60 * 1000;
+const LAST_READ_STORAGE_KEY = 'news_last_read';
+const LEGACY_LAST_READ_STORAGE_KEY = 'news_last_read_id';
+
+function readStoredLastReadId() {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(LAST_READ_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const id = typeof parsed?.id === 'string' ? parsed.id : '';
+            const ts = Number(parsed?.ts || 0);
+            if (id && Number.isFinite(ts) && Date.now() - ts <= LAST_READ_TTL_MS) {
+                return id;
+            }
+            localStorage.removeItem(LAST_READ_STORAGE_KEY);
+        }
+        if (localStorage.getItem(LEGACY_LAST_READ_STORAGE_KEY)) {
+            localStorage.removeItem(LEGACY_LAST_READ_STORAGE_KEY);
+        }
+    } catch {
+        localStorage.removeItem(LAST_READ_STORAGE_KEY);
+        localStorage.removeItem(LEGACY_LAST_READ_STORAGE_KEY);
+    }
+    return null;
+}
+
+function writeStoredLastReadId(id: string | null) {
+    if (typeof window === 'undefined') return;
+    try {
+        if (!id) {
+            localStorage.removeItem(LAST_READ_STORAGE_KEY);
+            localStorage.removeItem(LEGACY_LAST_READ_STORAGE_KEY);
+            return;
+        }
+        localStorage.setItem(LAST_READ_STORAGE_KEY, JSON.stringify({ id, ts: Date.now() }));
+        localStorage.removeItem(LEGACY_LAST_READ_STORAGE_KEY);
+    } catch {
+        // ignore
+    }
+}
+
+function trimPostsForMemory(items: NewsPost[]) {
+    if (!Array.isArray(items) || items.length <= MAX_POSTS_IN_MEMORY) return items;
+    return items.slice(items.length - MAX_POSTS_IN_MEMORY);
+}
 
 export default function NewsPage() {
     const { refreshUser, updateUser, user } = useAuth();
@@ -97,13 +144,7 @@ export default function NewsPage() {
     const [adWidth, setAdWidth] = useState(300);
     const [adHeight, setAdHeight] = useState(600);
     const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
-    const [lastReadId, setLastReadId] = useState<string | null>(() => {
-        // Восстанавливаем позицию чтения из localStorage
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('news_last_read_id');
-        }
-        return null;
-    });
+    const [lastReadId, setLastReadId] = useState<string | null>(() => readStoredLastReadId());
     const [showScrollTop, setShowScrollTop] = useState(false);
     const [postsNextCursor, setPostsNextCursor] = useState<string | null>(null);
     const [postsHasMore, setPostsHasMore] = useState(false);
@@ -184,7 +225,7 @@ export default function NewsPage() {
     const syncNewsFeedCache = (items: NewsPost[], nextCursor: string | null, hasMore: boolean) => {
         if (!userId) return;
         setCachedNewsFeed(userId, {
-            items,
+            items: trimPostsForMemory(items),
             nextCursor,
             hasMore,
             viewBatchKeys: { ...viewBatchKeyByPostIdRef.current },
@@ -320,7 +361,7 @@ export default function NewsPage() {
         viewBatchKeyByPostIdRef.current = extractViewBatchKeysFromCache(cachedFeed);
 
         if (cachedFeed?.items?.length) {
-            const decoratedCachedItems = decoratePostsWithNewsCard(cachedFeed.items, newsCard);
+            const decoratedCachedItems = trimPostsForMemory(decoratePostsWithNewsCard(cachedFeed.items, newsCard));
             setPosts(decoratedCachedItems);
             setPostsNextCursor(cachedFeed.nextCursor || null);
             setPostsHasMore(Boolean(cachedFeed.hasMore));
@@ -341,7 +382,7 @@ export default function NewsPage() {
                 if (serverNewsCard && user) {
                     updateUser({ ...user, newsCard: serverNewsCard });
                 }
-                const feedItems = decoratePostsWithNewsCard(Array.isArray(newsData?.items) ? newsData.items : [], serverNewsCard);
+                const feedItems = trimPostsForMemory(decoratePostsWithNewsCard(Array.isArray(newsData?.items) ? newsData.items : [], serverNewsCard));
                 const feedViewBatchKeys = rememberViewBatchKey(feedItems, newsData?.viewBatchKey || null, { replace: true });
                 setPosts(feedItems);
                 setPostsNextCursor(newsData?.nextCursor || null);
@@ -354,7 +395,7 @@ export default function NewsPage() {
                 }
 
                 // Initialize viewed posts from backend data
-                const viewedFromBackend = new Set((newsCard?.viewedPostIds || []).filter(Boolean));
+                const viewedFromBackend = new Set((serverNewsCard?.viewedPostIds || []).filter(Boolean));
                 // Merge with localStorage fallback
                 let viewedFromLocal: string[] = [];
                 try {
@@ -373,12 +414,12 @@ export default function NewsPage() {
                 for (const id of viewedFromLocal) mergedViewed.add(id);
                 setViewedPosts(mergedViewed);
 
-                const cardLastReadId = typeof newsCard?.lastReadPostId === 'string' ? newsCard.lastReadPostId : null;
+                const cardLastReadId = typeof serverNewsCard?.lastReadPostId === 'string' ? serverNewsCard.lastReadPostId : null;
                 if (cardLastReadId) {
-                    localStorage.setItem('news_last_read_id', cardLastReadId);
+                    writeStoredLastReadId(cardLastReadId);
                     setLastReadId(cardLastReadId);
                 } else {
-                    const savedLastReadId = localStorage.getItem('news_last_read_id');
+                    const savedLastReadId = readStoredLastReadId();
                     if (savedLastReadId && feedItems.some(p => p._id === savedLastReadId)) {
                         setLastReadId(savedLastReadId);
                     }
@@ -499,7 +540,7 @@ export default function NewsPage() {
             setPosts(prev => {
                 const seen = new Set(prev.map((post) => post._id));
                 const appended = nextItems.filter((post) => !seen.has(post._id));
-                const merged = [...prev, ...appended];
+                const merged = trimPostsForMemory([...prev, ...appended]);
                 if (userId) {
                     syncNewsFeedCache(merged, data?.nextCursor || null, Boolean(data?.hasMore));
                 }
@@ -644,7 +685,7 @@ export default function NewsPage() {
             if (!viewedPostsRef.current.has(currentPostId)) {
                 setLastReadId((prev) => {
                     if (prev !== currentPostId) {
-                        localStorage.setItem('news_last_read_id', currentPostId);
+                        writeStoredLastReadId(currentPostId);
                         return currentPostId;
                     }
                     return prev;
@@ -666,7 +707,7 @@ export default function NewsPage() {
                 if (userId) {
                     pendingViewIdsRef.current.add(id);
                 }
-                localStorage.setItem('news_last_read_id', id);
+                writeStoredLastReadId(id);
             });
             setViewedPosts(nextViewed);
             syncViewedProgress(nextViewed, currentPostId);

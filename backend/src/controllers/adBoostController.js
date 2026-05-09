@@ -1,5 +1,6 @@
 const {
   completeAdBoost,
+  getPendingAdBoostOffer,
   startAdBoost,
 } = require('../services/adBoostService');
 
@@ -24,6 +25,16 @@ exports.complete = async (req, res) => {
     }
     const result = await completeAdBoost({ userId: req.user._id, sessionId });
     return res.json(result);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+
+exports.pending = async (req, res) => {
+  try {
+    const page = String(req.query?.page || '').trim();
+    const boostOffer = await getPendingAdBoostOffer({ userId: req.user._id, page });
+    return res.json({ boostOffer });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ message: error.message || 'Ошибка сервера' });
   }

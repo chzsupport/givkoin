@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const {
   createWish,
   listWishes,
+  updateWishText,
   supportWish,
   takeForFulfillment,
   markFulfilled,
@@ -14,6 +15,7 @@ const router = express.Router();
 router.get('/', auth, listWishes);
 router.get('/stats', auth, getStats);
 router.post('/', auth, createWish);
+router.patch('/:id', auth, updateWishText);
 router.post('/:id/support', auth, supportWish);
 router.post('/:id/fulfill', auth, takeForFulfillment);
 router.post('/:id/mark-fulfilled', auth, markFulfilled);

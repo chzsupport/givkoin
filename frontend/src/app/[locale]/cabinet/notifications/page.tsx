@@ -37,6 +37,7 @@ interface LotteryResult {
 }
 
 const NOTIFICATION_TYPES = 'system,game,chat_invite,friend_request';
+const NOTIFICATION_PAGE_LIMIT = 10;
 
 function getNotificationText(notification: Notification, language: string) {
   const localized = language === 'en' ? notification.translations?.en : notification.translations?.ru;
@@ -52,17 +53,39 @@ export default function CabinetNotificationsPage() {
   const [items, setItems] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [showLotteryModal, setShowLotteryModal] = useState(false);
   const [lotteryData, setLotteryData] = useState<LotteryResult | null>(null);
   const [lotteryLoading, setLotteryLoading] = useState(false);
 
   const load = async () => {
-    const data = await apiGet<{ notifications: Notification[]; unreadCount: number }>(
-      `/notifications?limit=50&type=${encodeURIComponent(NOTIFICATION_TYPES)}`
+    const data = await apiGet<{ notifications: Notification[]; unreadCount: number; page: number; pages: number }>(
+      `/notifications?limit=${NOTIFICATION_PAGE_LIMIT}&page=1&type=${encodeURIComponent(NOTIFICATION_TYPES)}`
     );
     setItems(data.notifications);
     setUnreadCount(data.unreadCount);
+    setPage(data.page || 1);
+    setPages(data.pages || 1);
+  };
+
+  const loadMore = async () => {
+    if (loadingMore || page >= pages) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const data = await apiGet<{ notifications: Notification[]; unreadCount: number; page: number; pages: number }>(
+        `/notifications?limit=${NOTIFICATION_PAGE_LIMIT}&page=${nextPage}&type=${encodeURIComponent(NOTIFICATION_TYPES)}`
+      );
+      setItems((prev) => [...prev, ...(data.notifications || [])]);
+      setUnreadCount(data.unreadCount);
+      setPage(data.page || nextPage);
+      setPages(data.pages || pages);
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   useEffect(() => {
@@ -199,6 +222,18 @@ export default function CabinetNotificationsPage() {
                   })()
                 ))}
               </div>
+              {page < pages && (
+                <div className="border-t border-white/10 px-5 py-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                    className="rounded-xl border border-white/10 bg-white/5 px-5 py-2 text-tiny font-bold uppercase tracking-widest text-white/70 transition hover:bg-white/10 disabled:opacity-50"
+                  >
+                    {loadingMore ? t('common.loading') : t('notifications_page.show_more')}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

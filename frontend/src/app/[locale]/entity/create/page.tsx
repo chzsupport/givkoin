@@ -8,6 +8,21 @@ import { PageBackground } from '@/components/PageBackground';
 import { apiPost } from '@/utils/api';
 import { useI18n } from '@/context/I18nContext';
 
+const ENTITY_NAME_MAX_LENGTH = 10;
+
+type EntityResponse = {
+    entity?: {
+        _id?: string;
+        id?: string | number;
+        name: string;
+        avatarUrl: string;
+        mood: string;
+        createdAt: string;
+        satietyUntil?: string | null;
+        history?: { message: string; createdAt: string }[];
+    };
+};
+
 export default function CreateEntityPage() {
     const [step, setStep] = useState<'gallery' | 'confirm' | 'name'>('gallery');
     const [avatars, setAvatars] = useState<string[]>([]);
@@ -19,7 +34,7 @@ export default function CreateEntityPage() {
     const [name, setName] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const { refreshUser, user, isAuthLoading } = useAuth();
+    const { refreshUser, updateUser, user, isAuthLoading } = useAuth();
     const router = useRouter();
     const { t, localePath } = useI18n();
     const searchParams = useSearchParams();
@@ -36,10 +51,10 @@ export default function CreateEntityPage() {
 
     useEffect(() => {
         if (isAuthLoading) return;
-        if (user?.entity) {
+        if (user?.entity && !changeMode) {
             router.replace(localePath('/entity/profile'));
         }
-    }, [isAuthLoading, localePath, router, user?.entity]);
+    }, [changeMode, isAuthLoading, localePath, router, user?.entity]);
 
     useEffect(() => {
         let cancelled = false;
@@ -94,20 +109,35 @@ export default function CreateEntityPage() {
     };
 
     const handleSaveName = async () => {
-        if (!selectedAvatar || !name.trim()) return;
+        const safeName = name.trim();
+        if (!selectedAvatar || !safeName) return;
+        if ([...safeName].length > ENTITY_NAME_MAX_LENGTH) {
+            setError(t('entity_create.name_too_long'));
+            return;
+        }
 
         setIsSubmitting(true);
         setError(null);
 
         try {
-            await apiPost(changeMode ? '/entity/change' : '/entity', {
-                name: name.trim(),
+            const result = await apiPost<EntityResponse>(changeMode ? '/entity/change' : '/entity', {
+                name: safeName,
                 avatarUrl: selectedAvatar,
                 confirmReset: changeMode ? agreed : undefined,
             });
 
-            // Refresh user data to include new entity
-            await refreshUser();
+            if (user && result?.entity) {
+                const nextEntity = {
+                    ...result.entity,
+                    _id: String(result.entity._id || result.entity.id || ''),
+                    satietyUntil: result.entity.satietyUntil || undefined,
+                };
+                updateUser({ ...user, entity: nextEntity });
+            }
+
+            void refreshUser().catch((e) => {
+                console.error('Failed to refresh user after entity save:', e);
+            });
 
             router.push(localePath('/tree'));
         } catch (err: unknown) {
@@ -308,11 +338,15 @@ export default function CreateEntityPage() {
                                 type="text"
                                 autoFocus
                                 value={name}
-                                onChange={(e) => setName(e.target.value)}
+                                onChange={(e) => setName([...e.target.value].slice(0, ENTITY_NAME_MAX_LENGTH).join(''))}
+                                maxLength={ENTITY_NAME_MAX_LENGTH}
                                 placeholder={t('entity_create.name_placeholder')}
                                 className="w-full max-w-md bg-white/5 border border-white/10 rounded-2xl px-8 py-5 text-center text-h2 focus:outline-none focus:border-blue-500/50 transition-all mb-6"
                                 disabled={isSubmitting}
                             />
+                            <div className="mb-4 text-caption text-neutral-500">
+                                {[...name.trim()].length} / {ENTITY_NAME_MAX_LENGTH}
+                            </div>
 
                             {error && (
                                 <div className="mb-4 text-red-400 text-body text-center">{error}</div>

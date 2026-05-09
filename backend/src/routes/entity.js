@@ -14,19 +14,59 @@ const { awardRadianceForActivity } = require('../services/activityRadianceServic
 
 const { getMoodDiagnosticsForUser } = require('../services/entityMoodService');
 
+const { getNumericSettingValue } = require('../services/settingsRegistryService');
 
 
 const CHANGE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
-const RESET_LIVES = 0;
+const ENTITY_NAME_MAX_LENGTH = 10;
 
-const RESET_COMPLAINT_CHIPS = 0;
+function normalizeEntityName(value) {
+    const name = String(value || '').trim();
+    if (!name) {
+        return { ok: false, message: 'Введите имя сущности' };
+    }
+    if ([...name].length > ENTITY_NAME_MAX_LENGTH) {
+        return { ok: false, message: `Имя сущности должно быть не длиннее ${ENTITY_NAME_MAX_LENGTH} символов` };
+    }
+    return { ok: true, name };
+}
 
-const RESET_STARS = 0;
+function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-const RESET_K = 0;
+function isRetryableDbError(error) {
+    const text = String(error?.message || error?.details || error || '').toLowerCase();
+    return (
+        text.includes('invalid response')
+        || text.includes('upstream')
+        || text.includes('timeout')
+        || text.includes('econnreset')
+        || text.includes('fetch failed')
+        || text.includes('network')
+    );
+}
 
-const RESET_LUMENS = 0;
+async function runDb(task, { attempts = 3 } = {}) {
+    let last = { data: null, error: null };
+    for (let index = 0; index < attempts; index += 1) {
+        try {
+            const result = await task();
+            last = result || { data: null, error: null };
+            if (!last.error || !isRetryableDbError(last.error) || index === attempts - 1) {
+                return last;
+            }
+        } catch (error) {
+            last = { data: null, error };
+            if (!isRetryableDbError(error) || index === attempts - 1) {
+                return last;
+            }
+        }
+        await wait(80 * (index + 1));
+    }
+    return last;
+}
 
 
 
@@ -36,7 +76,7 @@ async function getUserRowById(userId) {
 
     const supabase = getSupabaseClient();
 
-    const { data, error } = await supabase
+    const { data, error } = await runDb(() => supabase
 
         .from('users')
 
@@ -44,7 +84,7 @@ async function getUserRowById(userId) {
 
         .eq('id', String(userId))
 
-        .maybeSingle();
+        .maybeSingle());
 
     if (error) return null;
 
@@ -70,7 +110,7 @@ async function updateUserDataById(userId, patch) {
 
     const nowIso = new Date().toISOString();
 
-    const { data, error } = await supabase
+    const { data, error } = await runDb(() => supabase
 
         .from('users')
 
@@ -80,7 +120,7 @@ async function updateUserDataById(userId, patch) {
 
         .select('id,data')
 
-        .maybeSingle();
+        .maybeSingle());
 
     if (error) return null;
 
@@ -90,7 +130,27 @@ async function updateUserDataById(userId, patch) {
 
 
 
+async function getInitialAccountValues() {
+
+    const lives = await getNumericSettingValue('INITIAL_LIVES', Number(process.env.INITIAL_LIVES ?? 5) || 5);
+
+    const complaintChips = Number(process.env.INITIAL_COMPLAINT_CHIPS ?? 15) || 15;
+
+    const stars = Number(process.env.INITIAL_STARS ?? 1) || 1;
+
+    const k = Number(process.env.INITIAL_K ?? 0) || 0;
+
+    const lumens = Number(process.env.INITIAL_LUMENS ?? 0) || 0;
+
+    return { lives, complaintChips, stars, k, lumens };
+
+}
+
+
+
 async function clearUserEntityLinkAndResetStats(userId) {
+
+    const initial = await getInitialAccountValues();
 
     return updateUserDataById(userId, {
 
@@ -98,15 +158,15 @@ async function clearUserEntityLinkAndResetStats(userId) {
 
         entityId: null,
 
-        lives: RESET_LIVES,
+        lives: initial.lives,
 
-        complaintChips: RESET_COMPLAINT_CHIPS,
+        complaintChips: initial.complaintChips,
 
-        stars: RESET_STARS,
+        stars: initial.stars,
 
-        k: RESET_K,
+        k: initial.k,
 
-        lumens: RESET_LUMENS,
+        lumens: initial.lumens,
 
         starsMilestonesAwarded: [],
 
@@ -128,7 +188,11 @@ function mapEntityRowToApi(entityRow) {
 
     return {
 
+        _id: String(entityRow.id),
+
         id: entityRow.id,
+
+        user: entityRow.user_id,
 
         name: entityRow.name,
 
@@ -140,7 +204,11 @@ function mapEntityRowToApi(entityRow) {
 
         satietyUntil: entityRow.satiety_until,
 
+        history: Array.isArray(entityRow.history) ? entityRow.history : [],
+
         createdAt: entityRow.created_at,
+
+        updatedAt: entityRow.updated_at,
 
     };
 
@@ -158,7 +226,15 @@ router.post('/', auth, async (req, res) => {
 
 
 
-        if (!name || !avatarUrl) {
+        const normalizedName = normalizeEntityName(name);
+
+        if (!normalizedName.ok) {
+
+            return res.status(400).json({ message: normalizedName.message });
+
+        }
+
+        if (!avatarUrl) {
 
             return res.status(400).json({ message: 'Name and avatarUrl are required' });
 
@@ -170,7 +246,7 @@ router.post('/', auth, async (req, res) => {
 
         const supabase = getSupabaseClient();
 
-        const { data: existing, error: existingError } = await supabase
+        const { data: existing, error: existingError } = await runDb(() => supabase
 
             .from('entities')
 
@@ -178,7 +254,13 @@ router.post('/', auth, async (req, res) => {
 
             .eq('user_id', String(req.user._id))
 
-            .maybeSingle();
+            .maybeSingle());
+
+        if (existingError) {
+
+            return res.status(500).json({ message: 'Не удалось проверить сущность' });
+
+        }
 
         if (!existingError && existing) {
 
@@ -190,7 +272,7 @@ router.post('/', auth, async (req, res) => {
 
         const nowIso = new Date().toISOString();
 
-        const { data: entityRow, error: createError } = await supabase
+        const { data: entityRow, error: createError } = await runDb(() => supabase
 
             .from('entities')
 
@@ -198,7 +280,7 @@ router.post('/', auth, async (req, res) => {
 
                 user_id: String(req.user._id),
 
-                name: name.trim(),
+                name: normalizedName.name,
 
                 avatar_url: String(avatarUrl || '').trim(),
 
@@ -218,7 +300,7 @@ router.post('/', auth, async (req, res) => {
 
             .select('*')
 
-            .maybeSingle();
+            .maybeSingle());
 
         if (createError || !entityRow) {
 
@@ -250,29 +332,15 @@ router.post('/', auth, async (req, res) => {
 
 
 
-        try {
-
-            await awardRadianceForActivity({
-
-                userId: req.user._id,
-
-                amount: 10,
-
-                activityType: 'entity_create',
-
-                meta: { entityId: entityRow.id },
-
-                dedupeKey: `entity_create:${String(entityRow.id)}:${String(req.user._id)}`,
-
-            });
-
-        } catch (e) {
-
-            // eslint-disable-next-line no-console
-
+        awardRadianceForActivity({
+            userId: req.user._id,
+            amount: 10,
+            activityType: 'entity_create',
+            meta: { entityId: entityRow.id },
+            dedupeKey: `entity_create:${String(entityRow.id)}:${String(req.user._id)}`,
+        }).catch((e) => {
             console.error('Entity create radiance error:', e);
-
-        }
+        });
 
 
 
@@ -302,7 +370,15 @@ router.post('/change', auth, async (req, res) => {
 
         const { name, avatarUrl, confirmReset } = req.body || {};
 
-        if (!name || !avatarUrl) {
+        const normalizedName = normalizeEntityName(name);
+
+        if (!normalizedName.ok) {
+
+            return res.status(400).json({ message: normalizedName.message });
+
+        }
+
+        if (!avatarUrl) {
 
             return res.status(400).json({ message: 'Name and avatarUrl are required' });
 
@@ -320,7 +396,7 @@ router.post('/change', auth, async (req, res) => {
 
         const supabase = getSupabaseClient();
 
-        const { data: entityRow, error: entityError } = await supabase
+        const { data: entityRow, error: entityError } = await runDb(() => supabase
 
             .from('entities')
 
@@ -328,7 +404,7 @@ router.post('/change', auth, async (req, res) => {
 
             .eq('user_id', String(req.user._id))
 
-            .maybeSingle();
+            .maybeSingle());
 
         if (entityError || !entityRow) {
 
@@ -358,13 +434,13 @@ router.post('/change', auth, async (req, res) => {
 
         const nowIso = now.toISOString();
 
-        const { data: updatedEntity, error: updateEntityError } = await supabase
+        const { data: updatedEntity, error: updateEntityError } = await runDb(() => supabase
 
             .from('entities')
 
             .update({
 
-                name: name.trim(),
+                name: normalizedName.name,
 
                 avatar_url: String(avatarUrl || '').trim(),
 
@@ -386,7 +462,7 @@ router.post('/change', auth, async (req, res) => {
 
             .select('*')
 
-            .maybeSingle();
+            .maybeSingle());
 
         if (updateEntityError || !updatedEntity) {
 
@@ -412,17 +488,10 @@ router.post('/change', auth, async (req, res) => {
 
         // Ачивка #96. Ритуал перерождения
 
-        try {
-
-            const { grantAchievement } = require('../services/achievementService');
-
-            await grantAchievement({ userId: req.user._id, achievementId: 96 });
-
-        } catch (e) {
-
+        const { grantAchievement } = require('../services/achievementService');
+        grantAchievement({ userId: req.user._id, achievementId: 96 }).catch((e) => {
             console.error('Achievement #96 error:', e);
-
-        }
+        });
 
 
 
@@ -452,7 +521,7 @@ router.post('/reset', auth, async (req, res) => {
 
         const supabase = getSupabaseClient();
 
-        const { data: entityRow, error: entityError } = await supabase
+        const { data: entityRow, error: entityError } = await runDb(() => supabase
 
             .from('entities')
 
@@ -460,7 +529,7 @@ router.post('/reset', auth, async (req, res) => {
 
             .eq('user_id', String(req.user._id))
 
-            .maybeSingle();
+            .maybeSingle());
 
         if (entityError || !entityRow) {
 
@@ -488,22 +557,6 @@ router.post('/reset', auth, async (req, res) => {
 
 
 
-        const { error: deleteError } = await supabase
-
-            .from('entities')
-
-            .delete()
-
-            .eq('id', Number(entityRow.id));
-
-        if (deleteError) {
-
-            return res.status(400).json({ message: 'Не удалось удалить сущность' });
-
-        }
-
-
-
         const patchedUser = await clearUserEntityLinkAndResetStats(req.user._id);
 
         if (!patchedUser) {
@@ -514,19 +567,28 @@ router.post('/reset', auth, async (req, res) => {
 
 
 
-        // Ачивка #96. Ритуал перерождения
+        const { error: deleteError } = await runDb(() => supabase
 
-        try {
+            .from('entities')
 
-            const { grantAchievement } = require('../services/achievementService');
+            .delete()
 
-            await grantAchievement({ userId: req.user._id, achievementId: 96 });
+            .eq('id', Number(entityRow.id)));
 
-        } catch (e) {
+        if (deleteError) {
 
-            console.error('Achievement #96 error:', e);
+            return res.status(400).json({ message: 'Не удалось удалить сущность' });
 
         }
+
+
+
+        // Ачивка #96. Ритуал перерождения
+
+        const { grantAchievement } = require('../services/achievementService');
+        grantAchievement({ userId: req.user._id, achievementId: 96 }).catch((e) => {
+            console.error('Achievement #96 error:', e);
+        });
 
 
 
@@ -552,7 +614,7 @@ router.get('/me', auth, async (req, res) => {
 
         const supabase = getSupabaseClient();
 
-        const { data: entityRow, error } = await supabase
+        const { data: entityRow, error } = await runDb(() => supabase
 
             .from('entities')
 
@@ -560,7 +622,7 @@ router.get('/me', auth, async (req, res) => {
 
             .eq('user_id', String(req.user._id))
 
-            .maybeSingle();
+            .maybeSingle());
 
         if (error || !entityRow) {
 
@@ -608,9 +670,11 @@ router.patch('/name', auth, async (req, res) => {
 
 
 
-        if (!name) {
+        const normalizedName = normalizeEntityName(name);
 
-            return res.status(400).json({ message: 'Name is required' });
+        if (!normalizedName.ok) {
+
+            return res.status(400).json({ message: normalizedName.message });
 
         }
 
@@ -620,17 +684,17 @@ router.patch('/name', auth, async (req, res) => {
 
         const nowIso = new Date().toISOString();
 
-        const { data: entityRow, error } = await supabase
+        const { data: entityRow, error } = await runDb(() => supabase
 
             .from('entities')
 
-            .update({ name: name.trim(), updated_at: nowIso })
+            .update({ name: normalizedName.name, updated_at: nowIso })
 
             .eq('user_id', String(req.user._id))
 
             .select('*')
 
-            .maybeSingle();
+            .maybeSingle());
 
 
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { apiPost } from '@/utils/api';
+import { apiGet, apiPost } from '@/utils/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { useI18n } from '@/context/I18nContext';
@@ -157,6 +157,7 @@ export function AdBoostHost() {
   const { t } = useI18n();
   const { user, updateUser } = useAuth();
   const [offer, setOffer] = useState<AdBoostOffer | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [creativeId, setCreativeId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -166,6 +167,7 @@ export function AdBoostHost() {
   const [rewardNoticeVisible, setRewardNoticeVisible] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const daoStartedRef = useRef(false);
+  const dismissedOfferIdsRef = useRef<Set<string>>(new Set());
   const rewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -188,29 +190,66 @@ export function AdBoostHost() {
     setRewardNoticeVisible(false);
   }, [clearTimers]);
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<AdBoostOffer>).detail;
-      if (!detail?.id) return;
+  const showOffer = useCallback((detail: AdBoostOffer | null | undefined) => {
+    if (!detail?.id || dismissedOfferIdsRef.current.has(detail.id)) return;
+    const expiresAtMs = detail.expiresAt ? new Date(detail.expiresAt).getTime() : 0;
+    if (expiresAtMs && Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) return;
       resetPlayerState();
       setOffer(detail);
+      setPanelOpen(false);
       setSessionId('');
       setCreativeId('');
+  }, [resetPlayerState]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      showOffer((event as CustomEvent<AdBoostOffer>).detail);
     };
     window.addEventListener('givkoin:ad-boost-offer', handler);
     return () => window.removeEventListener('givkoin:ad-boost-offer', handler);
-  }, [resetPlayerState]);
+  }, [showOffer]);
+
+  useEffect(() => {
+    if (!user?._id || offer?.id) return;
+    let cancelled = false;
+    apiGet<{ boostOffer?: AdBoostOffer | null }>('/ad-boosts/pending')
+      .then((result) => {
+        if (cancelled) return;
+        showOffer(result?.boostOffer);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [offer?.id, showOffer, user?._id]);
 
   const close = useCallback(() => {
+    if (offer?.id) {
+      dismissedOfferIdsRef.current.add(offer.id);
+    }
     resetPlayerState();
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.currentTime = 0;
     }
     setOffer(null);
+    setPanelOpen(false);
     setSessionId('');
     setCreativeId('');
-  }, [resetPlayerState]);
+  }, [offer?.id, resetPlayerState]);
+
+  useEffect(() => {
+    if (!offer?.expiresAt) return undefined;
+    const expiresAtMs = new Date(offer.expiresAt).getTime();
+    if (!Number.isFinite(expiresAtMs)) return undefined;
+    const delayMs = expiresAtMs - Date.now();
+    if (delayMs <= 0) {
+      close();
+      return undefined;
+    }
+    const timer = window.setTimeout(close, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [close, offer?.expiresAt]);
 
   const getDaoErrorMessage = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : '';
@@ -327,8 +366,38 @@ export function AdBoostHost() {
   }, [close, completeReward, daoPlayerActive, getDaoErrorMessage, recordRewardedAdEvent, sessionId, t, toast]);
 
   return (
-    <AnimatePresence>
-      {offer && (
+    <>
+      <AnimatePresence>
+        {offer && !panelOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed inset-x-0 bottom-4 z-[10001] flex justify-center px-4"
+          >
+            <div className="flex w-full max-w-xl items-center gap-3 rounded-2xl border border-yellow-200/35 bg-slate-950/92 p-3 shadow-[0_0_34px_rgba(250,204,21,0.2)] backdrop-blur-md">
+              <button
+                type="button"
+                onClick={() => setPanelOpen(true)}
+                aria-label={offer.title || t('ads.boost_title')}
+                className="min-w-0 flex-1 rounded-xl bg-gradient-to-r from-sky-500 via-rose-500 to-yellow-300 px-4 py-3 text-sm font-black uppercase tracking-widest text-slate-950 shadow-[0_0_24px_rgba(250,204,21,0.45)] transition hover:brightness-110 animate-pulse"
+              >
+                {t('ads.boost_button')}
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-xs font-bold uppercase tracking-widest text-white/65 transition hover:bg-white/10 hover:text-white"
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+      {offer && panelOpen && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -411,5 +480,6 @@ export function AdBoostHost() {
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   );
 }

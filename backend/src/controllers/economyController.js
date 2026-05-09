@@ -1,4 +1,5 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { getOrLoadPage, makePageCacheKey, warmPage } = require('../services/pageCacheService');
 
 function toInt(value, fallback) {
   const n = Number(value);
@@ -69,7 +70,13 @@ exports.getHistory = async (req, res) => {
     const offset = toInt(req.query?.offset, 0);
     const currency = normalizeCurrency(req.query?.currency);
     const direction = normalizeDirection(req.query?.direction);
-    const items = await listUserTransactions({ userId, currency, direction, limit, offset });
+    const cacheKey = makePageCacheKey('economy:history', { userId, currency, direction, limit, offset });
+    const { value: items } = await getOrLoadPage(cacheKey, () => listUserTransactions({ userId, currency, direction, limit, offset }));
+    if (Array.isArray(items) && items.length === limit) {
+      const nextOffset = offset + limit;
+      const nextKey = makePageCacheKey('economy:history', { userId, currency, direction, limit, offset: nextOffset });
+      warmPage(nextKey, () => listUserTransactions({ userId, currency, direction, limit, offset: nextOffset }));
+    }
 
     return res.json({
       items,
