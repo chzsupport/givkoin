@@ -65,7 +65,6 @@ const COST_PER_WISH = 100;
 const DAILY_WISH_LIMIT = 3;
 const DAILY_FULFILL_LIMIT = 3;
 const MONTHLY_FULFILL_LIMIT = 10;
-const FULFILL_REWARD = 100;
 
 export default function GalaxyPage() {
   const { user, refreshUser } = useAuth();
