@@ -1053,6 +1053,14 @@
       "support": "Support",
       "fulfill": "Fulfill"
     },
+    "full_modal": {
+      "title": "Wish",
+      "fulfilled_by": "Fulfilled by:"
+    },
+    "edit_modal": {
+      "title": "Edit wish",
+      "hint": "The text can be changed only within 1 hour after publishing."
+    },
     "support_modal": {
       "title": "Support a wish",
       "subtitle": "How much K do you want to send?",
@@ -1195,6 +1203,7 @@
     "name_title_change": "Give a name to the new entity",
     "name_title_create": "Give a name to your Entity",
     "name_placeholder": "Reflection name...",
+    "name_too_long": "Entity name must be no longer than 10 characters.",
     "changing": "Changing...",
     "creating": "Creating...",
     "change_action": "Change entity",
@@ -1367,6 +1376,7 @@
     "adblock_title": "Disable ad blocker",
     "adblock_body": "For the site to work properly, please disable your ad blocker.",
     "boost_title": "Video gift",
+    "boost_button": "Bonus",
     "boost_description": "Watch the short video to the end to receive the extra reward.",
     "boost_video_missing": "Could not get the gift video",
     "boost_video_unavailable": "Video is unavailable right now",
@@ -1494,6 +1504,7 @@
     "read": "Read",
     "read_all": "Mark all as read",
     "mark_all_read": "Mark all as read",
+    "show_more": "Show more",
     "open": "Open",
     "go": "Go",
     "check": "Check",
@@ -1526,6 +1537,7 @@
     "active_count": "Active",
     "earned": "Earned",
     "earned_k": "Earned K",
+    "show_more": "Show more",
     "manual_boost_button": "BONUS",
     "manual_boost_title": "Referral enhancement",
     "manual_boost_description": "Watch 3 videos to the end to enable a reward from your referrals' earnings.",
@@ -1576,6 +1588,7 @@
     "no_messages": "No messages",
     "participant": "Participant",
     "battle_summary_error": "Failed to get battle result",
+    "show_more": "Show more",
     "request_pending": "Request is already pending acceptance",
     "request_sent": "Request sent",
     "accept_in_cabinet": "You can accept it only in your personal cabinet",
@@ -1599,6 +1612,7 @@
     "k_desc": "All internal currency earnings by actions.",
     "stars_desc": "All places where the user received stars.",
     "complaints_visible": "Complaints are visible to both participants, appeal is available to the accused",
+    "chat_retention_notice": "Messages are kept for 30 days, then old chats are removed from history.",
     "radiance": "Radiance",
     "stars": "Stars",
     "soul_stars": "Soul stars",
