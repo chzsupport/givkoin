@@ -699,7 +699,7 @@ export default function NewsPage() {
         };
     }, [loading, posts, isDesktop]);
 
-    // Пост считается просмотренным, когда его нижняя часть дошла до видимой области.
+    // Пост считается просмотренным только после того, как юзер увидел начало следующего поста.
     useEffect(() => {
         if (loading || posts.length === 0) return;
         const scrollTarget = isDesktop ? feedRef.current : containerRef.current;
@@ -750,15 +750,25 @@ export default function NewsPage() {
         let frameId = 0;
         const checkReadPosts = () => {
             const rootRect = scrollTarget.getBoundingClientRect();
-            const viewportBottom = rootRect.bottom - 8;
+            const viewportTop = rootRect.top + 8;
+            const viewportBottom = rootRect.bottom - 40;
             let deepestReadableId: string | null = null;
 
-            for (const postId of postIds) {
-                const el = postsRef.current[postId];
-                if (!el) continue;
-                const rect = el.getBoundingClientRect();
-                if (rect.bottom <= viewportBottom) {
-                    deepestReadableId = postId;
+            for (let index = 0; index < postIds.length - 1; index += 1) {
+                const currentId = postIds[index];
+                const nextId = postIds[index + 1];
+                const currentEl = postsRef.current[currentId];
+                const nextEl = postsRef.current[nextId];
+                if (!currentEl || !nextEl) continue;
+
+                const currentRect = currentEl.getBoundingClientRect();
+                const nextRect = nextEl.getBoundingClientRect();
+                const currentWasScrolledThrough = currentRect.top < rootRect.top - 20;
+                const nextStarted = nextRect.top >= viewportTop && nextRect.top <= viewportBottom;
+                const nextAlreadyPassed = nextRect.top < viewportTop;
+
+                if (currentWasScrolledThrough && (nextStarted || nextAlreadyPassed)) {
+                    deepestReadableId = currentId;
                 }
             }
 

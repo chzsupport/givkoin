@@ -10,6 +10,7 @@ const {
   createPost,
   updatePost,
   deletePost,
+  deletePostsBulk,
   publishPost,
   listPosts,
   listComments,
@@ -29,6 +30,7 @@ router.get('/categories', listCategories);
 
 // Посты (админ создание/публикация)
 router.post('/', auth, adminAuth, createPost);
+router.post('/bulk-delete', auth, adminAuth, deletePostsBulk);
 router.patch('/:id', auth, adminAuth, updatePost);
 router.delete('/:id', auth, adminAuth, deletePost);
 router.post('/:id/publish', auth, adminAuth, publishPost);

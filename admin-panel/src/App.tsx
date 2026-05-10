@@ -90,7 +90,7 @@ import {
   fetchAuditLogsV2,
   fetchAuditLogByIdV2
 } from './api/admin';
-import { fetchPosts, createPost as apiCreatePost, publishPost, updatePost, deletePost } from './api/news';
+import { fetchPosts, createPost as apiCreatePost, publishPost, updatePost, deletePost, deletePosts } from './api/news';
 import { describeNewsMedia } from './utils/newsMedia';
 import {
   emptyLocalizedText,
@@ -2914,6 +2914,7 @@ function ContentSection() {
   const [statusFilter, setStatusFilter] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [activeLanguage, setActiveLanguage] = useState<ContentLanguage>('ru');
+  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [postForm, setPostForm] = useState<{
     title: string;
     content: string;
@@ -2928,7 +2929,10 @@ function ContentSection() {
     setLoading(true);
     try {
       const [p] = await Promise.all([fetchPosts()]);
-      setPosts(Array.isArray(p) ? p : []);
+      const nextPosts = Array.isArray(p) ? p : [];
+      const nextIds = new Set(nextPosts.map(getPostId).filter(Boolean));
+      setPosts(nextPosts);
+      setSelectedPostIds(prev => prev.filter(id => nextIds.has(id)));
     } catch (e) {
       console.error(e);
       setPosts([]);
@@ -2941,6 +2945,10 @@ function ContentSection() {
     if (!statusFilter) return posts;
     return posts.filter(p => p.status === statusFilter);
   }, [posts, statusFilter]);
+
+  const filteredPostIds = useMemo(() => filteredPosts.map(getPostId).filter(Boolean), [filteredPosts]);
+  const selectedPostIdsSet = useMemo(() => new Set(selectedPostIds), [selectedPostIds]);
+  const allFilteredSelected = filteredPostIds.length > 0 && filteredPostIds.every((id) => selectedPostIdsSet.has(id));
 
   useEffect(() => {
     loadData();
@@ -3014,6 +3022,7 @@ function ContentSection() {
     if (!confirm('Удалить этот пост?')) return false;
     try {
       await deletePost(id);
+      setSelectedPostIds(prev => prev.filter(postId => postId !== id));
       loadData();
       return true;
     } catch (e: any) {
@@ -3023,6 +3032,44 @@ function ContentSection() {
       }
       alert(e.response?.data?.message || 'Ошибка удаления');
       return false;
+    }
+  };
+
+  const togglePostSelection = (id: string) => {
+    if (!id) return;
+    setSelectedPostIds(prev => (
+      prev.includes(id)
+        ? prev.filter(postId => postId !== id)
+        : [...prev, id]
+    ));
+  };
+
+  const toggleAllFilteredPosts = () => {
+    if (filteredPostIds.length === 0) return;
+    setSelectedPostIds(prev => {
+      const current = new Set(prev);
+      if (filteredPostIds.every((id) => current.has(id))) {
+        filteredPostIds.forEach((id) => current.delete(id));
+      } else {
+        filteredPostIds.forEach((id) => current.add(id));
+      }
+      return Array.from(current);
+    });
+  };
+
+  const handleDeleteSelectedPosts = async () => {
+    const ids = selectedPostIds.filter(Boolean);
+    if (!ids.length) {
+      alert('Выберите посты для удаления');
+      return;
+    }
+    if (!confirm(`Удалить выбранные посты: ${ids.length}?`)) return;
+    try {
+      await deletePosts(ids);
+      setSelectedPostIds([]);
+      loadData();
+    } catch (e: any) {
+      alert(e.response?.data?.message || 'Ошибка удаления выбранных постов');
     }
   };
 
@@ -3088,6 +3135,39 @@ function ContentSection() {
         ))}
       </div>
 
+      {filteredPosts.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleAllFilteredPosts}
+              className="h-4 w-4 rounded border-white/20 bg-slate-900"
+            />
+            <span>Отметить все видимые посты</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-400">Выбрано: {selectedPostIds.length}</span>
+            {selectedPostIds.length > 0 && (
+              <>
+                <button
+                  onClick={() => setSelectedPostIds([])}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+                >
+                  Снять выбор
+                </button>
+                <button
+                  onClick={handleDeleteSelectedPosts}
+                  className="rounded-lg border border-rose-500/40 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
+                >
+                  Удалить выбранные
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           {loading ? (
@@ -3102,6 +3182,16 @@ function ContentSection() {
             return (
             <Card key={postId || `${post.title}_${post.createdAt}`} className="group">
               <div className="flex gap-4">
+                <label className="pt-1">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(postId && selectedPostIdsSet.has(postId))}
+                    onChange={() => togglePostSelection(postId)}
+                    disabled={!postId}
+                    className="h-4 w-4 rounded border-white/20 bg-slate-900"
+                    aria-label="Отметить пост"
+                  />
+                </label>
                 {post.mediaUrl && (
                   <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-800">
                     <AdminNewsMediaPreview mediaUrl={post.mediaUrl} title={localizedTitle} compact />

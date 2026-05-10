@@ -85,6 +85,11 @@ export async function deletePost(id: string) {
   return res.data;
 }
 
+export async function deletePosts(ids: string[]) {
+  const res = await api.post('/news/bulk-delete', { ids }, { withCredentials: true });
+  return res.data;
+}
+
 export async function createCategory(payload: { name: string; slug: string }) {
   const res = await api.post('/news/categories', payload, { withCredentials: true });
   return res.data;

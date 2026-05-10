@@ -1209,6 +1209,46 @@ async function deletePost(req, res, next) {
   }
 }
 
+async function deletePostsBulk(req, res, next) {
+  const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.body?.language || req.query?.language || 'ru');
+  try {
+    const ids = Array.from(new Set(
+      (Array.isArray(req.body?.ids) ? req.body.ids : [])
+        .map(toId)
+        .filter(Boolean)
+    ));
+
+    if (!ids.length) {
+      return res.status(400).json({ message: pickLang(userLang, 'Не выбраны посты для удаления', 'No posts selected') });
+    }
+
+    const deleted = [];
+    const missing = [];
+    for (const id of ids) {
+      try {
+        await deleteNewsPostTotally(id);
+        deleted.push(id);
+        adminAudit('news.post.delete', req, { postId: id, bulk: true });
+      } catch (err) {
+        if (err?.status === 404) {
+          missing.push(id);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    invalidateNewsFeedRuntimeState();
+    return res.json({
+      message: pickLang(userLang, 'Выбранные посты удалены', 'Selected posts deleted'),
+      deleted,
+      missing,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function publishPost(req, res, next) {
   try {
     const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.body?.language || req.query?.language || 'ru');
@@ -1791,6 +1831,7 @@ module.exports = {
   createPost,
   updatePost,
   deletePost,
+  deletePostsBulk,
   publishPost,
   listPosts,
   getNewsUserCard,
