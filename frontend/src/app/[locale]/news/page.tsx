@@ -541,51 +541,87 @@ export default function NewsPage() {
         setEditingCommentDraft('');
     }, [commentOpenForPostId]);
 
+    const loadMorePostPages = async ({
+        currentPosts,
+        cursor,
+        hasMore,
+        maxAttempts,
+        targetId = null,
+    }: {
+        currentPosts: NewsPost[];
+        cursor: string | null;
+        hasMore: boolean;
+        maxAttempts: number;
+        targetId?: string | null;
+    }) => {
+        let pageCursor: string | null = cursor;
+        let nextCursor: string | null = cursor;
+        let pageHasMore: boolean = hasMore;
+        let loadedItems: NewsPost[] = [];
+        let targetFound = Boolean(targetId && currentPosts.some((post) => post._id === targetId));
+        const alreadyShown = new Set(currentPosts.map((post) => post._id));
+
+        for (let attempt = 0; attempt < maxAttempts && pageCursor; attempt += 1) {
+            const data: NewsFeedResponse = await apiGet<NewsFeedResponse>(`/news?limit=${POSTS_PAGE_SIZE}&cursor=${encodeURIComponent(pageCursor)}`);
+            const pageItems = decoratePostsWithNewsCard(Array.isArray(data?.items) ? data.items : [], newsCard);
+            rememberViewBatchKey(pageItems, data?.viewBatchKey || null);
+
+            const freshItems = pageItems.filter((post) => {
+                if (!post?._id || alreadyShown.has(post._id)) return false;
+                alreadyShown.add(post._id);
+                return true;
+            });
+
+            loadedItems = [...loadedItems, ...freshItems];
+            targetFound = targetFound || Boolean(targetId && pageItems.some((post) => post._id === targetId));
+            nextCursor = data?.nextCursor || null;
+            pageHasMore = Boolean(data?.hasMore);
+
+            if (targetId) {
+                if (targetFound || !pageHasMore || !nextCursor || nextCursor === pageCursor) {
+                    break;
+                }
+            } else if (freshItems.length > 0 || !pageHasMore || !nextCursor || nextCursor === pageCursor) {
+                break;
+            }
+
+            pageCursor = nextCursor;
+        }
+
+        return {
+            loadedItems,
+            nextCursor,
+            hasMore: pageHasMore,
+            targetFound,
+        };
+    };
+
     const handleLoadMorePosts = async () => {
         if (loadingMorePosts || !postsHasMore || !postsNextCursor) return;
         setLoadingMorePosts(true);
         try {
-            let cursor: string | null = postsNextCursor;
-            let nextCursor: string | null = postsNextCursor;
-            let hasMore: boolean = postsHasMore;
-            let loadedItems: NewsPost[] = [];
-            const alreadyShown = new Set(posts.map((post) => post._id));
-
-            for (let attempt = 0; attempt < 4 && cursor; attempt += 1) {
-                const data: NewsFeedResponse = await apiGet<NewsFeedResponse>(`/news?limit=${POSTS_PAGE_SIZE}&cursor=${encodeURIComponent(cursor)}`);
-                const pageItems = decoratePostsWithNewsCard(Array.isArray(data?.items) ? data.items : [], newsCard);
-                rememberViewBatchKey(pageItems, data?.viewBatchKey || null);
-
-                const freshItems = pageItems.filter((post) => {
-                    if (!post?._id || alreadyShown.has(post._id)) return false;
-                    alreadyShown.add(post._id);
-                    return true;
-                });
-                loadedItems = [...loadedItems, ...freshItems];
-                nextCursor = data?.nextCursor || null;
-                hasMore = Boolean(data?.hasMore);
-
-                if (freshItems.length > 0 || !hasMore || !nextCursor || nextCursor === cursor) {
-                    break;
-                }
-                cursor = nextCursor;
-            }
+            const page = await loadMorePostPages({
+                currentPosts: posts,
+                cursor: postsNextCursor,
+                hasMore: postsHasMore,
+                maxAttempts: 4,
+            });
 
             setPosts(prev => {
                 const seen = new Set(prev.map((post) => post._id));
-                const appended = loadedItems.filter((post) => !seen.has(post._id));
+                const appended = page.loadedItems.filter((post) => !seen.has(post._id));
                 const merged = trimPostsForMemory([...prev, ...appended]);
                 if (userId) {
-                    syncNewsFeedCache(merged, nextCursor, hasMore);
+                    syncNewsFeedCache(merged, page.nextCursor, page.hasMore);
                 }
                 return merged;
             });
-            setPostsNextCursor(nextCursor);
-            setPostsHasMore(hasMore);
-            if (loadedItems.length > 0) {
+            setPostsNextCursor(page.nextCursor);
+            setPostsHasMore(page.hasMore);
+            if (page.loadedItems.length > 0) {
                 setViewedPosts(prev => {
                     const next = new Set(prev);
-                    loadedItems.forEach((post) => {
+                    page.loadedItems.forEach((post) => {
                         if (post.isViewed) next.add(post._id);
                     });
                     return next;
@@ -716,17 +752,15 @@ export default function NewsPage() {
             const currentIndex = postIds.indexOf(currentPostId);
             if (currentIndex < 0) return;
 
-            if (!viewedPostsRef.current.has(currentPostId)) {
-                setLastReadId((prev) => {
-                    if (prev !== currentPostId) {
-                        writeStoredLastReadId(currentPostId);
-                        return currentPostId;
-                    }
-                    return prev;
-                });
-            }
+            setLastReadId((prev) => {
+                if (prev !== currentPostId) {
+                    writeStoredLastReadId(currentPostId);
+                    return currentPostId;
+                }
+                return prev;
+            });
 
-            const idsToMark = postIds.slice(0, currentIndex).filter((id) => !viewedPostsRef.current.has(id));
+            const idsToMark = postIds.slice(0, currentIndex + 1).filter((id) => !viewedPostsRef.current.has(id));
             if (idsToMark.length === 0) {
                 if (newsCard && newsCard.lastReadPostId !== currentPostId) {
                     syncViewedProgress(new Set(viewedPostsRef.current), currentPostId);
@@ -741,7 +775,6 @@ export default function NewsPage() {
                 if (userId) {
                     pendingViewIdsRef.current.add(id);
                 }
-                writeStoredLastReadId(id);
             });
             setViewedPosts(nextViewed);
             syncViewedProgress(nextViewed, currentPostId);
@@ -807,19 +840,75 @@ export default function NewsPage() {
         document.body.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const scrollToLastRead = () => {
+    const scrollPostIntoView = (postId: string | null) => {
+        if (!postId) return false;
+        const refElement = postsRef.current[postId];
+        if (refElement) {
+            refElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return true;
+        }
+
+        const el = document.querySelector(`[data-id="${postId}"]`) as HTMLElement | null;
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return true;
+        }
+        return false;
+    };
+
+    const scrollToLastRead = async () => {
+        if (loadingMorePosts) return;
         const firstUnviewedId = posts.find(p => !viewedPosts.has(p._id))?._id || null;
-        const targetId = firstUnviewedId || lastReadId;
-        if (targetId && posts.some(p => p._id === targetId) && postsRef.current[targetId]) {
-            postsRef.current[targetId]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const targetId = lastReadId || firstUnviewedId;
+        if (!targetId) return;
+
+        if (scrollPostIntoView(targetId)) {
             return;
         }
 
-        if (targetId && posts.some(p => p._id === targetId)) {
-            const el = document.querySelector(`[data-id="${targetId}"]`) as HTMLElement | null;
-            if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (!postsHasMore || !postsNextCursor) {
+            return;
+        }
+
+        setLoadingMorePosts(true);
+        try {
+            const page = await loadMorePostPages({
+                currentPosts: posts,
+                cursor: postsNextCursor,
+                hasMore: postsHasMore,
+                maxAttempts: 30,
+                targetId,
+            });
+
+            setPosts(prev => {
+                const seen = new Set(prev.map((post) => post._id));
+                const appended = page.loadedItems.filter((post) => !seen.has(post._id));
+                const merged = trimPostsForMemory([...prev, ...appended]);
+                if (userId) {
+                    syncNewsFeedCache(merged, page.nextCursor, page.hasMore);
+                }
+                return merged;
+            });
+            setPostsNextCursor(page.nextCursor);
+            setPostsHasMore(page.hasMore);
+            if (page.loadedItems.length > 0) {
+                setViewedPosts(prev => {
+                    const next = new Set(prev);
+                    page.loadedItems.forEach((post) => {
+                        if (post.isViewed) next.add(post._id);
+                    });
+                    return next;
+                });
             }
+
+            window.setTimeout(() => {
+                scrollPostIntoView(targetId);
+            }, 80);
+        } catch (e) {
+            console.error('Failed to continue reading:', e);
+            toast.error(t('common.error'), t('news.failed_load_more'));
+        } finally {
+            setLoadingMorePosts(false);
         }
     };
 
@@ -1304,7 +1393,8 @@ export default function NewsPage() {
                         {posts.length > 0 && (
                             <button
                                 onClick={scrollToLastRead}
-                                className="flex items-center gap-2 px-4 py-3 bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-200 hover:bg-blue-500/30 transition-all text-tiny font-bold uppercase tracking-wider"
+                                disabled={loadingMorePosts}
+                                className="flex items-center gap-2 px-4 py-3 bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-200 hover:bg-blue-500/30 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-tiny font-bold uppercase tracking-wider"
                             >
                                 <BookOpen size={16} />
                                 {t('news.continue_reading')}
