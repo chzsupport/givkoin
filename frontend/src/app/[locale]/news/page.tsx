@@ -715,13 +715,9 @@ export default function NewsPage() {
             if (currentIndex < 0) return;
 
             const previousLastReadId = lastReadIdRef.current;
-            const previousLastReadIndex = previousLastReadId ? postIds.indexOf(previousLastReadId) : -1;
-            const shouldMoveLastRead =
-                !previousLastReadId ||
-                previousLastReadIndex >= 0 && currentIndex >= previousLastReadIndex;
-            const nextLastReadId = shouldMoveLastRead ? currentPostId : previousLastReadId;
+            const nextLastReadId = currentPostId;
 
-            if (shouldMoveLastRead && previousLastReadId !== currentPostId) {
+            if (previousLastReadId !== currentPostId) {
                 lastReadIdRef.current = currentPostId;
                 writeStoredLastReadId(currentPostId);
                 setLastReadId(currentPostId);
@@ -850,7 +846,11 @@ export default function NewsPage() {
     const scrollToLastRead = async () => {
         if (loadingMorePosts) return;
         const firstUnviewedId = posts.find(p => !viewedPosts.has(p._id))?._id || null;
-        const targetId = lastReadId || firstUnviewedId;
+        const viewedLoadedPosts = posts.filter(p => viewedPosts.has(p._id));
+        const loadedLastViewedId = viewedLoadedPosts.length > 0 ? viewedLoadedPosts[viewedLoadedPosts.length - 1]._id : null;
+        const rememberedLastReadId = lastReadIdRef.current || lastReadId;
+        const rememberedIsLoaded = Boolean(rememberedLastReadId && posts.some(p => p._id === rememberedLastReadId));
+        const targetId = (rememberedIsLoaded ? rememberedLastReadId : null) || loadedLastViewedId || rememberedLastReadId || firstUnviewedId;
         if (!targetId) return;
 
         if (scrollPostIntoView(targetId)) {
@@ -893,7 +893,10 @@ export default function NewsPage() {
             }
 
             window.setTimeout(() => {
-                scrollPostIntoView(targetId);
+                if (scrollPostIntoView(targetId)) return;
+                const fallbackViewedPosts = [...posts, ...page.loadedItems].filter(p => viewedPosts.has(p._id) || p.isViewed);
+                const fallbackId = fallbackViewedPosts.length > 0 ? fallbackViewedPosts[fallbackViewedPosts.length - 1]._id : null;
+                scrollPostIntoView(fallbackId);
             }, 80);
         } catch (e) {
             console.error('Failed to continue reading:', e);
