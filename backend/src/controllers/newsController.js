@@ -741,6 +741,7 @@ function invalidateNewsFeedRuntimeState({ resetSweep = false } = {}) {
   newsFeedCache = null;
   newsFeedCacheExpiresAt = 0;
   newsFeedInflight = null;
+  clearPageCacheByPrefix('news:posts:');
   if (resetSweep) {
     newsScheduledPublishSweepStartedAt = 0;
     newsScheduledPublishSweepInflight = null;
@@ -1192,14 +1193,18 @@ async function updatePost(req, res, next) {
 }
 
 async function deletePost(req, res, next) {
+  const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.body?.language || req.query?.language || 'ru');
   try {
-    const userLang = normalizeLang(req.user?.language || req.user?.data?.language || req.body?.language || req.query?.language || 'ru');
     const { id } = req.params;
     await deleteNewsPostTotally(id);
     invalidateNewsFeedRuntimeState();
     adminAudit('news.post.delete', req, { postId: id });
     return res.json({ message: pickLang(userLang, 'Пост удален', 'Post deleted') });
   } catch (err) {
+    if (err?.status === 404) {
+      invalidateNewsFeedRuntimeState();
+      return res.json({ message: pickLang(userLang, 'Пост уже удален', 'Post already deleted') });
+    }
     return next(err);
   }
 }

@@ -3017,6 +3017,10 @@ function ContentSection() {
       loadData();
       return true;
     } catch (e: any) {
+      if (e.response?.status === 404) {
+        await loadData();
+        return true;
+      }
       alert(e.response?.data?.message || 'Ошибка удаления');
       return false;
     }
