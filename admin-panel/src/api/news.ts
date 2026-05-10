@@ -86,8 +86,29 @@ export async function deletePost(id: string) {
 }
 
 export async function deletePosts(ids: string[]) {
-  const res = await api.post('/news/bulk-delete', { ids }, { withCredentials: true });
-  return res.data;
+  const safeIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean)));
+  if (!safeIds.length) return { deleted: [], missing: [] };
+
+  try {
+    const res = await api.post('/news/bulk-delete', { ids: safeIds }, { withCredentials: true });
+    return res.data;
+  } catch (e: any) {
+    const status = Number(e?.response?.status || 0);
+    const message = String(e?.response?.data?.message || e?.message || '').toLowerCase();
+    const routeMissing = status === 404 || message.includes('route') || message.includes('маршрут');
+    if (!routeMissing) {
+      throw e;
+    }
+
+    const results = await Promise.allSettled(safeIds.map((id) => deletePost(id)));
+    const failed = results
+      .map((result, index) => ({ result, id: safeIds[index] }))
+      .filter(({ result }) => result.status === 'rejected');
+    if (failed.length > 0) {
+      throw (failed[0].result as PromiseRejectedResult).reason;
+    }
+    return { deleted: safeIds, missing: [] };
+  }
 }
 
 export async function createCategory(payload: { name: string; slug: string }) {
