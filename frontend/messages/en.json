@@ -1365,8 +1365,10 @@
   },
   "news_media": {
     "embed_unavailable": "Couldn't embed the video here",
+    "file_unavailable": "File is unavailable",
     "source": "Source",
     "open_link": "Open link",
+    "open_file": "Open file",
     "external_link": "External link",
     "adblock_title": "Disable ad blocker",
     "adblock_body": "For the site to work properly, please disable your ad blocker."

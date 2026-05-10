@@ -1311,8 +1311,10 @@
   },
   "news_media": {
     "embed_unavailable": "Встроить ролик прямо здесь не удалось",
+    "file_unavailable": "Файл недоступен",
     "source": "Источник",
     "open_link": "Открыть ссылку",
+    "open_file": "Открыть файл",
     "external_link": "Внешняя ссылка"
   },
   "ads": {

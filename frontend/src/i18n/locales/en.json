@@ -1312,8 +1312,10 @@
   },
   "news_media": {
     "embed_unavailable": "Couldn't embed the video here",
+    "file_unavailable": "File is unavailable",
     "source": "Source",
     "open_link": "Open link",
+    "open_file": "Open file",
     "external_link": "External link"
   },
   "ads": {

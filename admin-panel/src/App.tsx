@@ -2821,7 +2821,7 @@ function AdminNewsMediaPreview({
       <img
         src={media.url}
         alt={title || ''}
-        className={compact ? 'h-full w-full object-cover' : 'max-h-40 w-full object-cover rounded'}
+        className={compact ? 'h-full w-full object-contain bg-slate-950' : 'h-auto w-full rounded bg-slate-950 object-contain'}
       />
     );
   }
@@ -2830,12 +2830,29 @@ function AdminNewsMediaPreview({
     return (
       <video
         src={media.url}
-        className={compact ? 'h-full w-full object-cover' : 'max-h-40 w-full rounded'}
+        className={compact ? 'h-full w-full object-contain bg-slate-950' : 'h-auto w-full rounded bg-slate-950 object-contain'}
         controls={!compact}
         muted={compact}
         playsInline
         preload="metadata"
       />
+    );
+  }
+
+  if (media.kind === 'audio') {
+    if (compact) {
+      return (
+        <div className="flex h-full w-full flex-col items-center justify-center bg-slate-900 px-2 text-center">
+          <div className="text-label text-slate-500">Аудио</div>
+          <div className="mt-1 break-all text-xs font-semibold text-slate-200">{media.hostLabel}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded bg-slate-950/70 p-4">
+        <audio src={media.url} className="w-full" controls preload="metadata" />
+      </div>
     );
   }
 
@@ -3216,6 +3233,7 @@ function ContentSection() {
                     type="file"
                     className="hidden"
                     id="post-media-upload"
+                    accept=".jpg,.jpeg,.png,.webp,.avif,.gif,.mp4,.webm,.mov,.m4v,.mp3,.m4a,.ogg,.wav,image/jpeg,image/png,image/webp,image/avif,image/gif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav"
                     onChange={async (e) => {
                       if (e.target.files && e.target.files[0]) {
                         const file = e.target.files[0];

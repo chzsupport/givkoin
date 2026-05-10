@@ -138,15 +138,35 @@ const ALLOWED_UPLOAD_MIME_TYPES = new Set([
 
   'image/gif',
 
+  'image/avif',
+
   'video/mp4',
 
   'video/webm',
 
   'video/quicktime',
 
+  'video/x-m4v',
+
+  'audio/mpeg',
+
+  'audio/mp3',
+
+  'audio/mp4',
+
+  'audio/x-m4a',
+
+  'audio/ogg',
+
+  'audio/wav',
+
+  'audio/wave',
+
+  'audio/x-wav',
+
 ]);
 
-const ALLOWED_UPLOAD_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.webm', '.mov']);
+const ALLOWED_UPLOAD_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.mp4', '.webm', '.mov', '.m4v', '.mp3', '.m4a', '.ogg', '.wav']);
 
 
 

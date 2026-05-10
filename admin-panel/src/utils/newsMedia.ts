@@ -1,4 +1,4 @@
-export type NewsMediaKind = 'image' | 'video' | 'embed' | 'link';
+export type NewsMediaKind = 'image' | 'video' | 'audio' | 'embed' | 'link';
 
 export type NewsMediaInfo = {
   kind: NewsMediaKind;
@@ -11,8 +11,9 @@ export type NewsMediaInfo = {
 };
 
 const URL_BASE = 'https://givkoin.local';
-const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i;
-const VIDEO_EXT_RE = /\.(mp4|webm|ogg|ogv|mov|m4v|m3u8)$/i;
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|avif)$/i;
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)$/i;
+const AUDIO_EXT_RE = /\.(mp3|m4a|ogg|wav)$/i;
 
 function normalizeHost(hostname: string) {
   return String(hostname || '').trim().toLowerCase().replace(/^www\./, '');
@@ -193,6 +194,15 @@ export function describeNewsMedia(rawValue?: string | null): NewsMediaInfo | nul
       kind: 'video',
       url: value,
       providerLabel: 'Видео',
+      hostLabel,
+    };
+  }
+
+  if (AUDIO_EXT_RE.test(pathname)) {
+    return {
+      kind: 'audio',
+      url: value,
+      providerLabel: 'Аудио',
       hostLabel,
     };
   }
