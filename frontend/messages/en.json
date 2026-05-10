@@ -851,6 +851,14 @@
       "shop": "Shop",
       "practice": "Practice"
     },
+    "sector_label": {
+      "fortune": "Fortune Sector",
+      "bridges": "Bridge Sector",
+      "galaxy": "Galaxy Sector",
+      "chronicle": "Chronicle Archives",
+      "news": "News Department",
+      "shop": "Trade Quarter"
+    },
     "tempo": {
       "hour_closed": {
         "title": "Hour closed",

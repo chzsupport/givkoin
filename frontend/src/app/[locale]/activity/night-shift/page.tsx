@@ -402,6 +402,23 @@ export default function NightShiftPage() {
         return labels[normalized] || normalized || t('landing.unknown');
     };
 
+    const formatSectorLabel = useCallback((sectorId?: string | null, fallback?: string | null) => {
+        const labels: Record<string, string> = {
+            fortune: t('night_shift.sector_label.fortune'),
+            bridges: t('night_shift.sector_label.bridges'),
+            galaxy: t('night_shift.sector_label.galaxy'),
+            chronicle: t('night_shift.sector_label.chronicle'),
+            news: t('night_shift.sector_label.news'),
+            shop: t('night_shift.sector_label.shop'),
+        };
+
+        const normalizedId = String(sectorId || '').trim();
+        if (labels[normalizedId]) return labels[normalizedId];
+
+        const rawFallback = String(fallback || '').trim();
+        return rawFallback || t('night_shift.unknown_sector');
+    }, [t]);
+
     const totalResolvedAnomalies = status?.isServing ? getLocalAnomaliesCount(runtime) : (status?.stats?.anomaliesCleared || 0);
     const currentHourAnomalies = status?.isServing ? getCurrentHourAnomalies(runtime) : 0;
     const hourlyGoal = 60;
@@ -434,7 +451,7 @@ export default function NightShiftPage() {
                     const anomaly = anomalyMap.get(resolved.anomalyId);
                     return {
                         anomalyId: resolved.anomalyId,
-                        sectorName: anomaly?.sectorName || t('night_shift.unknown_sector'),
+                        sectorName: formatSectorLabel(anomaly?.sectorId, anomaly?.sectorName),
                         pagePath: resolved.pagePath,
                         clearedAt: resolved.clearedAt,
                         windowIndex: window.index,
@@ -443,7 +460,11 @@ export default function NightShiftPage() {
             })
             .sort((left, right) => new Date(right.clearedAt).getTime() - new Date(left.clearedAt).getTime())
             .slice(0, 6);
-    }, [runtime, t]);
+    }, [formatSectorLabel, runtime]);
+
+    const radarTargetLabel = radarTargetId
+        ? formatSectorLabel(radarTargetId, radarTarget)
+        : radarTarget;
 
     return (
         <div className={`flex-1 flex flex-col min-h-0 ${windowWidth >= 768 ? 'overflow-hidden' : 'overflow-y-auto'} bg-[#050510] text-slate-200 font-sans selection:bg-purple-500/30`}>
@@ -567,17 +588,17 @@ export default function NightShiftPage() {
 
                                 <div className="relative z-10 text-center">
                                     {status?.isServing ? (
-                                        radarTarget ? (
+                                        radarTargetLabel ? (
                                             <>
                                                 <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2 animate-bounce" />
                                                 <div className="text-red-400 font-bold tracking-wider">{t('night_shift.detected')}</div>
                                                 <div className="text-sm mt-1">
                                                     {radarTargetUrl ? (
-                                                        <Link href={radarTargetUrl} className="text-cyan-300 hover:text-cyan-200 underline underline-offset-4">
-                                                            {radarTarget}
+                                                        <Link href={localePath(radarTargetUrl)} className="text-cyan-300 hover:text-cyan-200 underline underline-offset-4">
+                                                            {radarTargetLabel}
                                                         </Link>
                                                     ) : (
-                                                        <span className="text-white">{radarTarget}</span>
+                                                        <span className="text-white">{radarTargetLabel}</span>
                                                     )}
                                                 </div>
                                             </>
