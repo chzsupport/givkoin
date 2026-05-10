@@ -170,7 +170,7 @@ export default function NewsPage() {
     const viewFlushInFlightRef = useRef(false);
     const viewedPostsRef = useRef<Set<string>>(new Set());
     const currentReadPostIdRef = useRef<string | null>(null);
-    const viewTimerByPostIdRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const lastReadIdRef = useRef<string | null>(lastReadId);
     const viewBatchKeyByPostIdRef = useRef<Record<string, string>>({});
     const userId = user?._id || user?.id;
     const isAdmin = user?.role === 'admin';
@@ -458,6 +458,10 @@ export default function NewsPage() {
     }, [viewedPosts]);
 
     useEffect(() => {
+        lastReadIdRef.current = lastReadId;
+    }, [lastReadId]);
+
+    useEffect(() => {
         pendingViewIdsRef.current.clear();
         if (!userId || typeof window === 'undefined') return undefined;
 
@@ -695,21 +699,13 @@ export default function NewsPage() {
         };
     }, [loading, posts, isDesktop]);
 
-    // Пост считается просмотренным, если он виден на экране достаточно долго.
+    // Пост считается просмотренным, когда его нижняя часть дошла до видимой области.
     useEffect(() => {
         if (loading || posts.length === 0) return;
         const scrollTarget = isDesktop ? feedRef.current : containerRef.current;
         if (!scrollTarget) return;
 
         const postIds = posts.map((post) => post._id);
-        const viewTimers = viewTimerByPostIdRef.current;
-        const clearViewTimer = (postId: string) => {
-            const timer = viewTimers[postId];
-            if (!timer) return;
-            clearTimeout(timer);
-            delete viewTimers[postId];
-        };
-
         const applyCurrentReadPost = (currentPostId: string | null) => {
             if (!currentPostId) return;
             currentReadPostIdRef.current = currentPostId;
@@ -717,18 +713,23 @@ export default function NewsPage() {
             const currentIndex = postIds.indexOf(currentPostId);
             if (currentIndex < 0) return;
 
-            setLastReadId((prev) => {
-                if (prev !== currentPostId) {
-                    writeStoredLastReadId(currentPostId);
-                    return currentPostId;
-                }
-                return prev;
-            });
+            const previousLastReadId = lastReadIdRef.current;
+            const previousLastReadIndex = previousLastReadId ? postIds.indexOf(previousLastReadId) : -1;
+            const shouldMoveLastRead =
+                !previousLastReadId ||
+                previousLastReadIndex >= 0 && currentIndex >= previousLastReadIndex;
+            const nextLastReadId = shouldMoveLastRead ? currentPostId : previousLastReadId;
+
+            if (shouldMoveLastRead && previousLastReadId !== currentPostId) {
+                lastReadIdRef.current = currentPostId;
+                writeStoredLastReadId(currentPostId);
+                setLastReadId(currentPostId);
+            }
 
             const idsToMark = postIds.slice(0, currentIndex + 1).filter((id) => !viewedPostsRef.current.has(id));
             if (idsToMark.length === 0) {
-                if (newsCard && newsCard.lastReadPostId !== currentPostId) {
-                    syncViewedProgress(new Set(viewedPostsRef.current), currentPostId);
+                if (newsCard && newsCard.lastReadPostId !== nextLastReadId) {
+                    syncViewedProgress(new Set(viewedPostsRef.current), nextLastReadId);
                 }
                 return;
             }
@@ -743,50 +744,49 @@ export default function NewsPage() {
             });
             viewedPostsRef.current = nextViewed;
             setViewedPosts(nextViewed);
-            syncViewedProgress(nextViewed, currentPostId);
+            syncViewedProgress(nextViewed, nextLastReadId);
         };
 
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    const postId = entry.target.getAttribute('data-id');
-                    if (!postId) return;
-                    const visibleHeight = entry.intersectionRect.height;
-                    const targetHeight = entry.boundingClientRect.height || 1;
-                    const requiredHeight = Math.min(160, targetHeight * 0.35);
-                    const isReadable = entry.isIntersecting && visibleHeight >= requiredHeight;
+        let frameId = 0;
+        const checkReadPosts = () => {
+            const rootRect = scrollTarget.getBoundingClientRect();
+            const viewportBottom = rootRect.bottom - 8;
+            let deepestReadableId: string | null = null;
 
-                    if (!isReadable) {
-                        clearViewTimer(postId);
-                        return;
-                    }
-
-                    if (viewTimers[postId]) {
-                        return;
-                    }
-
-                    viewTimers[postId] = setTimeout(() => {
-                        delete viewTimers[postId];
-                        applyCurrentReadPost(postId);
-                    }, 1200);
-                });
-            },
-            {
-                root: scrollTarget,
-                threshold: [0, 0.15, 0.35, 0.6],
+            for (const postId of postIds) {
+                const el = postsRef.current[postId];
+                if (!el) continue;
+                const rect = el.getBoundingClientRect();
+                if (rect.bottom <= viewportBottom) {
+                    deepestReadableId = postId;
+                }
             }
-        );
 
-        postIds.forEach((postId) => {
-            const el = postsRef.current[postId];
-            if (el) {
-                observer.observe(el);
+            if (deepestReadableId) {
+                applyCurrentReadPost(deepestReadableId);
             }
-        });
+        };
+
+        const scheduleCheck = () => {
+            if (frameId) return;
+            frameId = window.requestAnimationFrame(() => {
+                frameId = 0;
+                checkReadPosts();
+            });
+        };
+
+        scheduleCheck();
+        const initialTimer = window.setTimeout(scheduleCheck, 150);
+        scrollTarget.addEventListener('scroll', scheduleCheck, { passive: true });
+        window.addEventListener('resize', scheduleCheck);
 
         return () => {
-            observer.disconnect();
-            Object.keys(viewTimers).forEach(clearViewTimer);
+            window.clearTimeout(initialTimer);
+            if (frameId) {
+                window.cancelAnimationFrame(frameId);
+            }
+            scrollTarget.removeEventListener('scroll', scheduleCheck);
+            window.removeEventListener('resize', scheduleCheck);
             currentReadPostIdRef.current = null;
         };
     }, [loading, posts, isDesktop, newsCard, syncViewedProgress, userId]);
