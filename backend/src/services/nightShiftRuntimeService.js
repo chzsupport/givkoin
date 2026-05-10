@@ -23,8 +23,6 @@ const SETTLEMENT_DELAY_MAX_MS = 5 * 60 * 1000;
 const SHIFT_START_HOUR = 19;
 const SHIFT_END_HOUR = 6;
 const SHIFT_SLOT_RATIO = 0.5;
-const SEAT_LOCK_THRESHOLD_MINUTES = 181;
-const SEAT_LOCK_THRESHOLD_SECONDS = SEAT_LOCK_THRESHOLD_MINUTES * 60;
 
 const ANOMALY_MIN_INTERVAL_SECONDS = 15;
 const ANOMALY_MAX_INTERVAL_SECONDS = 45;
@@ -92,7 +90,7 @@ function isShiftRestRequired(lastJoinedShiftKey, currentShiftKey) {
   const lastKey = String(lastJoinedShiftKey || '').trim();
   const currentKey = String(currentShiftKey || '').trim();
   if (!lastKey || !currentKey) return false;
-  return lastKey === currentKey || lastKey === getPreviousShiftKey(currentKey);
+  return lastKey === getPreviousShiftKey(currentKey);
 }
 
 function getShiftWindow(now = new Date()) {
@@ -719,6 +717,7 @@ function normalizeRuntimeSession(row) {
     activeUsersCountSnapshot: Math.max(0, Math.floor(Number(row.activeUsersCountSnapshot) || 0)),
     occupiedSeatsSnapshot: Math.max(0, Math.floor(Number(row.occupiedSeatsSnapshot) || 0)),
     seatRetained: Boolean(row.seatRetained),
+    reusedShiftSeat: Boolean(row.reusedShiftSeat || row.reusedRetainedSeat),
     lastAcceptedWindowIndex,
     acceptedWindowIndexes: undefined,
     windows: undefined,
@@ -797,6 +796,7 @@ async function rebuildShiftSummaryCounters(summary, { now = new Date() } = {}) {
   });
   const occupiedUsers = new Set();
   const retainedUsers = new Set();
+  const activeUsers = new Set();
   let activeServingCount = 0;
 
   for (const row of rows) {
@@ -804,20 +804,19 @@ async function rebuildShiftSummaryCounters(summary, { now = new Date() } = {}) {
     const currentUserId = String(row.userId);
     if (row.status === 'active') {
       activeServingCount += 1;
+      activeUsers.add(currentUserId);
       occupiedUsers.add(currentUserId);
       continue;
     }
-    if (row.seatRetained) {
-      retainedUsers.add(currentUserId);
-      occupiedUsers.add(currentUserId);
-    }
+    retainedUsers.add(currentUserId);
+    occupiedUsers.add(currentUserId);
   }
 
   return writeShiftSummary(normalizedSummary.shiftKey, {
     ...normalizedSummary,
     occupiedSeats: occupiedUsers.size,
     activeServingCount,
-    retainedSeats: retainedUsers.size,
+    retainedSeats: Array.from(retainedUsers).filter((userId) => !activeUsers.has(userId)).length,
   }, { updatedAt: now });
 }
 
@@ -862,7 +861,27 @@ async function patchShiftSummary(shiftKey, patch, { summary = null, now = new Da
   }, { updatedAt: now });
 }
 
-async function reserveShiftSeat(shiftWindow, { now = new Date() } = {}) {
+async function getExistingShiftSeatForUser(shiftKey, userId) {
+  const safeShiftKey = String(shiftKey || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeShiftKey || !safeUserId) {
+    return { exists: false, retained: false };
+  }
+
+  const rows = await listRuntimeSessionsByFilters({
+    shiftKey: safeShiftKey,
+    userId: safeUserId,
+    status: 'ended',
+    limit: 50,
+  });
+
+  return {
+    exists: rows.length > 0,
+    retained: rows.some((row) => Boolean(row?.seatRetained)),
+  };
+}
+
+async function reserveShiftSeat(shiftWindow, { userId = null, now = new Date() } = {}) {
   const summary = await getOrCreateShiftSummary(shiftWindow, now);
   if (!summary) {
     return {
@@ -872,7 +891,30 @@ async function reserveShiftSeat(shiftWindow, { now = new Date() } = {}) {
       freeSeats: 0,
       activeServingCount: 0,
       retainedSeats: 0,
+      reusedShiftSeat: false,
+      reusedRetainedSeat: false,
       reserved: false,
+    };
+  }
+
+  const existingSeat = await getExistingShiftSeatForUser(summary.shiftKey, userId);
+  if (existingSeat.exists) {
+    const nextSummary = await patchShiftSummary(summary.shiftKey, {
+      activeServingCount: summary.activeServingCount + 1,
+      occupiedSeats: existingSeat.retained ? summary.occupiedSeats : summary.occupiedSeats + 1,
+      retainedSeats: existingSeat.retained ? Math.max(0, summary.retainedSeats - 1) : summary.retainedSeats,
+    }, { summary, now });
+
+    return {
+      activeUsersCount: nextSummary.activeUsersCountSnapshot,
+      seatLimit: nextSummary.seatLimit,
+      occupiedSeats: nextSummary.occupiedSeats,
+      freeSeats: Math.max(0, nextSummary.seatLimit - nextSummary.occupiedSeats),
+      activeServingCount: nextSummary.activeServingCount,
+      retainedSeats: nextSummary.retainedSeats,
+      reusedShiftSeat: true,
+      reusedRetainedSeat: existingSeat.retained,
+      reserved: true,
     };
   }
 
@@ -884,6 +926,8 @@ async function reserveShiftSeat(shiftWindow, { now = new Date() } = {}) {
       freeSeats: Math.max(0, summary.seatLimit - summary.occupiedSeats),
       activeServingCount: summary.activeServingCount,
       retainedSeats: summary.retainedSeats,
+      reusedShiftSeat: false,
+      reusedRetainedSeat: false,
       reserved: false,
     };
   }
@@ -900,6 +944,8 @@ async function reserveShiftSeat(shiftWindow, { now = new Date() } = {}) {
     freeSeats: Math.max(0, nextSummary.seatLimit - nextSummary.occupiedSeats),
     activeServingCount: nextSummary.activeServingCount,
     retainedSeats: nextSummary.retainedSeats,
+    reusedShiftSeat: false,
+    reusedRetainedSeat: false,
     reserved: true,
   };
 }
@@ -1286,7 +1332,7 @@ async function finalizeShiftSession({
     )
   );
   const reportedPageHits = normalizePageHits(finalReport?.pageHits);
-  const seatRetained = totalDurationSeconds >= SEAT_LOCK_THRESHOLD_SECONDS;
+  const seatRetained = true;
   const finalPayload = {
     startedAt: finalReport?.startedAt || normalizedRuntime.startedAt || null,
     endedAt: finalReport?.endedAt || toIso(effectiveEndMs),
@@ -1420,7 +1466,7 @@ async function startShiftForUser(userId) {
     throw new Error('shift_rest_required');
   }
 
-  const seats = await reserveShiftSeat(shiftWindow, { now });
+  const seats = await reserveShiftSeat(shiftWindow, { userId: userRow.id, now });
   if (seats.seatLimit <= 0 || !seats.reserved) {
     throw new Error('shift_slots_full');
   }
@@ -1449,6 +1495,7 @@ async function startShiftForUser(userId) {
     activeUsersCountSnapshot: seats.activeUsersCount,
     occupiedSeatsSnapshot: seats.occupiedSeats,
     seatRetained: false,
+    reusedShiftSeat: Boolean(seats.reusedShiftSeat),
     lastAcceptedWindowIndex: -1,
     settlementStatus: null,
     settlementDueAt: null,
@@ -1497,10 +1544,21 @@ async function startShiftForUser(userId) {
       },
     };
   } catch (error) {
-    await patchShiftSummary(shiftWindow.key, {
-      occupiedSeats: Math.max(0, seats.occupiedSeats - 1),
-      activeServingCount: Math.max(0, (seats.activeServingCount || 0) - 1),
-    }, { now }).catch(() => null);
+    const rollbackPatch = seats.reusedShiftSeat
+      ? {
+          occupiedSeats: seats.reusedRetainedSeat
+            ? Math.max(0, seats.occupiedSeats)
+            : Math.max(0, seats.occupiedSeats - 1),
+          activeServingCount: Math.max(0, (seats.activeServingCount || 0) - 1),
+          retainedSeats: seats.reusedRetainedSeat
+            ? Math.max(0, (seats.retainedSeats || 0) + 1)
+            : Math.max(0, seats.retainedSeats || 0),
+        }
+      : {
+          occupiedSeats: Math.max(0, seats.occupiedSeats - 1),
+          activeServingCount: Math.max(0, (seats.activeServingCount || 0) - 1),
+        };
+    await patchShiftSummary(shiftWindow.key, rollbackPatch, { now }).catch(() => null);
     throw error;
   }
 }
