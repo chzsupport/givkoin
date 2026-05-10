@@ -166,12 +166,11 @@ export default function NewsPage() {
     const containerRef = useRef<HTMLDivElement>(null);
     const feedRef = useRef<HTMLDivElement>(null);
     const postsRef = useRef<{ [key: string]: HTMLDivElement | null }>({});
-    const hasUserScrolledRef = useRef(false);
-    const scrollInitTimeRef = useRef<number>(typeof window !== 'undefined' ? Date.now() : 0);
     const pendingViewIdsRef = useRef<Set<string>>(new Set());
     const viewFlushInFlightRef = useRef(false);
     const viewedPostsRef = useRef<Set<string>>(new Set());
     const currentReadPostIdRef = useRef<string | null>(null);
+    const viewTimerByPostIdRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const viewBatchKeyByPostIdRef = useRef<Record<string, string>>({});
     const userId = user?._id || user?.id;
     const isAdmin = user?.role === 'admin';
@@ -696,57 +695,23 @@ export default function NewsPage() {
         };
     }, [loading, posts, isDesktop]);
 
-    // Фиксируем первый реальный пользовательский скролл отдельно.
-    // Это позволяет сохранить кнопку "Продолжить чтение" и не сбивать позицию при первом открытии.
-    useEffect(() => {
-        if (loading || posts.length === 0) return;
-        const scrollTarget = isDesktop ? feedRef.current : containerRef.current;
-        if (!scrollTarget) return;
-
-        const handleScroll = (e?: Event) => {
-            const isScrollable = scrollTarget.scrollHeight > scrollTarget.clientHeight + 1;
-            const windowScrollTop =
-                window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-            const currentScrollTop = isScrollable ? scrollTarget.scrollTop : windowScrollTop;
-
-            const now = Date.now();
-            const isAfterInit = now - scrollInitTimeRef.current > 500;
-            const isTrusted = typeof e === 'object' && e !== null && 'isTrusted' in e ? Boolean((e as Event).isTrusted) : false;
-
-            if (!hasUserScrolledRef.current && isAfterInit && isTrusted && currentScrollTop > 30) {
-                hasUserScrolledRef.current = true;
-            }
-        };
-
-        scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
-        window.addEventListener('scroll', handleScroll, { passive: true });
-
-        return () => {
-            scrollTarget.removeEventListener('scroll', handleScroll);
-            window.removeEventListener('scroll', handleScroll);
-        };
-    }, [loading, posts.length, isDesktop]);
-
-    // Помечаем просмотренные посты через "линию чтения", а не через постоянный обход всех карточек на каждом скролле.
+    // Пост считается просмотренным, если он виден на экране достаточно долго.
     useEffect(() => {
         if (loading || posts.length === 0) return;
         const scrollTarget = isDesktop ? feedRef.current : containerRef.current;
         if (!scrollTarget) return;
 
         const postIds = posts.map((post) => post._id);
-        const intersectingIds = new Set<string>();
-        const containerHeight = scrollTarget.clientHeight || window.innerHeight;
-        const readLineOffset = Math.max(120, Math.min(260, Math.round(containerHeight * 0.2)));
-        const lineHeight = 2;
-        const bottomInset = Math.max(0, containerHeight - readLineOffset - lineHeight);
-        const rootMargin = `-${readLineOffset}px 0px -${bottomInset}px 0px`;
+        const viewTimers = viewTimerByPostIdRef.current;
+        const clearViewTimer = (postId: string) => {
+            const timer = viewTimers[postId];
+            if (!timer) return;
+            clearTimeout(timer);
+            delete viewTimers[postId];
+        };
 
         const applyCurrentReadPost = (currentPostId: string | null) => {
             if (!currentPostId) return;
-            if (!hasUserScrolledRef.current) {
-                return;
-            }
-            if (currentReadPostIdRef.current === currentPostId) return;
             currentReadPostIdRef.current = currentPostId;
 
             const currentIndex = postIds.indexOf(currentPostId);
@@ -776,6 +741,7 @@ export default function NewsPage() {
                     pendingViewIdsRef.current.add(id);
                 }
             });
+            viewedPostsRef.current = nextViewed;
             setViewedPosts(nextViewed);
             syncViewedProgress(nextViewed, currentPostId);
         };
@@ -785,24 +751,29 @@ export default function NewsPage() {
                 entries.forEach((entry) => {
                     const postId = entry.target.getAttribute('data-id');
                     if (!postId) return;
-                    if (entry.isIntersecting) {
-                        intersectingIds.add(postId);
-                    } else {
-                        intersectingIds.delete(postId);
-                    }
-                });
+                    const visibleHeight = entry.intersectionRect.height;
+                    const targetHeight = entry.boundingClientRect.height || 1;
+                    const requiredHeight = Math.min(160, targetHeight * 0.35);
+                    const isReadable = entry.isIntersecting && visibleHeight >= requiredHeight;
 
-                for (const id of postIds) {
-                    if (intersectingIds.has(id)) {
-                        applyCurrentReadPost(id);
+                    if (!isReadable) {
+                        clearViewTimer(postId);
                         return;
                     }
-                }
+
+                    if (viewTimers[postId]) {
+                        return;
+                    }
+
+                    viewTimers[postId] = setTimeout(() => {
+                        delete viewTimers[postId];
+                        applyCurrentReadPost(postId);
+                    }, 1200);
+                });
             },
             {
                 root: scrollTarget,
-                rootMargin,
-                threshold: 0,
+                threshold: [0, 0.15, 0.35, 0.6],
             }
         );
 
@@ -815,6 +786,7 @@ export default function NewsPage() {
 
         return () => {
             observer.disconnect();
+            Object.keys(viewTimers).forEach(clearViewTimer);
             currentReadPostIdRef.current = null;
         };
     }, [loading, posts, isDesktop, newsCard, syncViewedProgress, userId]);
