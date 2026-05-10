@@ -12,6 +12,7 @@ const {
   isSessionKnownRevoked,
 } = require('../services/authTrackingService');
 const { evaluateAccessRestriction } = require('../services/securityService');
+const { isHumanCheckBlocked } = require('../services/humanCheckService');
 const {
   isActiveRestriction,
   isUserFrozen,
@@ -357,6 +358,38 @@ const auth = async (req, res, next) => {
     if (user.status === 'banned') {
       return res.status(403).json({
         message: pickRequestLanguage(req, 'Аккаунт заблокирован', 'Account is blocked'),
+      });
+    }
+
+    const humanCheckBlock = isHumanCheckBlocked(user);
+    if (humanCheckBlock.blocked && user.role !== 'admin') {
+      if (decoded?.sid) {
+        await revokeSession({
+          sessionId: decoded.sid,
+          revokedBy: user._id,
+          reason: 'human_check_blocked',
+        });
+      }
+      await writeAuthEvent({
+        user: user._id,
+        email: user.email,
+        eventType: 'session_revoked',
+        result: 'failed',
+        reason: 'human_check_blocked',
+        req,
+        sessionId: decoded?.sid || '',
+        meta: {
+          blockedUntil: humanCheckBlock.blockedUntil,
+        },
+      });
+      return res.status(403).json({
+        message: pickRequestLanguage(
+          req,
+          'Доступ временно закрыт после проваленной проверки',
+          'Access is temporarily closed after a failed check',
+        ),
+        humanCheckBlocked: true,
+        blockedUntil: humanCheckBlock.blockedUntil,
       });
     }
 

@@ -32,9 +32,25 @@ const {
 
   revokeSession,
 
+  revokeAllUserSessions,
+
+  notifyForcedLogout,
+
   decodeTokenUnsafe,
 
 } = require('../services/authTrackingService');
+
+const {
+
+  getHumanCheckStatus,
+
+  completeHumanCheck,
+
+  failHumanCheck,
+
+  isHumanCheckBlocked,
+
+} = require('../services/humanCheckService');
 
 const {
 
@@ -2664,6 +2680,52 @@ const login = async (req, res, next) => {
 
     }
 
+    const humanCheckBlock = isHumanCheckBlocked(user);
+
+    if (!isAdminAccount && humanCheckBlock.blocked) {
+
+      await writeAuthEvent({
+
+        user: user._id,
+
+        email,
+
+        eventType: 'login_failed',
+
+        result: 'failed',
+
+        reason: 'human_check_blocked',
+
+        req,
+
+        meta: {
+
+          blockedUntil: humanCheckBlock.blockedUntil,
+
+        },
+
+      });
+
+      return res.status(403).json({
+
+        message: pickLang(
+
+          requestedLang,
+
+          `Доступ временно закрыт после проваленной проверки. Попробуйте после ${new Date(humanCheckBlock.blockedUntil).toISOString()}.`,
+
+          `Access is temporarily closed after a failed check. Try again after ${new Date(humanCheckBlock.blockedUntil).toISOString()}.`,
+
+        ),
+
+        humanCheckBlocked: true,
+
+        blockedUntil: humanCheckBlock.blockedUntil,
+
+      });
+
+    }
+
 
 
     const loginSignals = buildSignals({
@@ -3334,6 +3396,228 @@ const logout = async (req, res, next) => {
 
 
 
+const humanCheckStatus = async (req, res, next) => {
+
+  try {
+
+    const result = await getHumanCheckStatus(req.user?._id);
+
+    if (!result.ok) {
+
+      return res.status(result.status || 400).json({
+
+        message: pickLang(getRequestLanguage(req), 'Пользователь не найден', 'User not found'),
+
+      });
+
+    }
+
+    return res.json(result);
+
+  } catch (error) {
+
+    return next(error);
+
+  }
+
+};
+
+
+
+const humanCheckPass = async (req, res, next) => {
+
+  try {
+
+    const result = await completeHumanCheck({
+
+      userId: req.user?._id,
+
+      challengeId: req.body?.challengeId,
+
+      variant: req.body?.variant,
+
+    });
+
+    if (!result.ok) {
+
+      return res.status(result.status || 400).json({
+
+        message: pickLang(getRequestLanguage(req), 'Проверка устарела. Обновите страницу и попробуйте снова.', 'The check expired. Refresh the page and try again.'),
+
+      });
+
+    }
+
+    if (result.blocked) {
+
+      clearAuthCookie(res);
+
+      return res.status(403).json({
+
+        message: pickLang(getRequestLanguage(req), 'Доступ временно закрыт после проваленной проверки', 'Access is temporarily closed after a failed check'),
+
+        humanCheckBlocked: true,
+
+        blockedUntil: result.blockedUntil,
+
+      });
+
+    }
+
+    await writeAuthEvent({
+
+      user: req.user?._id,
+
+      email: req.user?.email || '',
+
+      eventType: 'human_check_passed',
+
+      result: 'success',
+
+      req,
+
+      sessionId: req.auth?.sid || '',
+
+      meta: {
+
+        variant: req.body?.variant || '',
+
+      },
+
+    });
+
+    return res.json(result);
+
+  } catch (error) {
+
+    return next(error);
+
+  }
+
+};
+
+
+
+const humanCheckFail = async (req, res, next) => {
+
+  try {
+
+    const result = await failHumanCheck({
+
+      userId: req.user?._id,
+
+      challengeId: req.body?.challengeId,
+
+      variant: req.body?.variant,
+
+    });
+
+    if (!result.ok) {
+
+      return res.status(result.status || 400).json({
+
+        message: pickLang(getRequestLanguage(req), 'Проверка устарела. Обновите страницу и попробуйте снова.', 'The check expired. Refresh the page and try again.'),
+
+      });
+
+    }
+
+    if (result.blocked) {
+
+      await revokeAllUserSessions({
+
+        userId: req.user?._id,
+
+        revokedBy: req.user?._id,
+
+        reason: 'human_check_failed',
+
+      });
+
+      notifyForcedLogout({
+
+        userId: req.user?._id,
+
+        reason: 'human_check_failed',
+
+      });
+
+      await writeAuthEvent({
+
+        user: req.user?._id,
+
+        email: req.user?.email || '',
+
+        eventType: 'session_revoked',
+
+        result: 'failed',
+
+        reason: 'human_check_failed',
+
+        req,
+
+        sessionId: req.auth?.sid || '',
+
+        meta: {
+
+          blockedUntil: result.blockedUntil,
+
+          variant: req.body?.variant || '',
+
+        },
+
+      });
+
+      clearAuthCookie(res);
+
+      return res.json({
+
+        ...result,
+
+        message: pickLang(getRequestLanguage(req), 'Проверка не пройдена. Доступ закрыт на 1 час.', 'The check failed. Access is closed for 1 hour.'),
+
+      });
+
+    }
+
+    await writeAuthEvent({
+
+      user: req.user?._id,
+
+      email: req.user?.email || '',
+
+      eventType: 'human_check_failed',
+
+      result: 'failed',
+
+      reason: 'attempt_failed',
+
+      req,
+
+      sessionId: req.auth?.sid || '',
+
+      meta: {
+
+        attemptsLeft: result.attemptsLeft,
+
+        variant: req.body?.variant || '',
+
+      },
+
+    });
+
+    return res.json(result);
+
+  } catch (error) {
+
+    return next(error);
+
+  }
+
+};
+
+
+
 const updateProfile = async (req, res, next) => {
 
   try {
@@ -3653,6 +3937,12 @@ module.exports = {
   getMe,
 
   logout,
+
+  humanCheckStatus,
+
+  humanCheckPass,
+
+  humanCheckFail,
 
   updateProfile,
 

@@ -14,6 +14,27 @@ const router = express.Router();
 
 router.get('/me', auth, authController.getMe);
 router.post('/logout', auth, authController.logout);
+router.get('/human-check/status', auth, authController.humanCheckStatus);
+router.post(
+  '/human-check/pass',
+  auth,
+  [
+    body('challengeId').isString().notEmpty().withMessage('Проверка не найдена'),
+    body('variant').optional().isString(),
+  ],
+  validation,
+  authController.humanCheckPass
+);
+router.post(
+  '/human-check/fail',
+  auth,
+  [
+    body('challengeId').isString().notEmpty().withMessage('Проверка не найдена'),
+    body('variant').optional().isString(),
+  ],
+  validation,
+  authController.humanCheckFail
+);
 
 const allowedLanguages = [
   'af',
