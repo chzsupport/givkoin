@@ -176,6 +176,9 @@ export default function NewsPage() {
     const userId = user?._id || user?.id;
     const isAdmin = user?.role === 'admin';
     const newsCard = (user?.newsCard || null) as NewsCard | null;
+    const userRef = useRef(user);
+    const newsCardRef = useRef<NewsCard | null>(newsCard || null);
+    const updateUserRef = useRef(updateUser);
 
     const extractViewBatchKeysFromCache = (feed: CachedNewsFeedResponse | null | undefined) => {
         const direct = feed?.viewBatchKeys;
@@ -336,6 +339,12 @@ export default function NewsPage() {
         return getLocalizedField(post.content, post.translations, 'content', language);
     }, [language]);
 
+    useEffect(() => {
+        userRef.current = user;
+        newsCardRef.current = newsCard || null;
+        updateUserRef.current = updateUser;
+    }, [newsCard, updateUser, user]);
+
     // Layout helper: Desktop if wider than 1024px (excludes iPad Pro Portrait which is exactly 1024px)
     // Or if exactly 1024px but Landscape (e.g. old monitors)
     const isDesktop = Boolean(getResponsiveSideAdSlot(windowWidth, typeof window !== 'undefined' ? window.innerHeight : 0));
@@ -361,15 +370,16 @@ export default function NewsPage() {
         viewBatchKeyByPostIdRef.current = extractViewBatchKeysFromCache(cachedFeed);
 
         if (cachedFeed?.items?.length) {
-            const decoratedCachedItems = trimPostsForMemory(decoratePostsWithNewsCard(cachedFeed.items, newsCard));
+            const currentNewsCard = newsCardRef.current;
+            const decoratedCachedItems = trimPostsForMemory(decoratePostsWithNewsCard(cachedFeed.items, currentNewsCard));
             setPosts(decoratedCachedItems);
             setPostsNextCursor(cachedFeed.nextCursor || null);
             setPostsHasMore(Boolean(cachedFeed.hasMore));
             setLoading(false);
 
             const viewedFromCache = new Set(
-                ((newsCard?.viewedPostIds || []).length
-                    ? (newsCard?.viewedPostIds || [])
+                ((currentNewsCard?.viewedPostIds || []).length
+                    ? (currentNewsCard?.viewedPostIds || [])
                     : decoratedCachedItems.filter((post) => post.isViewed).map((post) => post._id))
             );
             setViewedPosts(viewedFromCache);
@@ -378,9 +388,10 @@ export default function NewsPage() {
             try {
                 const newsData = await apiGet<NewsFeedResponse>(`/news?limit=${POSTS_PAGE_SIZE}`);
                 // Берём newsCard из ответа /news если есть, иначе из user
-                const serverNewsCard = (newsData as Record<string, unknown>)?.newsCard as NewsCard | null ?? newsCard;
-                if (serverNewsCard && user) {
-                    updateUser({ ...user, newsCard: serverNewsCard });
+                const serverNewsCard = (newsData as Record<string, unknown>)?.newsCard as NewsCard | null ?? newsCardRef.current;
+                const currentUser = userRef.current;
+                if (serverNewsCard && currentUser) {
+                    updateUserRef.current({ ...currentUser, newsCard: serverNewsCard });
                 }
                 const feedItems = trimPostsForMemory(decoratePostsWithNewsCard(Array.isArray(newsData?.items) ? newsData.items : [], serverNewsCard));
                 const feedViewBatchKeys = rememberViewBatchKey(feedItems, newsData?.viewBatchKey || null, { replace: true });
@@ -431,7 +442,7 @@ export default function NewsPage() {
             }
         };
         fetchNews();
-    }, [userId, viewedStorageKey, newsCard]);
+    }, [userId, viewedStorageKey]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -534,24 +545,47 @@ export default function NewsPage() {
         if (loadingMorePosts || !postsHasMore || !postsNextCursor) return;
         setLoadingMorePosts(true);
         try {
-            const data = await apiGet<NewsFeedResponse>(`/news?limit=${POSTS_PAGE_SIZE}&cursor=${encodeURIComponent(postsNextCursor)}`);
-            const nextItems = decoratePostsWithNewsCard(Array.isArray(data?.items) ? data.items : [], newsCard);
-            rememberViewBatchKey(nextItems, data?.viewBatchKey || null);
+            let cursor: string | null = postsNextCursor;
+            let nextCursor: string | null = postsNextCursor;
+            let hasMore: boolean = postsHasMore;
+            let loadedItems: NewsPost[] = [];
+            const alreadyShown = new Set(posts.map((post) => post._id));
+
+            for (let attempt = 0; attempt < 4 && cursor; attempt += 1) {
+                const data: NewsFeedResponse = await apiGet<NewsFeedResponse>(`/news?limit=${POSTS_PAGE_SIZE}&cursor=${encodeURIComponent(cursor)}`);
+                const pageItems = decoratePostsWithNewsCard(Array.isArray(data?.items) ? data.items : [], newsCard);
+                rememberViewBatchKey(pageItems, data?.viewBatchKey || null);
+
+                const freshItems = pageItems.filter((post) => {
+                    if (!post?._id || alreadyShown.has(post._id)) return false;
+                    alreadyShown.add(post._id);
+                    return true;
+                });
+                loadedItems = [...loadedItems, ...freshItems];
+                nextCursor = data?.nextCursor || null;
+                hasMore = Boolean(data?.hasMore);
+
+                if (freshItems.length > 0 || !hasMore || !nextCursor || nextCursor === cursor) {
+                    break;
+                }
+                cursor = nextCursor;
+            }
+
             setPosts(prev => {
                 const seen = new Set(prev.map((post) => post._id));
-                const appended = nextItems.filter((post) => !seen.has(post._id));
+                const appended = loadedItems.filter((post) => !seen.has(post._id));
                 const merged = trimPostsForMemory([...prev, ...appended]);
                 if (userId) {
-                    syncNewsFeedCache(merged, data?.nextCursor || null, Boolean(data?.hasMore));
+                    syncNewsFeedCache(merged, nextCursor, hasMore);
                 }
                 return merged;
             });
-            setPostsNextCursor(data?.nextCursor || null);
-            setPostsHasMore(Boolean(data?.hasMore));
-            if (nextItems.length > 0) {
+            setPostsNextCursor(nextCursor);
+            setPostsHasMore(hasMore);
+            if (loadedItems.length > 0) {
                 setViewedPosts(prev => {
                     const next = new Set(prev);
-                    nextItems.forEach((post) => {
+                    loadedItems.forEach((post) => {
                         if (post.isViewed) next.add(post._id);
                     });
                     return next;
