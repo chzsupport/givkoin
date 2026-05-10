@@ -850,7 +850,7 @@ export default function NewsPage() {
         const loadedLastViewedId = viewedLoadedPosts.length > 0 ? viewedLoadedPosts[viewedLoadedPosts.length - 1]._id : null;
         const rememberedLastReadId = lastReadIdRef.current || lastReadId;
         const rememberedIsLoaded = Boolean(rememberedLastReadId && posts.some(p => p._id === rememberedLastReadId));
-        const targetId = (rememberedIsLoaded ? rememberedLastReadId : null) || loadedLastViewedId || rememberedLastReadId || firstUnviewedId;
+        const targetId = loadedLastViewedId || (rememberedIsLoaded ? rememberedLastReadId : null) || rememberedLastReadId || firstUnviewedId;
         if (!targetId) return;
 
         if (scrollPostIntoView(targetId)) {
