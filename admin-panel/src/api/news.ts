@@ -85,16 +85,57 @@ export async function deletePost(id: string) {
   return res.data;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function deletePostWithRetry(id: string) {
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await deletePost(id);
+    } catch (e: any) {
+      const status = Number(e?.response?.status || 0);
+      if (status === 404) {
+        return { ok: true, alreadyDeleted: true };
+      }
+      if (status === 401 || status === 403) {
+        throw e;
+      }
+      lastError = e;
+      await wait(350 + attempt * 600);
+    }
+  }
+  throw lastError;
+}
+
 export async function deletePosts(ids: string[]) {
   const safeIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean)));
   if (!safeIds.length) return { deleted: [], missing: [] };
 
+  const bulkDeleted = new Set<string>();
+  try {
+    const res = await api.post('/news/bulk-delete', { ids: safeIds }, { withCredentials: true });
+    const deletedIds = Array.isArray(res.data?.deleted) ? res.data.deleted.map((id: unknown) => String(id || '').trim()).filter(Boolean) : [];
+    const missingIds = Array.isArray(res.data?.missing) ? res.data.missing.map((id: unknown) => String(id || '').trim()).filter(Boolean) : [];
+    [...deletedIds, ...missingIds].forEach((id) => bulkDeleted.add(id));
+    if (bulkDeleted.size >= safeIds.length) {
+      return res.data;
+    }
+  } catch (e: any) {
+    const status = Number(e?.response?.status || 0);
+    if (status === 401 || status === 403) {
+      throw e;
+    }
+  }
+
+  const remainingIds = safeIds.filter((id) => !bulkDeleted.has(id));
   const deleted: string[] = [];
   const failed: Array<{ id: string; error: unknown }> = [];
 
-  for (const id of safeIds) {
+  for (const id of remainingIds) {
     try {
-      await deletePost(id);
+      await deletePostWithRetry(id);
       deleted.push(id);
     } catch (e: any) {
       const status = Number(e?.response?.status || 0);
@@ -104,6 +145,7 @@ export async function deletePosts(ids: string[]) {
       }
       failed.push({ id, error: e });
     }
+    await wait(150);
   }
 
   if (failed.length > 0) {
@@ -112,7 +154,7 @@ export async function deletePosts(ids: string[]) {
     throw error;
   }
 
-  return { deleted, missing: [] };
+  return { deleted: [...Array.from(bulkDeleted), ...deleted], missing: [] };
 }
 
 export async function createCategory(payload: { name: string; slug: string }) {

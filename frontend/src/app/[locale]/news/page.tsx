@@ -171,6 +171,7 @@ export default function NewsPage() {
     const viewedPostsRef = useRef<Set<string>>(new Set());
     const currentReadPostIdRef = useRef<string | null>(null);
     const lastReadIdRef = useRef<string | null>(lastReadId);
+    const hasNewsScrollRef = useRef(false);
     const viewBatchKeyByPostIdRef = useRef<Record<string, string>>({});
     const userId = user?._id || user?.id;
     const isAdmin = user?.role === 'admin';
@@ -749,9 +750,13 @@ export default function NewsPage() {
 
         let frameId = 0;
         const checkReadPosts = () => {
+            if (!hasNewsScrollRef.current) return;
             const rootRect = scrollTarget.getBoundingClientRect();
-            const viewportTop = rootRect.top + 8;
-            const viewportBottom = rootRect.bottom - 40;
+            const targetScrolls = scrollTarget.scrollHeight > scrollTarget.clientHeight + 1;
+            const rootTop = targetScrolls ? rootRect.top : 0;
+            const rootBottom = targetScrolls ? rootRect.bottom : window.innerHeight;
+            const viewportTop = rootTop + 8;
+            const viewportBottom = rootBottom - 40;
             let deepestReadableId: string | null = null;
 
             for (let index = 0; index < postIds.length - 1; index += 1) {
@@ -763,7 +768,7 @@ export default function NewsPage() {
 
                 const currentRect = currentEl.getBoundingClientRect();
                 const nextRect = nextEl.getBoundingClientRect();
-                const currentWasScrolledThrough = currentRect.top < rootRect.top - 20;
+                const currentWasScrolledThrough = currentRect.top < rootTop - 20;
                 const nextStarted = nextRect.top >= viewportTop && nextRect.top <= viewportBottom;
                 const nextAlreadyPassed = nextRect.top < viewportTop;
 
@@ -785,17 +790,21 @@ export default function NewsPage() {
             });
         };
 
-        scheduleCheck();
-        const initialTimer = window.setTimeout(scheduleCheck, 150);
-        scrollTarget.addEventListener('scroll', scheduleCheck, { passive: true });
+        const handleScroll = () => {
+            hasNewsScrollRef.current = true;
+            scheduleCheck();
+        };
+
+        scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
+        window.addEventListener('scroll', handleScroll, { passive: true });
         window.addEventListener('resize', scheduleCheck);
 
         return () => {
-            window.clearTimeout(initialTimer);
             if (frameId) {
                 window.cancelAnimationFrame(frameId);
             }
-            scrollTarget.removeEventListener('scroll', scheduleCheck);
+            scrollTarget.removeEventListener('scroll', handleScroll);
+            window.removeEventListener('scroll', handleScroll);
             window.removeEventListener('resize', scheduleCheck);
             currentReadPostIdRef.current = null;
         };
