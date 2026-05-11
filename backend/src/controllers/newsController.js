@@ -1500,6 +1500,16 @@ async function saveViewsForUser({ userId, postIds, lastReadPostId = null, now = 
     updatedAt: new Date(),
   });
 
+  if (toAdd.length) {
+    Promise.all(toAdd.map((postId) => recordActivity({
+      userId,
+      type: 'news_view',
+      minutes: 0,
+      meta: { postId, dateKey: today },
+      createdAt: now,
+    }))).catch(() => { });
+  }
+
   return {
     saved: toAdd.length,
     alreadyViewed: publishedIds.length - toAdd.length,

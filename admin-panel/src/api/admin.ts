@@ -219,6 +219,11 @@ export const fetchReferrals = async (params?: any) => {
     return res.data;
 };
 
+export const fetchTndStats = async (params?: any) => {
+    const res = await api.get('/admin/tnd', { params });
+    return res.data;
+};
+
 // Ads API
 export const fetchAdStats = async (params?: any) => {
     const res = await api.get('/ads/stats', { params });

@@ -105,6 +105,19 @@ const schedulerState = {
   schedulerMode: SCHEDULER_MODE,
 };
 
+function createQuietWatchBattleStopper() {
+  let checkedAtMs = 0;
+  let active = false;
+  return async () => {
+    const nowMs = Date.now();
+    if (nowMs - checkedAtMs < 30 * 1000) return active;
+    checkedAtMs = nowMs;
+    const battle = await battleService.getCurrentBattle().catch(() => null);
+    active = Boolean(battle && String(battle.status || '') === 'active');
+    return active;
+  };
+}
+
 function getBattleSchedulerState() {
   return {
     nextAutoBattleAt: null,
@@ -587,10 +600,12 @@ function registerCronJobs() {
     await clearExpiredDebuffs();
   });
 
-  // Каждую ночь: тихая проверка рефералов, которые уже прожили в системе не меньше 72 часов.
+  // Каждую ночь: тихая проверка рефералов. Во время боя не запускаем.
   cron.schedule('15 3 * * *', async () => {
     try {
-      await runQuietWatch();
+      const shouldStop = createQuietWatchBattleStopper();
+      if (await shouldStop()) return;
+      await runQuietWatch({ shouldStop });
     } catch (err) {
       console.error('Referral quiet watch cron error:', err);
     }
@@ -677,7 +692,9 @@ function registerCronJobs() {
   // Ежедневно: пересчёт «Тихого ночного дозора» для всех пользователей
   cron.schedule('15 0 * * *', async () => {
     try {
-      await runUsersQuietWatch({ limit: 5000, staleHours: 24 });
+      const shouldStop = createQuietWatchBattleStopper();
+      if (await shouldStop()) return;
+      await runUsersQuietWatch({ limit: 5000, shouldStop });
     } catch (err) {
       console.error('Users quiet watch cron error:', err);
     }
@@ -686,7 +703,9 @@ function registerCronJobs() {
   // Периодически: обновлять статус дозора для части пользователей
   cron.schedule('0 */6 * * *', async () => {
     try {
-      await runUsersQuietWatch({ limit: 300, staleHours: 24 });
+      const shouldStop = createQuietWatchBattleStopper();
+      if (await shouldStop()) return;
+      await runUsersQuietWatch({ limit: 300, shouldStop });
     } catch (err) {
       console.error('Users quiet watch periodic cron error:', err);
     }
@@ -880,6 +899,8 @@ function registerCronJobs() {
   // Ежемесячно: лучший рефовод прошлого месяца по активным рефералам получает 5000 K.
   cron.schedule('5 0 1 * *', async () => {
     try {
+      const shouldStop = createQuietWatchBattleStopper();
+      if (await shouldStop()) return;
       await awardMonthlyTopReferrer();
     } catch (err) {
       console.error('Monthly top referrer cron error:', err);

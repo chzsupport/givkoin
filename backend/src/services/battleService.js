@@ -7,6 +7,7 @@ const { getSupabaseClient } = require('../lib/supabaseClient');
 const battleRuntimeStore = require('./battleRuntimeStore');
 const { prepareBattleSummaries } = require('./battleSummaryService');
 const { computeBattleRewardK } = require('../utils/battleReward');
+const { recordActivity } = require('./activityService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
@@ -2287,6 +2288,14 @@ async function registerAttendance(
       battleId,
       userId,
       state: nextEntry,
+    }).catch(() => {});
+
+    recordActivity({
+      userId,
+      type: 'battle_participation',
+      minutes: 0,
+      meta: { battleId, joinedAt: safeJoinedAt.toISOString() },
+      createdAt: safeJoinedAt,
     }).catch(() => {});
 
     return {

@@ -88,7 +88,8 @@ import {
   fetchSystemJobsV2,
   runSystemJobV2,
   fetchAuditLogsV2,
-  fetchAuditLogByIdV2
+  fetchAuditLogByIdV2,
+  fetchTndStats
 } from './api/admin';
 import { fetchPosts, createPost as apiCreatePost, publishPost, updatePost, deletePost, deletePosts } from './api/news';
 import { describeNewsMedia } from './utils/newsMedia';
@@ -103,7 +104,7 @@ import {
 
 // --- Types ---
 
-type SectionKey = 'dashboard' | 'control' | 'cms' | 'users' | 'admins' | 'content' | 'rules' | 'about' | 'roadmap' | 'appeals' | 'wishes' | 'bridges' | 'battles' | 'referrals' | 'entities' | 'ads' | 'fortune' | 'night_guardians' | 'crystal' | 'practice' | 'feedback' | 'settings' | 'logs';
+type SectionKey = 'dashboard' | 'control' | 'cms' | 'users' | 'admins' | 'content' | 'rules' | 'about' | 'roadmap' | 'appeals' | 'wishes' | 'bridges' | 'battles' | 'tnd' | 'referrals' | 'entities' | 'ads' | 'fortune' | 'night_guardians' | 'crystal' | 'practice' | 'feedback' | 'settings' | 'logs';
 
 interface Section {
   key: SectionKey;
@@ -1136,6 +1137,7 @@ const sections: Section[] = [
   { key: 'wishes', label: 'Желания', icon: Star },
   { key: 'bridges', label: 'Мосты', icon: Globe },
   { key: 'battles', label: 'Бои', icon: Swords },
+  { key: 'tnd', label: 'ТНД', icon: Shield },
   { key: 'referrals', label: 'Рефералы', icon: Users },
   { key: 'entities', label: 'Сущности', icon: Coins },
   { key: 'ads', label: 'Реклама', icon: DollarSign },
@@ -5255,6 +5257,304 @@ function BattlesSection() {
   );
 }
 
+type TndTab = 'daily' | 'referrals' | 'rules';
+
+function TndStatCard({ label, value, tone = 'blue' }: { label: string; value: any; tone?: 'blue' | 'green' | 'red' | 'amber' | 'slate' }) {
+  const toneClass = {
+    blue: 'text-blue-300 border-blue-500/20 bg-blue-500/10',
+    green: 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10',
+    red: 'text-rose-300 border-rose-500/20 bg-rose-500/10',
+    amber: 'text-amber-300 border-amber-500/20 bg-amber-500/10',
+    slate: 'text-slate-300 border-white/10 bg-white/5',
+  }[tone];
+  return (
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="text-sm text-slate-400">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-white">{value}</div>
+    </div>
+  );
+}
+
+function TndSection() {
+  const [tab, setTab] = useState<TndTab>('daily');
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+  const [dayKey, setDayKey] = useState('');
+  const [dailyPage, setDailyPage] = useState(1);
+  const [referralPage, setReferralPage] = useState(1);
+  const [referralStatus, setReferralStatus] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const result = await fetchTndStats({
+        dayKey: dayKey || undefined,
+        dailyPage,
+        dailyLimit: 20,
+        referralPage,
+        referralLimit: 20,
+        referralStatus: referralStatus || undefined,
+      });
+      setData(result);
+      if (!dayKey && result?.daily?.dayKey) {
+        setDayKey(result.daily.dayKey);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [dayKey, dailyPage, referralPage, referralStatus]);
+
+  const daily = data?.daily || {};
+  const referrals = data?.referrals || {};
+  const rules = data?.rules || {};
+  const tabs: Array<{ id: TndTab; label: string }> = [
+    { id: 'daily', label: 'Дневная активность' },
+    { id: 'referrals', label: 'Рефералы 30 дней' },
+    { id: 'rules', label: 'Правила' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-white">Тихий Ночной Дозор</h2>
+          <p className="text-sm text-slate-400">Проверка активности юзеров и рефералов.</p>
+        </div>
+        <button
+          onClick={load}
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"
+        >
+          <RefreshCw size={16} />
+          Обновить
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {tabs.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => setTab(item.id)}
+            className={`rounded-full px-4 py-2 text-sm font-semibold border transition ${tab === item.id
+              ? 'bg-blue-600 text-white border-blue-500'
+              : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'}`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && !data ? (
+        <Card>
+          <div className="py-10 text-center text-slate-500">Загрузка...</div>
+        </Card>
+      ) : null}
+
+      {tab === 'daily' && (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-end gap-4">
+            <label className="text-sm text-slate-400">
+              День проверки
+              <input
+                type="date"
+                value={dayKey}
+                onChange={(event) => {
+                  setDailyPage(1);
+                  setDayKey(event.target.value);
+                }}
+                className="input-field mt-2 max-w-xs"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-5">
+            <TndStatCard label="Проверено" value={daily.totalReports || 0} />
+            <TndStatCard label="Прошли" value={daily.passed || 0} tone="green" />
+            <TndStatCard label="Не прошли" value={daily.failed || 0} tone="red" />
+            <TndStatCard label="Активных аккаунтов" value={daily.activeUsersTotal || 0} tone="slate" />
+            <TndStatCard label="Ещё без отчёта" value={daily.uncheckedActiveUsers || 0} tone="amber" />
+          </div>
+
+          <Card className="overflow-hidden p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-white/10 bg-black/20 text-xs uppercase tracking-wider text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Юзер</th>
+                    <th className="px-4 py-3">Статус</th>
+                    <th className="px-4 py-3">Причина</th>
+                    <th className="px-4 py-3">Минуты</th>
+                    <th className="px-4 py-3">K-действия</th>
+                    <th className="px-4 py-3">Страницы</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {(daily.rows || []).map((row: any) => (
+                    <tr key={row._id} className="hover:bg-white/5">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{row.user?.nickname || row.user?._id || '—'}</div>
+                        <div className="text-xs text-slate-500">{row.user?.email || '—'}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={row.passed ? 'success' : 'error'}>{row.passed ? 'Прошёл' : 'Не прошёл'}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">{row.reason || '—'}</td>
+                      <td className="px-4 py-3 text-white">{formatAdminK(row.summary?.minutesTotal || 0)}</td>
+                      <td className="px-4 py-3 text-white">{row.summary?.kActionCount || 0}</td>
+                      <td className="px-4 py-3 text-white">{row.summary?.pagesVisited || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!(daily.rows || []).length && (
+                <div className="py-10 text-center text-slate-500">Отчётов за этот день пока нет</div>
+              )}
+            </div>
+          </Card>
+
+          <div className="flex items-center justify-end gap-2">
+            <button className="btn-secondary" disabled={dailyPage <= 1} onClick={() => setDailyPage((p) => Math.max(1, p - 1))}>Назад</button>
+            <span className="text-sm text-slate-400">{daily.pagination?.page || 1} / {daily.pagination?.totalPages || 1}</span>
+            <button className="btn-secondary" disabled={dailyPage >= (daily.pagination?.totalPages || 1)} onClick={() => setDailyPage((p) => p + 1)}>Вперёд</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'referrals' && (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { key: '', label: 'Все' },
+              { key: 'active', label: 'Активные' },
+              { key: 'inactive', label: 'Не прошли' },
+              { key: 'pending', label: 'Ожидают' },
+            ].map((item) => (
+              <button
+                key={item.key || 'all'}
+                onClick={() => {
+                  setReferralPage(1);
+                  setReferralStatus(item.key);
+                }}
+                className={`rounded-full px-4 py-2 text-sm font-semibold border transition ${referralStatus === item.key
+                  ? 'bg-emerald-600 text-white border-emerald-500'
+                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-4">
+            <TndStatCard label="Всего рефералов" value={referrals.total || 0} />
+            <TndStatCard label="Активные" value={referrals.active || 0} tone="green" />
+            <TndStatCard label="Не прошли" value={referrals.inactive || 0} tone="red" />
+            <TndStatCard label="Ожидают" value={referrals.pending || 0} tone="amber" />
+          </div>
+
+          <Card>
+            <h3 className="mb-4 text-lg font-semibold text-white">Лучшие по активным рефералам</h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {(referrals.topReferrers || []).map((row: any, index: number) => (
+                <div key={row.user?._id || index} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-sm text-slate-400">#{index + 1}</div>
+                  <div className="mt-1 font-semibold text-white">{row.user?.nickname || row.user?._id || '—'}</div>
+                  <div className="text-xs text-slate-500">{row.user?.email || '—'}</div>
+                  <div className="mt-3 text-2xl font-bold text-emerald-300">{row.activeReferrals || 0}</div>
+                </div>
+              ))}
+              {!(referrals.topReferrers || []).length && <div className="text-slate-500">Активных рефералов пока нет</div>}
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-white/10 bg-black/20 text-xs uppercase tracking-wider text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Пригласил</th>
+                    <th className="px-4 py-3">Реферал</th>
+                    <th className="px-4 py-3">Статус</th>
+                    <th className="px-4 py-3">Причина</th>
+                    <th className="px-4 py-3">Дни</th>
+                    <th className="px-4 py-3">Траты / заработки</th>
+                    <th className="px-4 py-3">Бои</th>
+                    <th className="px-4 py-3">Посты</th>
+                    <th className="px-4 py-3">Сущность</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {(referrals.rows || []).map((row: any) => (
+                    <tr key={row.id} className="hover:bg-white/5">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{row.inviter?.nickname || '—'}</div>
+                        <div className="text-xs text-slate-500">{row.inviter?.email || '—'}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{row.invitee?.nickname || '—'}</div>
+                        <div className="text-xs text-slate-500">{row.invitee?.email || '—'}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={row.status === 'active' ? 'success' : row.status === 'inactive' ? 'error' : 'warning'}>{row.status}</Badge>
+                      </td>
+                      <td className="px-4 py-3 max-w-[260px] text-slate-400">{row.checkReason || '—'}</td>
+                      <td className="px-4 py-3 text-white">{row.activitySummary?.visitDays || 0}</td>
+                      <td className="px-4 py-3 text-white">{row.activitySummary?.kDebitActions || 0} / {row.activitySummary?.kCreditActions || 0}</td>
+                      <td className="px-4 py-3 text-white">{row.activitySummary?.battleParticipations || 0} / {row.activitySummary?.bigBattleRewards || 0}</td>
+                      <td className="px-4 py-3 text-white">{row.activitySummary?.newsViews || 0}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={row.activitySummary?.hasEntity ? 'success' : 'warning'}>{row.activitySummary?.hasEntity ? 'Есть' : 'Нет'}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!(referrals.rows || []).length && (
+                <div className="py-10 text-center text-slate-500">Рефералов по фильтру нет</div>
+              )}
+            </div>
+          </Card>
+
+          <div className="flex items-center justify-end gap-2">
+            <button className="btn-secondary" disabled={referralPage <= 1} onClick={() => setReferralPage((p) => Math.max(1, p - 1))}>Назад</button>
+            <span className="text-sm text-slate-400">{referrals.pagination?.page || 1} / {referrals.pagination?.totalPages || 1}</span>
+            <button className="btn-secondary" disabled={referralPage >= (referrals.pagination?.totalPages || 1)} onClick={() => setReferralPage((p) => p + 1)}>Вперёд</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'rules' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <h3 className="mb-4 text-lg font-semibold text-white">Юзер активен за день, если выполнено всё</h3>
+            <div className="space-y-3 text-slate-300">
+              <div>1. На сайте минимум {rules.daily?.minutes || 5} минут.</div>
+              <div>2. Минимум {rules.daily?.kActions || 5} действий, где K списываются или начисляются.</div>
+              <div>3. Посещено минимум {rules.daily?.pages || 3} разные страницы.</div>
+            </div>
+          </Card>
+          <Card>
+            <h3 className="mb-4 text-lg font-semibold text-white">Реферал активен за 30 дней, если выполнено всё</h3>
+            <div className="space-y-3 text-slate-300">
+              <div>1. Минимум {rules.referral?.visitDays || 15} дней посещений.</div>
+              <div>2. Минимум {rules.referral?.kDebits || 30} трат K.</div>
+              <div>3. Минимум {rules.referral?.kCredits || 60} заработков K.</div>
+              <div>4. Сущность создана.</div>
+              <div>5. Минимум {rules.referral?.battles || 3} участия в боях.</div>
+              <div>6. Хотя бы {rules.referral?.bigBattleRewards || 1} бой с наградой больше 100 K.</div>
+              <div>7. Минимум {rules.referral?.newsViews || 15} просмотренных постов.</div>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReferralsSection() {
   const [referrals, setReferrals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -5424,28 +5724,36 @@ function ReferralsSection() {
                               <td className="px-6 py-3">
                                 <div className="grid grid-cols-2 gap-2 text-caption text-white">
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
-                                    <div className="text-emerald-400 font-semibold">{ref.activitySummary?.daysActive ?? 0}</div>
-                                    <div className="text-slate-500">дней</div>
+                                    <div className="text-emerald-400 font-semibold">{ref.activitySummary?.visitDays ?? 0}</div>
+                                    <div className="text-slate-500">дней входа</div>
                                   </div>
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
                                     <div className="text-emerald-400 font-semibold">{ref.activitySummary?.minutesTotal ?? 0}</div>
                                     <div className="text-slate-500">минут</div>
                                   </div>
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
-                                    <div className="text-amber-400 font-semibold">{ref.activitySummary?.solarCollects ?? 0}</div>
-                                    <div className="text-slate-500">solar</div>
+                                    <div className="text-amber-400 font-semibold">{ref.activitySummary?.kDebitActions ?? 0}</div>
+                                    <div className="text-slate-500">трат K</div>
                                   </div>
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
-                                    <div className="text-amber-400 font-semibold">{ref.activitySummary?.battleCount ?? 0}</div>
+                                    <div className="text-amber-400 font-semibold">{ref.activitySummary?.kCreditActions ?? 0}</div>
+                                    <div className="text-slate-500">заработков K</div>
+                                  </div>
+                                  <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
+                                    <div className="text-amber-400 font-semibold">{ref.activitySummary?.battleParticipations ?? 0}</div>
                                     <div className="text-slate-500">бои</div>
                                   </div>
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
-                                    <div className="text-blue-400 font-semibold">{ref.activitySummary?.searchCount ?? 0}</div>
-                                    <div className="text-slate-500">поиски</div>
+                                    <div className="text-blue-400 font-semibold">{ref.activitySummary?.bigBattleRewards ?? 0}</div>
+                                    <div className="text-slate-500">бой &gt;100 K</div>
                                   </div>
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
-                                    <div className="text-blue-400 font-semibold">{ref.activitySummary?.bridgeStones ?? 0}</div>
-                                    <div className="text-slate-500">камни</div>
+                                    <div className="text-blue-400 font-semibold">{ref.activitySummary?.newsViews ?? 0}</div>
+                                    <div className="text-slate-500">постов</div>
+                                  </div>
+                                  <div className="rounded-lg bg-white/5 px-2 py-1 text-center">
+                                    <div className="text-blue-400 font-semibold">{ref.activitySummary?.pagesVisited ?? 0}</div>
+                                    <div className="text-slate-500">страниц</div>
                                   </div>
                                   <div className="rounded-lg bg-white/5 px-2 py-1 text-center col-span-2">
                                     <div className={`font-semibold ${ref.activitySummary?.hasEntity ? 'text-emerald-400' : 'text-slate-400'}`}>
@@ -6417,6 +6725,7 @@ export default function App() {
               {active === 'wishes' && <WishesSection />}
               {active === 'bridges' && <BridgesSection />}
               {active === 'battles' && <BattlesSection />}
+              {active === 'tnd' && <TndSection />}
               {active === 'referrals' && <ReferralsSection />}
               {active === 'entities' && <EntitiesSection />}
               {active === 'ads' && <AdsSection />}

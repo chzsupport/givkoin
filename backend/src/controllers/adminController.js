@@ -37,6 +37,19 @@ const { getCollectiveMeditationAdminStats } = require('../services/meditationRun
 const quoteController = require('./quoteController');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
+const {
+    DAY_ACTIVE_MINUTES,
+    DAY_ACTIVE_K_ACTIONS,
+    DAY_ACTIVE_PAGES,
+    REFERRAL_WINDOW_DAYS,
+    REFERRAL_MIN_VISIT_DAYS,
+    REFERRAL_MIN_K_DEBITS,
+    REFERRAL_MIN_K_CREDITS,
+    REFERRAL_MIN_BATTLES,
+    REFERRAL_MIN_BIG_BATTLE_REWARDS,
+    REFERRAL_MIN_NEWS_VIEWS,
+    getPreviousDayRangeUtc,
+} = require('../services/activityQualificationService');
 
 const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
@@ -1102,8 +1115,8 @@ exports.getReferrals = async (req, res) => {
 
         const referrals = (Array.isArray(rows) ? rows : []).map((row) => {
             const inviteeData = row?.invitee?.data && typeof row.invitee.data === 'object' ? row.invitee.data : {};
-            const hasEntity = Boolean(inviteeData?.entity || inviteeData?.entityId);
             const summary = row?.activity_summary && typeof row.activity_summary === 'object' ? row.activity_summary : {};
+            const hasEntity = Boolean(summary?.hasEntity || inviteeData?.entity || inviteeData?.entityId);
             return {
                 id: row.id,
                 inviter: row.inviter,
@@ -1120,12 +1133,14 @@ exports.getReferrals = async (req, res) => {
                 createdAt: row.created_at,
                 updatedAt: row.updated_at,
                 activitySummary: {
-                    daysActive: summary?.daysActive || 0,
+                    visitDays: summary?.visitDays || 0,
                     minutesTotal: summary?.minutesTotal || 0,
-                    solarCollects: summary?.solarCollects || 0,
-                    battleCount: summary?.battleCount || 0,
-                    searchCount: summary?.searchCount || 0,
-                    bridgeStones: summary?.bridgeStones || 0,
+                    pagesVisited: summary?.pagesVisited || 0,
+                    kDebitActions: summary?.kDebitActions || 0,
+                    kCreditActions: summary?.kCreditActions || 0,
+                    battleParticipations: summary?.battleParticipations || 0,
+                    bigBattleRewards: summary?.bigBattleRewards || 0,
+                    newsViews: summary?.newsViews || 0,
                     hasEntity,
                 },
             };
@@ -1165,6 +1180,216 @@ exports.getReferrals = async (req, res) => {
     }
 };
 
+
+function normalizeTndSummary(summary = {}) {
+    const source = summary && typeof summary === 'object' ? summary : {};
+    return {
+        visitDays: Number(source.visitDays) || 0,
+        minutesTotal: Number(source.minutesTotal) || 0,
+        pagesVisited: Number(source.pagesVisited) || 0,
+        kDebitActions: Number(source.kDebitActions) || 0,
+        kCreditActions: Number(source.kCreditActions) || 0,
+        kActionCount: Number(source.kActionCount) || 0,
+        battleParticipations: Number(source.battleParticipations) || 0,
+        bigBattleRewards: Number(source.bigBattleRewards) || 0,
+        newsViews: Number(source.newsViews) || 0,
+        radianceActions: Number(source.radianceActions) || 0,
+        hasEntity: Boolean(source.hasEntity),
+    };
+}
+
+exports.getTndStats = async (req, res) => {
+    try {
+        const supabase = getSupabaseClient();
+        const defaultRange = getPreviousDayRangeUtc(new Date());
+        const dayKey = String(req.query?.dayKey || defaultRange.key || '').trim();
+        const dailyPage = Math.max(1, Number(req.query?.dailyPage) || 1);
+        const dailyLimit = Math.max(1, Math.min(100, Number(req.query?.dailyLimit) || 20));
+        const referralPage = Math.max(1, Number(req.query?.referralPage) || 1);
+        const referralLimit = Math.max(1, Math.min(100, Number(req.query?.referralLimit) || 20));
+        const referralStatus = String(req.query?.referralStatus || '').trim();
+
+        const dailyFrom = (dailyPage - 1) * dailyLimit;
+        const referralFrom = (referralPage - 1) * referralLimit;
+
+        const buildDailyCount = (passedValue = null) => {
+            let query = supabase
+                .from(DOC_TABLE)
+                .select('id', { head: true, count: 'exact' })
+                .eq('model', 'UserDailyActivityReport')
+                .eq('data->>dayKey', dayKey);
+            if (passedValue != null) {
+                query = query.eq('data->>passed', passedValue ? 'true' : 'false');
+            }
+            return query;
+        };
+
+        const [
+            dailyRowsRes,
+            dailyTotalRes,
+            dailyPassedRes,
+            dailyFailedRes,
+            activeUsersRes,
+        ] = await Promise.all([
+            supabase
+                .from(DOC_TABLE)
+                .select('id,data,created_at,updated_at', { count: 'exact' })
+                .eq('model', 'UserDailyActivityReport')
+                .eq('data->>dayKey', dayKey)
+                .order('updated_at', { ascending: false })
+                .range(dailyFrom, dailyFrom + dailyLimit - 1),
+            buildDailyCount(null),
+            buildDailyCount(true),
+            buildDailyCount(false),
+            supabase
+                .from('users')
+                .select('id', { head: true, count: 'exact' })
+                .eq('status', 'active')
+                .eq('email_confirmed', true),
+        ]);
+
+        const dailyRows = (Array.isArray(dailyRowsRes.data) ? dailyRowsRes.data : [])
+            .map(mapDocRow)
+            .filter(Boolean);
+        const dailyUsers = await getUsersByIds(dailyRows.map((row) => row.userId).filter(Boolean));
+        const dailyItems = dailyRows.map((row) => {
+            const userId = toId(row.userId);
+            const user = userId ? dailyUsers.get(userId) : null;
+            return {
+                _id: row._id,
+                user: user ? { _id: user.id, nickname: user.nickname, email: user.email } : (userId ? { _id: userId } : null),
+                dayKey: row.dayKey || dayKey,
+                passed: Boolean(row.passed),
+                reason: row.reason || '',
+                summary: normalizeTndSummary(row.summary || {}),
+                updatedAt: row.updatedAt || null,
+            };
+        });
+
+        let referralQuery = supabase
+            .from('referrals')
+            .select(
+                'id,inviter_id,invitee_id,status,checked_at,check_reason,active_since,activity_summary,created_at,updated_at,inviter:users!referrals_inviter_id_fkey(id,nickname,email),invitee:users!referrals_invitee_id_fkey(id,nickname,email,status,data)',
+                { count: 'exact' }
+            )
+            .order('checked_at', { ascending: false, nullsFirst: false })
+            .range(referralFrom, referralFrom + referralLimit - 1);
+        if (referralStatus) {
+            referralQuery = referralQuery.eq('status', referralStatus);
+        }
+        const referralRowsRes = await referralQuery;
+
+        const referralRows = (Array.isArray(referralRowsRes.data) ? referralRowsRes.data : []).map((row) => {
+            const inviteeData = row?.invitee?.data && typeof row.invitee.data === 'object' ? row.invitee.data : {};
+            const summary = normalizeTndSummary(row?.activity_summary || {});
+            summary.hasEntity = Boolean(summary.hasEntity || inviteeData?.entity || inviteeData?.entityId);
+            return {
+                id: row.id,
+                inviter: row.inviter,
+                invitee: row.invitee,
+                status: row.status,
+                checkedAt: row.checked_at,
+                checkReason: row.check_reason,
+                activeSince: row.active_since,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+                activitySummary: summary,
+            };
+        });
+
+        const buildReferralCount = (statusValue = null) => {
+            let query = supabase
+                .from('referrals')
+                .select('id', { head: true, count: 'exact' });
+            if (statusValue) query = query.eq('status', statusValue);
+            return query;
+        };
+
+        const [refTotalRes, refActiveRes, refPendingRes, refInactiveRes, activeReferralRowsRes] = await Promise.all([
+            buildReferralCount(null),
+            buildReferralCount('active'),
+            buildReferralCount('pending'),
+            buildReferralCount('inactive'),
+            supabase
+                .from('referrals')
+                .select('inviter_id')
+                .eq('status', 'active')
+                .limit(5000),
+        ]);
+
+        const inviterCounts = new Map();
+        (Array.isArray(activeReferralRowsRes.data) ? activeReferralRowsRes.data : []).forEach((row) => {
+            const inviterId = toId(row.inviter_id);
+            if (!inviterId) return;
+            inviterCounts.set(inviterId, (inviterCounts.get(inviterId) || 0) + 1);
+        });
+        const topRaw = Array.from(inviterCounts.entries())
+            .sort((a, b) => Number(b[1]) - Number(a[1]))
+            .slice(0, 10);
+        const topUsers = await getUsersByIds(topRaw.map(([userId]) => userId));
+        const topReferrers = topRaw.map(([userId, count]) => {
+            const user = topUsers.get(String(userId));
+            return {
+                user: user ? { _id: user.id, nickname: user.nickname, email: user.email } : { _id: userId },
+                activeReferrals: Number(count) || 0,
+            };
+        });
+
+        const dailyTotal = Math.max(0, Number(dailyTotalRes.count) || 0);
+        const activeUsersTotal = Math.max(0, Number(activeUsersRes.count) || 0);
+        const referralFilteredTotal = Math.max(0, Number(referralRowsRes.count) || 0);
+
+        return res.json({
+            rules: {
+                daily: {
+                    minutes: DAY_ACTIVE_MINUTES,
+                    kActions: DAY_ACTIVE_K_ACTIONS,
+                    pages: DAY_ACTIVE_PAGES,
+                },
+                referral: {
+                    windowDays: REFERRAL_WINDOW_DAYS,
+                    visitDays: REFERRAL_MIN_VISIT_DAYS,
+                    kDebits: REFERRAL_MIN_K_DEBITS,
+                    kCredits: REFERRAL_MIN_K_CREDITS,
+                    battles: REFERRAL_MIN_BATTLES,
+                    bigBattleRewards: REFERRAL_MIN_BIG_BATTLE_REWARDS,
+                    newsViews: REFERRAL_MIN_NEWS_VIEWS,
+                },
+            },
+            daily: {
+                dayKey,
+                totalReports: dailyTotal,
+                passed: Math.max(0, Number(dailyPassedRes.count) || 0),
+                failed: Math.max(0, Number(dailyFailedRes.count) || 0),
+                activeUsersTotal,
+                uncheckedActiveUsers: Math.max(0, activeUsersTotal - dailyTotal),
+                rows: dailyItems,
+                pagination: {
+                    page: dailyPage,
+                    limit: dailyLimit,
+                    total: dailyTotal,
+                    totalPages: Math.max(1, Math.ceil(dailyTotal / dailyLimit)),
+                },
+            },
+            referrals: {
+                total: Math.max(0, Number(refTotalRes.count) || 0),
+                active: Math.max(0, Number(refActiveRes.count) || 0),
+                pending: Math.max(0, Number(refPendingRes.count) || 0),
+                inactive: Math.max(0, Number(refInactiveRes.count) || 0),
+                rows: referralRows,
+                topReferrers,
+                pagination: {
+                    page: referralPage,
+                    limit: referralLimit,
+                    total: referralFilteredTotal,
+                    totalPages: Math.max(1, Math.ceil(referralFilteredTotal / referralLimit)),
+                },
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    }
+};
 
 
 // Get all users with search and pagination

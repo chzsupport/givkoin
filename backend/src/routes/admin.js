@@ -23,6 +23,7 @@ router.post('/admins', adminController.createAdmin);
 router.patch('/admins/:id/email', adminController.updateAdminEmail);
 
 // Referrals management
+router.get('/tnd', adminController.getTndStats);
 router.get('/referrals', adminController.getReferrals);
 
 // Entities management

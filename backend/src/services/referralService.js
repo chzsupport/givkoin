@@ -1,54 +1,70 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+  REFERRAL_WINDOW_DAYS,
+  getLastDaysRangeUtc,
+  getPreviousMonthRangeUtc,
+  buildQualificationSummaries,
+  buildEntityPresenceMap,
+  buildReferralThirtyDayDecision,
+  listDailyActivityReports,
+  combineDailyReports,
+} = require('./activityQualificationService');
 
-const HOURS_TO_CHECK = 72;
-const TND_ACTIVITY_WINDOW_HOURS = 72;
-const DAYS_WINDOW = 30;
-const MIN_MINUTES = 15;
-const MIN_SOLAR = 1;
-const MIN_SEARCH = 1;
-const MIN_BRIDGE_STONES = 3;
 const MONTHLY_TARGET = 300;
 const MONTHLY_BONUS_K = 2000;
 const MONTHLY_TOP_BONUS_K = 5000;
+
+function getUserData(row) {
+  return row?.data && typeof row.data === 'object' ? row.data : {};
+}
+
+function normalizeId(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
 
 async function getUserForReferral(userId) {
   if (!userId) return null;
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('users')
-    .select('id,email,nickname,data')
+    .select('id,email,nickname,status,email_confirmed,data')
     .eq('id', String(userId))
     .maybeSingle();
   if (error || !data) return null;
-  const json = data.data && typeof data.data === 'object' ? data.data : {};
+  const json = getUserData(data);
   return {
     id: data.id,
     email: data.email,
     nickname: data.nickname,
+    status: String(json.status || data.status || ''),
+    emailConfirmed: Boolean(json.emailConfirmed ?? data.email_confirmed),
     entity: json.entity || json.entityId || null,
   };
 }
 
-async function getUsersForReferral(userIds, { selectEntity = false } = {}) {
-  const ids = (Array.isArray(userIds) ? userIds : [])
-    .map((v) => String(v || '').trim())
-    .filter(Boolean);
+async function getUsersForReferral(userIds) {
+  const ids = Array.from(new Set((Array.isArray(userIds) ? userIds : [])
+    .map(normalizeId)
+    .filter(Boolean)));
   if (!ids.length) return [];
 
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('users')
-    .select(selectEntity ? 'id,email,nickname,data' : 'id,email,nickname')
+    .select('id,email,nickname,status,email_confirmed,data')
     .in('id', ids);
   if (error || !Array.isArray(data)) return [];
 
   return data.map((row) => {
-    const json = row.data && typeof row.data === 'object' ? row.data : {};
+    const json = getUserData(row);
     return {
       id: row.id,
       email: row.email,
       nickname: row.nickname,
-      entity: selectEntity ? (json.entity || json.entityId || null) : undefined,
+      status: String(json.status || row.status || ''),
+      emailConfirmed: Boolean(json.emailConfirmed ?? row.email_confirmed),
+      entity: json.entity || json.entityId || null,
     };
   });
 }
@@ -92,99 +108,305 @@ async function transactionExists({ userId, type, direction, currency, descriptio
     .eq('currency', String(currency || 'K'))
     .eq('description', String(description));
   if (userId) q = q.eq('user_id', String(userId));
-  if (occurredSince) {
-    const sinceIso = occurredSince instanceof Date ? occurredSince.toISOString() : new Date(occurredSince).toISOString();
-    q = q.gte('occurred_at', sinceIso);
-  }
+  if (occurredSince) q = q.gte('occurred_at', new Date(occurredSince).toISOString());
   const { count, error } = await q;
   if (error) return false;
   return (Number(count) || 0) > 0;
 }
 
-function createActivityAccumulator() {
+function inactiveDecision(reason, summary = {}) {
   return {
-    pageSet: new Set(),
-    minutesTotal: 0,
-    solarCollects: 0,
-    battleCount: 0,
-    searchCount: 0,
-    bridgeStones: 0,
+    status: 'inactive',
+    checkReason: reason,
+    checkedAt: new Date(),
+    activitySummary: summary || {},
+    shouldActivate: false,
   };
 }
 
-function appendActivityToAccumulator(acc, log) {
-  const target = acc || createActivityAccumulator();
-  const minutes = Math.max(0, Number(log?.minutes || 0));
-  target.minutesTotal += minutes;
-  if (log?.type === 'solar_collect') target.solarCollects += 1;
-  if (log?.type === 'battle_participation') target.battleCount += 1;
-  if (log?.type === 'match_search') target.searchCount += 1;
-  if (log?.type === 'bridge_contribute') target.bridgeStones += Number(log?.meta?.stones || 0);
-  if (log?.type === 'page_view') {
-    const path = log?.meta?.path;
-    if (path) target.pageSet.add(String(path));
+function buildReferralDecision({ invitee, summary, hasEntity }) {
+  if (!invitee) return inactiveDecision('реферал не найден');
+  if (invitee.status !== 'active' || !invitee.emailConfirmed) {
+    return inactiveDecision('аккаунт реферала не активен', summary);
   }
-  return target;
-}
 
-function finalizeActivityAccumulator(acc) {
-  const target = acc || createActivityAccumulator();
+  const decision = buildReferralThirtyDayDecision(summary || {}, { hasEntity });
   return {
-    minutesTotal: target.minutesTotal,
-    solarCollects: target.solarCollects,
-    battleCount: target.battleCount,
-    searchCount: target.searchCount,
-    bridgeStones: target.bridgeStones,
-    pagesVisited: target.pageSet.size,
+    status: decision.status,
+    checkReason: decision.reason,
+    checkedAt: new Date(),
+    activitySummary: decision.summary,
+    shouldActivate: decision.passed,
   };
 }
 
-function getMonthKey(date) {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
+async function buildReferralSummaries(inviteeIds, range) {
+  const ids = Array.from(new Set((Array.isArray(inviteeIds) ? inviteeIds : [])
+    .map(normalizeId)
+    .filter(Boolean)));
+  if (!ids.length) return new Map();
+
+  const [reports, rawSummaries] = await Promise.all([
+    listDailyActivityReports(ids, range).catch(() => []),
+    buildQualificationSummaries(ids, range).catch(() => new Map()),
+  ]);
+  const reportSummaries = combineDailyReports(ids, reports);
+  const out = new Map();
+
+  ids.forEach((id) => {
+    const fromReports = reportSummaries.get(id) || {};
+    const fromRaw = rawSummaries.get(id) || {};
+    out.set(id, {
+      ...fromRaw,
+      ...fromReports,
+      visitDays: Math.max(Number(fromReports.visitDays) || 0, Number(fromRaw.visitDays) || 0),
+      minutesTotal: Math.max(Number(fromReports.minutesTotal) || 0, Number(fromRaw.minutesTotal) || 0),
+      pagesVisited: Math.max(Number(fromReports.pagesVisited) || 0, Number(fromRaw.pagesVisited) || 0),
+      kDebitActions: Math.max(Number(fromReports.kDebitActions) || 0, Number(fromRaw.kDebitActions) || 0),
+      kCreditActions: Math.max(Number(fromReports.kCreditActions) || 0, Number(fromRaw.kCreditActions) || 0),
+      kActionCount: Math.max(Number(fromReports.kActionCount) || 0, Number(fromRaw.kActionCount) || 0),
+      battleParticipations: Math.max(Number(fromReports.battleParticipations) || 0, Number(fromRaw.battleParticipations) || 0),
+      bigBattleRewards: Math.max(Number(fromReports.bigBattleRewards) || 0, Number(fromRaw.bigBattleRewards) || 0),
+      newsViews: Math.max(Number(fromReports.newsViews) || 0, Number(fromRaw.newsViews) || 0),
+      radianceActions: Math.max(Number(fromReports.radianceActions) || 0, Number(fromRaw.radianceActions) || 0),
+    });
+  });
+
+  return out;
 }
 
-function getPreviousMonthRangeUtc(now = new Date()) {
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
-  const startOfThisMonthUtc = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
-  const startOfPrevMonthUtc = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-  return {
-    start: startOfPrevMonthUtc,
-    end: startOfThisMonthUtc,
-    key: getMonthKey(startOfPrevMonthUtc),
+async function applyReferralActivationSideEffects(referral, prevStatus) {
+  if (prevStatus === 'active') return;
+
+  try {
+    const { grantAchievement } = require('./achievementService');
+    const { creditK } = require('./kService');
+
+    const supabase = getSupabaseClient();
+    const inviterId = normalizeId(referral.inviter);
+    if (!inviterId) return;
+
+    const { count: activeCountRaw } = await supabase
+      .from('referrals')
+      .select('id', { head: true, count: 'exact' })
+      .eq('inviter_id', inviterId)
+      .eq('status', 'active');
+    const activeCount = Math.max(0, Number(activeCountRaw) || 0);
+    if (activeCount >= 50) {
+      await grantAchievement({ userId: inviterId, achievementId: 97 });
+    }
+
+    const since30d = new Date(Date.now() - REFERRAL_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const { count: last30ActiveCountRaw } = await supabase
+      .from('referrals')
+      .select('id', { head: true, count: 'exact' })
+      .eq('inviter_id', inviterId)
+      .eq('status', 'active')
+      .gte('checked_at', since30d.toISOString());
+    const last30ActiveCount = Math.max(0, Number(last30ActiveCountRaw) || 0);
+    if (last30ActiveCount === MONTHLY_TARGET) {
+      const alreadyMonthlyBonus = await transactionExists({
+        userId: inviterId,
+        type: 'referral',
+        direction: 'credit',
+        currency: 'K',
+        description: 'Бонус за 300 активных рефералов за 30 дней',
+        occurredSince: since30d,
+      });
+      if (!alreadyMonthlyBonus) {
+        await creditK({
+          userId: inviterId,
+          amount: MONTHLY_BONUS_K,
+          type: 'referral',
+          description: 'Бонус за 300 активных рефералов за 30 дней',
+          relatedEntity: String(referral.id || ''),
+        });
+      }
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Referral achievements error', err);
+  }
+}
+
+async function evaluateReferral(referral) {
+  const referralId = typeof referral === 'string' || typeof referral === 'number'
+    ? referral
+    : (referral?.id ?? referral?._id);
+  const referralRow = referral && typeof referral === 'object' && referral.inviter_id
+    ? referral
+    : await getReferralById(referralId);
+  if (!referralRow) return null;
+
+  const prevStatus = referralRow?.status;
+  const invitee = await getUserForReferral(referralRow.invitee_id);
+  const range = getLastDaysRangeUtc(REFERRAL_WINDOW_DAYS, new Date());
+  const inviteeId = normalizeId(referralRow.invitee_id);
+  const [summaries, entityPresence] = await Promise.all([
+    buildReferralSummaries([inviteeId], range),
+    buildEntityPresenceMap([inviteeId]),
+  ]);
+
+  const decision = buildReferralDecision({
+    invitee,
+    summary: summaries.get(inviteeId) || {},
+    hasEntity: Boolean(entityPresence.get(inviteeId) || invitee?.entity),
+  });
+
+  const patch = {
+    activity_summary: decision.activitySummary,
+    checked_at: decision.checkedAt.toISOString(),
+    status: decision.status,
+    check_reason: decision.checkReason,
   };
+  if (decision.shouldActivate && !referralRow.active_since) {
+    patch.active_since = new Date().toISOString();
+  }
+
+  const updated = await updateReferralById(referralRow.id, patch);
+  if (decision.shouldActivate) {
+    await applyReferralActivationSideEffects({
+      id: referralRow.id,
+      inviter: referralRow.inviter_id,
+      invitee: referralRow.invitee_id,
+    }, prevStatus);
+  }
+  return updated;
+}
+
+async function runQuietWatch({ limit = 5000, range = null, shouldStop = null } = {}) {
+  const safeLimit = Math.max(1, Number(limit) || 5000);
+  const safeRange = range || getLastDaysRangeUtc(REFERRAL_WINDOW_DAYS, new Date());
+  const checkedThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const supabase = getSupabaseClient();
+  const pageSize = 500;
+  let from = 0;
+  const picked = [];
+
+  while (picked.length < safeLimit) {
+    if (typeof shouldStop === 'function') {
+      // eslint-disable-next-line no-await-in-loop
+      const stop = await shouldStop();
+      if (stop) break;
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await supabase
+      .from('referrals')
+      .select('id,inviter_id,invitee_id,status,active_since,created_at,confirmed_at,checked_at,bonus_granted')
+      .not('confirmed_at', 'is', null)
+      .range(from, from + pageSize - 1);
+    if (error || !Array.isArray(data) || !data.length) break;
+
+    for (const row of data) {
+      if (picked.length >= safeLimit) break;
+      if (row?.checked_at) {
+        const checkedAt = new Date(row.checked_at);
+        if (!Number.isNaN(checkedAt.getTime()) && checkedAt > checkedThreshold) continue;
+      }
+      picked.push(row);
+    }
+
+    if (data.length < pageSize) break;
+    from += data.length;
+  }
+
+  if (!picked.length) return 0;
+
+  const inviteeIds = Array.from(new Set(picked.map((row) => normalizeId(row.invitee_id)).filter(Boolean)));
+  const [invitees, summaries, entityPresence] = await Promise.all([
+    getUsersForReferral(inviteeIds),
+    buildReferralSummaries(inviteeIds, safeRange),
+    buildEntityPresenceMap(inviteeIds),
+  ]);
+
+  const inviteesById = new Map(invitees.map((row) => [normalizeId(row.id), row]));
+  let updatedCount = 0;
+
+  for (const ref of picked) {
+    if (typeof shouldStop === 'function') {
+      // eslint-disable-next-line no-await-in-loop
+      const stop = await shouldStop();
+      if (stop) break;
+    }
+
+    const inviteeId = normalizeId(ref.invitee_id);
+    const invitee = inviteesById.get(inviteeId) || null;
+    const decision = buildReferralDecision({
+      invitee,
+      summary: summaries.get(inviteeId) || {},
+      hasEntity: Boolean(entityPresence.get(inviteeId) || invitee?.entity),
+    });
+
+    if (decision.shouldActivate) {
+      // eslint-disable-next-line no-await-in-loop
+      await applyReferralActivationSideEffects({
+        id: ref.id,
+        inviter: ref.inviter_id,
+        invitee: ref.invitee_id,
+      }, ref.status);
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    await updateReferralById(ref.id, {
+      activity_summary: decision.activitySummary,
+      checked_at: decision.checkedAt.toISOString(),
+      status: decision.status,
+      check_reason: decision.checkReason,
+      ...(decision.shouldActivate && !ref.active_since
+        ? { active_since: new Date().toISOString() }
+        : {}),
+    });
+    updatedCount += 1;
+  }
+
+  return updatedCount;
 }
 
 async function awardMonthlyTopReferrer() {
   const { start, end, key } = getPreviousMonthRangeUtc(new Date());
-
   const supabase = getSupabaseClient();
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
-
-  const inviterCounts = new Map();
-  const pageSize = 1000;
+  const pageSize = 500;
   let from = 0;
+  const referrals = [];
+
   while (true) {
     // eslint-disable-next-line no-await-in-loop
     const { data, error } = await supabase
       .from('referrals')
-      .select('inviter_id')
-      .eq('status', 'active')
-      .gte('active_since', startIso)
-      .lt('active_since', endIso)
+      .select('id,inviter_id,invitee_id,confirmed_at')
+      .not('confirmed_at', 'is', null)
       .range(from, from + pageSize - 1);
     if (error || !Array.isArray(data) || !data.length) break;
-    data.forEach((row) => {
-      const inviterId = String(row?.inviter_id || '').trim();
-      if (!inviterId) return;
-      inviterCounts.set(inviterId, (inviterCounts.get(inviterId) || 0) + 1);
-    });
+    referrals.push(...data);
     if (data.length < pageSize) break;
-    from += pageSize;
+    from += data.length;
   }
+
+  if (!referrals.length) return null;
+
+  const inviteeIds = Array.from(new Set(referrals.map((row) => normalizeId(row.invitee_id)).filter(Boolean)));
+  const [invitees, summaries, entityPresence] = await Promise.all([
+    getUsersForReferral(inviteeIds),
+    buildReferralSummaries(inviteeIds, { start, end }),
+    buildEntityPresenceMap(inviteeIds),
+  ]);
+  const inviteesById = new Map(invitees.map((row) => [normalizeId(row.id), row]));
+
+  const inviterCounts = new Map();
+  referrals.forEach((ref) => {
+    const inviteeId = normalizeId(ref.invitee_id);
+    const invitee = inviteesById.get(inviteeId) || null;
+    const decision = buildReferralDecision({
+      invitee,
+      summary: summaries.get(inviteeId) || {},
+      hasEntity: Boolean(entityPresence.get(inviteeId) || invitee?.entity),
+    });
+    if (!decision.shouldActivate) return;
+    const inviterId = normalizeId(ref.inviter_id);
+    if (!inviterId) return;
+    inviterCounts.set(inviterId, (inviterCounts.get(inviterId) || 0) + 1);
+  });
 
   let winnerUserId = null;
   let winnerActive = 0;
@@ -200,7 +422,7 @@ async function awardMonthlyTopReferrer() {
 
   if (!winnerUserId || !winnerActive) return null;
 
-  const description = `Бонус: самый активный пользователь месяца (${key})`;
+  const description = `Бонус: самые активные рефералы месяца (${key})`;
   const alreadyAwarded = await transactionExists({
     type: 'referral',
     direction: 'credit',
@@ -221,403 +443,4 @@ async function awardMonthlyTopReferrer() {
   return { awarded: true, key, userId: winnerUserId, activeReferrals: winnerActive };
 }
 
-function normalizeIdentityString(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/gi, '');
-}
-
-function getEmailLocalPart(email) {
-  const e = String(email || '').toLowerCase();
-  const at = e.indexOf('@');
-  return at > 0 ? e.slice(0, at) : e;
-}
-
-function areSimilarStrings(a, b) {
-  const x = normalizeIdentityString(a);
-  const y = normalizeIdentityString(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  const minLen = Math.min(x.length, y.length);
-  const prefixLen = (() => {
-    let i = 0;
-    for (; i < minLen; i += 1) {
-      if (x[i] !== y[i]) break;
-    }
-    return i;
-  })();
-  if (prefixLen >= 6) return true;
-  if (x.length >= 8 && y.includes(x)) return true;
-  if (y.length >= 8 && x.includes(y)) return true;
-  return false;
-}
-
-function summarizeActivity(logs = []) {
-  const acc = createActivityAccumulator();
-  logs.forEach((log) => appendActivityToAccumulator(acc, log));
-  return finalizeActivityAccumulator(acc);
-}
-
-async function buildReferralActivitySummaries(inviteeIds, since) {
-  const safeInviteeIds = (Array.isArray(inviteeIds) ? inviteeIds : [])
-    .map((value) => String(value || '').trim())
-    .filter(Boolean);
-  const allowedIds = new Set(safeInviteeIds);
-  const accumulators = new Map();
-
-  const supabase = getSupabaseClient();
-  const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
-
-  const chunkSize = 100;
-  for (let i = 0; i < safeInviteeIds.length; i += chunkSize) {
-    const chunk = safeInviteeIds.slice(i, i + chunkSize);
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from('activity_logs')
-      .select('user_id,type,minutes,meta,created_at')
-      .in('user_id', chunk)
-      .gte('created_at', sinceIso);
-    if (error || !Array.isArray(data)) continue;
-    data.forEach((row) => {
-      const userId = String(row?.user_id || '').trim();
-      if (!allowedIds.has(userId)) return;
-      if (!accumulators.has(userId)) accumulators.set(userId, createActivityAccumulator());
-      appendActivityToAccumulator(accumulators.get(userId), {
-        user: row.user_id,
-        type: row.type,
-        minutes: row.minutes,
-        meta: row.meta,
-        createdAt: row.created_at ? new Date(row.created_at) : undefined,
-      });
-    });
-  }
-
-  const summaries = new Map();
-  safeInviteeIds.forEach((userId) => {
-    summaries.set(userId, finalizeActivityAccumulator(accumulators.get(userId)));
-  });
-  return summaries;
-}
-
-async function buildReferralDuplicateCounters() {
-  const counters = {
-    inviteeIp: new Map(),
-    inviteeFingerprint: new Map(),
-  };
-  const supabase = getSupabaseClient();
-  const pageSize = 1000;
-  let from = 0;
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from('referrals')
-      .select('invitee_ip,invitee_fingerprint')
-      .range(from, from + pageSize - 1);
-    if (error || !Array.isArray(data) || !data.length) break;
-    data.forEach((row) => {
-      const inviteeIp = String(row?.invitee_ip || '').trim();
-      const inviteeFingerprint = String(row?.invitee_fingerprint || '').trim();
-      if (inviteeIp) counters.inviteeIp.set(inviteeIp, (counters.inviteeIp.get(inviteeIp) || 0) + 1);
-      if (inviteeFingerprint) {
-        counters.inviteeFingerprint.set(
-          inviteeFingerprint,
-          (counters.inviteeFingerprint.get(inviteeFingerprint) || 0) + 1
-        );
-      }
-    });
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-  return counters;
-}
-
-function getDuplicateCount(counter, value) {
-  const key = String(value || '').trim();
-  if (!key) return 0;
-  return Math.max(0, Number(counter?.get(key) || 0) - 1);
-}
-
-function buildReferralDecision({ invitee, inviter, summary, duplicateIp = 0, duplicateFp = 0, checkedAt = new Date() }) {
-  if (!invitee) {
-    return {
-      status: 'inactive',
-      checkReason: 'invitee missing',
-      checkedAt,
-      activitySummary: null,
-      shouldActivate: false,
-    };
-  }
-
-  const enrichedSummary = {
-    ...(summary || finalizeActivityAccumulator()),
-  };
-
-  const failures = [];
-  if (duplicateIp > 0) failures.push('IP не уникален');
-  if (duplicateFp > 0) failures.push('Fingerprint не уникален');
-
-  if (inviter) {
-    const inviterEmailLocal = getEmailLocalPart(inviter.email);
-    const inviteeEmailLocal = getEmailLocalPart(invitee.email);
-    const similarEmail = areSimilarStrings(inviterEmailLocal, inviteeEmailLocal);
-    const similarNick = areSimilarStrings(inviter.nickname, invitee.nickname);
-    if (similarEmail || similarNick) failures.push('Схожие данные');
-  }
-
-  if (enrichedSummary.minutesTotal < MIN_MINUTES) failures.push('Мало минут онлайн (<15)');
-  if (enrichedSummary.solarCollects < MIN_SOLAR) failures.push('Нет сбора заряда');
-  if (enrichedSummary.searchCount < MIN_SEARCH) failures.push('Нет поиска собеседника');
-  if (enrichedSummary.bridgeStones < MIN_BRIDGE_STONES) failures.push('Недостаточно камней в мост (<3)');
-
-  if (failures.length > 0) {
-    return {
-      status: 'inactive',
-      checkReason: failures.join('; '),
-      checkedAt,
-      activitySummary: enrichedSummary,
-      shouldActivate: false,
-    };
-  }
-
-  return {
-    status: 'active',
-    checkReason: 'Пройден Тихий ночной дозор',
-    checkedAt,
-    activitySummary: enrichedSummary,
-    shouldActivate: true,
-  };
-}
-
-async function applyReferralActivationSideEffects(referral, prevStatus) {
-  try {
-    const { grantAchievement } = require('./achievementService');
-    const { creditK } = require('./kService');
-
-    const supabase = getSupabaseClient();
-    const { count: activeCountRaw } = await supabase
-      .from('referrals')
-      .select('id', { head: true, count: 'exact' })
-      .eq('inviter_id', String(referral.inviter))
-      .eq('status', 'active');
-    const activeCount = Math.max(0, Number(activeCountRaw) || 0);
-    if (activeCount >= 50) {
-      await grantAchievement({ userId: referral.inviter, achievementId: 97 });
-    }
-
-    const checkChainDepth = async (userId, depth = 0) => {
-      if (depth >= 3) return true;
-      const { data, error } = await supabase
-        .from('referrals')
-        .select('invitee_id')
-        .eq('inviter_id', String(userId))
-        .eq('status', 'active');
-      const subReferrals = !error && Array.isArray(data) ? data : [];
-      for (const sub of subReferrals) {
-        if (await checkChainDepth(sub.invitee_id, depth + 1)) return true;
-      }
-      return false;
-    };
-
-    const findTopInviter = async (userId) => {
-      const { data, error } = await supabase
-        .from('referrals')
-        .select('inviter_id')
-        .eq('invitee_id', String(userId));
-      const refs = !error && Array.isArray(data) ? data : [];
-      for (const row of refs) {
-        if (await checkChainDepth(row.inviter_id)) {
-          await grantAchievement({ userId: row.inviter_id, achievementId: 98 });
-        }
-        await findTopInviter(row.inviter_id);
-      }
-    };
-    await findTopInviter(referral.invitee);
-
-    const since30d = new Date(Date.now() - DAYS_WINDOW * 24 * 60 * 60 * 1000);
-    const { count: last30ActiveCountRaw } = await supabase
-      .from('referrals')
-      .select('id', { head: true, count: 'exact' })
-      .eq('inviter_id', String(referral.inviter))
-      .eq('status', 'active')
-      .gte('active_since', since30d.toISOString());
-    const last30ActiveCount = Math.max(0, Number(last30ActiveCountRaw) || 0);
-    if (last30ActiveCount === MONTHLY_TARGET) {
-      const alreadyMonthlyBonus = await transactionExists({
-        userId: referral.inviter,
-        type: 'referral',
-        direction: 'credit',
-        currency: 'K',
-        description: 'Бонус за 300 рефералов за 30 дней',
-        occurredSince: since30d,
-      });
-      if (!alreadyMonthlyBonus) {
-        await creditK({
-          userId: referral.inviter,
-          amount: MONTHLY_BONUS_K,
-          type: 'referral',
-          description: 'Бонус за 300 рефералов за 30 дней',
-          relatedEntity: String(referral.id),
-        });
-      }
-    }
-
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('Referral achievements error', err);
-  }
-}
-
-async function evaluateReferral(referral) {
-  const referralId = typeof referral === 'string' || typeof referral === 'number'
-    ? referral
-    : (referral?.id ?? referral?._id);
-  const referralRow = referral && typeof referral === 'object' && referral.inviter_id ? referral : await getReferralById(referralId);
-  if (!referralRow) return null;
-  const createdAt = referralRow?.created_at ? new Date(referralRow.created_at) : null;
-  if (createdAt && createdAt.getTime() > Date.now() - HOURS_TO_CHECK * 60 * 60 * 1000) {
-    return referralRow;
-  }
-
-  const prevStatus = referralRow?.status;
-  const invitee = await getUserForReferral(referralRow.invitee_id);
-  if (!invitee) {
-    const patched = await updateReferralById(referralRow.id, {
-      status: 'inactive',
-      checked_at: new Date().toISOString(),
-      check_reason: 'invitee missing',
-    });
-    return patched;
-  }
-
-  const inviter = await getUserForReferral(referralRow.inviter_id);
-
-  const since = new Date(Date.now() - TND_ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000);
-  const summaries = await buildReferralActivitySummaries([invitee.id], since);
-  const summary = summaries.get(invitee.id) || finalizeActivityAccumulator();
-
-  const supabase = getSupabaseClient();
-  const duplicateIp = referralRow.invitee_ip
-    ? (await supabase
-      .from('referrals')
-      .select('id', { head: true, count: 'exact' })
-      .eq('invitee_ip', String(referralRow.invitee_ip))
-      .neq('id', Number(referralRow.id))).count
-    : 0;
-  const duplicateFp = referralRow.invitee_fingerprint
-    ? (await supabase
-      .from('referrals')
-      .select('id', { head: true, count: 'exact' })
-      .eq('invitee_fingerprint', String(referralRow.invitee_fingerprint))
-      .neq('id', Number(referralRow.id))).count
-    : 0;
-
-  const decision = buildReferralDecision({
-    invitee,
-    inviter,
-    summary,
-    duplicateIp: Math.max(0, Number(duplicateIp) || 0),
-    duplicateFp: Math.max(0, Number(duplicateFp) || 0),
-  });
-
-  const patch = {
-    activity_summary: decision.activitySummary,
-    checked_at: decision.checkedAt.toISOString(),
-    status: decision.status,
-    check_reason: decision.checkReason,
-  };
-
-  if (decision.shouldActivate) {
-    patch.active_since = referralRow.active_since || new Date().toISOString();
-  }
-
-  const updated = await updateReferralById(referralRow.id, patch);
-  if (decision.shouldActivate) {
-    await applyReferralActivationSideEffects({
-      id: referralRow.id,
-      inviter: referralRow.inviter_id,
-      invitee: referralRow.invitee_id,
-      inviteeUser: invitee,
-      status: decision.status,
-    }, prevStatus);
-  }
-  return updated;
-}
-
-async function runQuietWatch() {
-  const threshold = new Date(Date.now() - HOURS_TO_CHECK * 60 * 60 * 1000);
-  const checkedThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const supabase = getSupabaseClient();
-  const { data: pending, error } = await supabase
-    .from('referrals')
-    .select('id,inviter_id,invitee_id,status,invitee_ip,invitee_fingerprint,active_since,created_at,confirmed_at,checked_at,bonus_granted')
-    .in('status', ['pending', 'inactive'])
-    .not('confirmed_at', 'is', null)
-    .lte('created_at', threshold.toISOString());
-  const safePending = (!error && Array.isArray(pending) ? pending : []).filter((row) => {
-    if (!row?.checked_at) return true;
-    const checkedAt = new Date(row.checked_at);
-    if (Number.isNaN(checkedAt.getTime())) return true;
-    return checkedAt.getTime() <= checkedThreshold.getTime();
-  });
-  if (!safePending.length) return 0;
-
-  const since = new Date(Date.now() - DAYS_WINDOW * 24 * 60 * 60 * 1000);
-  const inviteeIds = Array.from(new Set(safePending.map((row) => String(row?.invitee_id || '').trim()).filter(Boolean)));
-  const inviterIds = Array.from(new Set(safePending.map((row) => String(row?.inviter_id || '').trim()).filter(Boolean)));
-
-  const [invitees, inviters, activitySummaries, duplicateCounters] = await Promise.all([
-    getUsersForReferral(inviteeIds, { selectEntity: true }),
-    getUsersForReferral(inviterIds, { selectEntity: false }),
-    buildReferralActivitySummaries(inviteeIds, since),
-    buildReferralDuplicateCounters(),
-  ]);
-
-  const inviteesById = new Map((Array.isArray(invitees) ? invitees : []).map((row) => [String(row?.id), row]));
-  const invitersById = new Map((Array.isArray(inviters) ? inviters : []).map((row) => [String(row?.id), row]));
-
-  for (const ref of safePending) {
-    const invitee = inviteesById.get(String(ref?.invitee_id || '').trim()) || null;
-    const inviter = invitersById.get(String(ref?.inviter_id || '').trim()) || null;
-    const decision = buildReferralDecision({
-      invitee,
-      inviter,
-      summary: activitySummaries.get(String(ref?.invitee_id || '').trim()) || finalizeActivityAccumulator(),
-      duplicateIp: getDuplicateCount(duplicateCounters.inviteeIp, ref?.invitee_ip),
-      duplicateFp: getDuplicateCount(duplicateCounters.inviteeFingerprint, ref?.invitee_fingerprint),
-    });
-
-    if (decision.shouldActivate) {
-      const referralForSideEffects = {
-        ...ref,
-        invitee: ref?.invitee_id,
-        inviteeUser: invitee,
-        inviter: ref?.inviter_id,
-        inviterUser: inviter,
-        activitySummary: decision.activitySummary,
-        checkedAt: decision.checkedAt,
-        status: decision.status,
-        checkReason: decision.checkReason,
-        activeSince: ref.active_since || new Date(),
-      };
-      // eslint-disable-next-line no-await-in-loop
-      await applyReferralActivationSideEffects(referralForSideEffects, ref.status);
-    }
-
-    // eslint-disable-next-line no-await-in-loop
-    await updateReferralById(ref.id, {
-      activity_summary: decision.activitySummary,
-      checked_at: decision.checkedAt.toISOString(),
-      status: decision.status,
-      check_reason: decision.checkReason,
-      ...(decision.shouldActivate
-        ? {
-          active_since: (ref.active_since ? new Date(ref.active_since) : new Date()).toISOString(),
-        }
-        : {}),
-    });
-  }
-  return safePending.length;
-}
-
 module.exports = { runQuietWatch, evaluateReferral, awardMonthlyTopReferrer };
-
