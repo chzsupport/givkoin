@@ -31,16 +31,38 @@ const ROULETTE_SECTORS = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
-const ROULETTE_SPIN_DURATION_MS = 6000;
+const ROULETTE_SPIN_DURATION_MS = 5600;
 const ROULETTE_SPIN_DURATION_SEC = ROULETTE_SPIN_DURATION_MS / 1000;
-const ROULETTE_TOTAL_TURNS = 6;
-const ROULETTE_START_TURNS = 0.22;
-const ROULETTE_ACCEL_TURNS = 0.85;
-const ROULETTE_SLOWDOWN_TURNS = 2.2;
-const ROULETTE_FINAL_SLOW_TURNS = 0.65;
-const ROULETTE_LAST_CRAWL_TURNS = 0.12;
+const ROULETTE_TOTAL_TURNS = 5;
+const ROULETTE_START_TURNS = 0.18;
+const ROULETTE_ACCEL_TURNS = 0.95;
+const ROULETTE_SLOWDOWN_TURNS = 1.85;
+const ROULETTE_FINAL_SLOW_TURNS = 0.48;
+const ROULETTE_LAST_CRAWL_TURNS = 0.08;
+const ROULETTE_PATH_TIMES = [0, 0.17, 0.34, 0.61, 0.83, 0.95, 1];
+const ROULETTE_PATH_EASING = [
+    'cubic-bezier(0.55, 0, 0.85, 0.2)',
+    'cubic-bezier(0.25, 0.05, 0.65, 1)',
+    'linear',
+    'cubic-bezier(0.2, 0.7, 0.22, 1)',
+    'cubic-bezier(0.12, 0.82, 0.18, 1)',
+    'cubic-bezier(0.04, 0.95, 0.08, 1)',
+    'linear',
+];
 
 const normalizeRotation = (value: number) => ((value % 360) + 360) % 360;
+
+type RouletteSpinResult = {
+    label: string;
+    type: string;
+    value: number | string;
+};
+
+type RoulettePlannedSpin = {
+    id?: string;
+    sectorIndex: number;
+    result: RouletteSpinResult;
+};
 
 const WheelComponent = ({
     size,
@@ -60,6 +82,39 @@ const WheelComponent = ({
     onRotationUpdate?: (rotation: number) => void;
 }) => {
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
+    const wheelRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const node = wheelRef.current;
+        if (!node) return;
+
+        if (spinMode !== 'spinning' || !rotationPath?.length) {
+            node.style.transform = `rotate(${rotation}deg)`;
+            return;
+        }
+
+        const keyframes = rotationPath.map((item, index) => ({
+            transform: `rotate(${item}deg)`,
+            offset: ROULETTE_PATH_TIMES[index] ?? undefined,
+            easing: ROULETTE_PATH_EASING[index] || 'linear',
+        }));
+
+        const animation = node.animate(keyframes, {
+            duration: spinDuration * 1000,
+            iterations: 1,
+            fill: 'forwards',
+        });
+
+        animation.onfinish = () => {
+            node.style.transform = `rotate(${rotationPath[rotationPath.length - 1]}deg)`;
+            onRotationUpdate?.(rotationPath[rotationPath.length - 1]);
+        };
+
+        return () => {
+            animation.cancel();
+        };
+    }, [onRotationUpdate, rotation, rotationPath, spinDuration, spinMode]);
+
     return (
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[2%] z-20">
@@ -67,24 +122,12 @@ const WheelComponent = ({
                     style={{ transform: `scale(${size / 280})` }} />
             </div>
             {isSpinning && <div className="absolute inset-0 rounded-full bg-yellow-500/20 blur-2xl animate-pulse" />}
-            <motion.div
+            <div
+                ref={wheelRef}
                 className="w-full h-full rounded-full border-[5px] border-yellow-600/50 shadow-2xl relative overflow-hidden bg-[#1a1a2e]"
-                animate={{ rotate: rotationPath || rotation }}
-                transition={spinMode === 'spinning'
-                    ? {
-                        duration: spinDuration,
-                        times: rotationPath ? [0, 0.15, 0.32, 0.62, 0.86, 0.97, 1] : undefined,
-                        ease: rotationPath ? ['easeIn', 'easeIn', 'linear', 'easeOut', 'easeOut', 'easeOut'] : 'easeInOut',
-                    }
-                    : { duration: 0 }}
-                onUpdate={(latest) => {
-                    const nextRotate = latest.rotate;
-                    if (typeof nextRotate === 'number') {
-                        onRotationUpdate?.(nextRotate);
-                    }
-                }}
                 style={{
                     boxShadow: '0 0 30px rgba(234, 179, 8, 0.3), inset 0 0 20px rgba(0,0,0,0.5)',
+                    transform: `rotate(${rotation}deg)`,
                     willChange: isSpinning ? 'transform' : 'auto',
                     backfaceVisibility: 'hidden',
                 }}
@@ -113,7 +156,7 @@ const WheelComponent = ({
                     style={{ width: size * 0.11, height: size * 0.11 }}>
                     <Star className="text-yellow-500 fill-yellow-500" style={{ width: size * 0.04, height: size * 0.04 }} />
                 </div>
-            </motion.div>
+            </div>
         </div>
     );
 };
@@ -168,6 +211,32 @@ function emitRewardOffer(offer: unknown) {
     window.dispatchEvent(new CustomEvent('givkoin:ad-boost-offer', { detail: offer }));
 }
 
+const parseSpinResult = (source: unknown): RouletteSpinResult => {
+    const result = source && typeof source === 'object' ? source as { label?: unknown; type?: unknown; value?: unknown } : {};
+    return {
+        label: typeof result.label === 'string' ? result.label : '',
+        type: typeof result.type === 'string' ? result.type : 'k',
+        value: typeof result.value === 'number' || typeof result.value === 'string' ? result.value : 0,
+    };
+};
+
+const parsePlannedSpins = (source: unknown): RoulettePlannedSpin[] => {
+    if (!Array.isArray(source)) return [];
+    return source
+        .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const raw = item as { id?: unknown; sectorIndex?: unknown; result?: unknown };
+            const sectorIndex = Number(raw.sectorIndex);
+            if (!Number.isFinite(sectorIndex)) return null;
+            return {
+                id: typeof raw.id === 'string' ? raw.id : undefined,
+                sectorIndex,
+                result: parseSpinResult(raw.result),
+            };
+        })
+        .filter(Boolean) as RoulettePlannedSpin[];
+};
+
 export default function RoulettePage() {
     const { user, refreshUser } = useAuth();
     const toast = useToast();
@@ -176,12 +245,13 @@ export default function RoulettePage() {
     const [spinMode, setSpinMode] = useState<'idle' | 'spinning'>('idle');
     const [rotation, setRotation] = useState(0);
     const [rotationPath, setRotationPath] = useState<number[] | null>(null);
-    const [winResult, setWinResult] = useState<{ label: string; type: string; value: number | string } | null>(null);
+    const [winResult, setWinResult] = useState<RouletteSpinResult | null>(null);
     const [history, setHistory] = useState<{ label: string; id: number }[]>([]);
     const [spinCounter, setSpinCounter] = useState(1);
     const [todayWins, setTodayWins] = useState({ total: 0, best: 0, count: 0 });
     const [timeUntilReset, setTimeUntilReset] = useState('');
     const [spinsLeft, setSpinsLeft] = useState(3);
+    const [plannedSpins, setPlannedSpins] = useState<RoulettePlannedSpin[]>([]);
     const [nextResetAt, setNextResetAt] = useState<string | null>(null);
     const [globalStats, setGlobalStats] = useState<RouletteGlobalStats | null>(null);
     const [isLandscape, setIsLandscape] = useState(false);
@@ -307,6 +377,31 @@ export default function RoulettePage() {
         rotationRef.current = nextRotation;
     }, []);
 
+    const startWheelAnimation = (winningIndex: number) => {
+        const safeWinningIndex = Number.isFinite(winningIndex) ? winningIndex : 0;
+        const randomOffset = (Math.random() - 0.5) * Math.min(10, sectorAngle * 0.35);
+        const targetAngle = (360 - (safeWinningIndex * sectorAngle + sectorAngle / 2) + randomOffset);
+        const currentAngle = normalizeRotation(rotationRef.current);
+        let angleDiff = targetAngle - currentAngle;
+        if (angleDiff < 0) angleDiff += 360;
+        const startRotation = rotationRef.current;
+        const targetRotation = startRotation + (360 * ROULETTE_TOTAL_TURNS) + angleDiff;
+        const path = [
+            startRotation,
+            startRotation + 360 * ROULETTE_START_TURNS,
+            startRotation + 360 * ROULETTE_ACCEL_TURNS,
+            targetRotation - 360 * ROULETTE_SLOWDOWN_TURNS,
+            targetRotation - 360 * ROULETTE_FINAL_SLOW_TURNS,
+            targetRotation - 360 * ROULETTE_LAST_CRAWL_TURNS,
+            targetRotation,
+        ];
+
+        rotationRef.current = targetRotation;
+        setRotationPath(path);
+        setRotation(targetRotation);
+        return targetRotation;
+    };
+
     useEffect(() => {
         const updateTimer = () => {
             if (!nextResetAt) return;
@@ -339,6 +434,8 @@ export default function RoulettePage() {
                 if (Number.isFinite(spins)) setSpinsLeft(spins);
                 const next = 'nextResetAt' in statusData ? (statusData as { nextResetAt?: unknown }).nextResetAt : null;
                 if (typeof next === 'string') setNextResetAt(next);
+                const planned = 'plannedSpins' in statusData ? (statusData as { plannedSpins?: unknown }).plannedSpins : [];
+                setPlannedSpins(parsePlannedSpins(planned));
             }
 
             const userStats = await apiGet<unknown>('/fortune/stats/user');
@@ -391,77 +488,71 @@ export default function RoulettePage() {
             .catch((error: unknown) => ({ error }));
 
         try {
-            const spinResponse = await spinRequest;
-            if ('error' in spinResponse) throw spinResponse.error;
-            const res = spinResponse.res;
-            if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
-            const winningIndex = Number((res as { sectorIndex?: unknown }).sectorIndex);
-            const serverResult = (res as { result?: unknown }).result as { label?: string; type?: string; value?: number | string };
-            const remainingSpins = Number((res as { spinsLeft?: unknown }).spinsLeft);
-            const resultLabel = typeof serverResult?.label === 'string' ? serverResult.label : '';
-            const resultType = typeof serverResult?.type === 'string' ? serverResult.type : 'k';
-            const resultValue =
-                typeof serverResult?.value === 'number' || typeof serverResult?.value === 'string'
-                    ? serverResult.value
-                    : 0;
+            const plannedSpin = plannedSpins[0] || null;
+            let targetRotation: number | null = null;
 
-            const safeWinningIndex = Number.isFinite(winningIndex) ? winningIndex : 0;
-            const randomOffset = (Math.random() - 0.5) * Math.min(10, sectorAngle * 0.35);
-            const targetAngle = (360 - (safeWinningIndex * sectorAngle + sectorAngle / 2) + randomOffset);
-            const currentAngle = normalizeRotation(rotationRef.current);
-            let angleDiff = targetAngle - currentAngle;
-            if (angleDiff < 0) angleDiff += 360;
-            const startRotation = rotationRef.current;
-            const targetRotation = startRotation + (360 * ROULETTE_TOTAL_TURNS) + angleDiff;
-            const path = [
-                startRotation,
-                startRotation + 360 * ROULETTE_START_TURNS,
-                startRotation + 360 * ROULETTE_ACCEL_TURNS,
-                targetRotation - 360 * ROULETTE_SLOWDOWN_TURNS,
-                targetRotation - 360 * ROULETTE_FINAL_SLOW_TURNS,
-                targetRotation - 360 * ROULETTE_LAST_CRAWL_TURNS,
-                targetRotation,
-            ];
-
-            rotationRef.current = targetRotation;
-            setRotationPath(path);
-            setRotation(targetRotation);
+            if (plannedSpin) {
+                targetRotation = startWheelAnimation(plannedSpin.sectorIndex);
+            } else {
+                const spinResponse = await spinRequest;
+                if ('error' in spinResponse) throw spinResponse.error;
+                const res = spinResponse.res;
+                if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
+                const winningIndex = Number((res as { sectorIndex?: unknown }).sectorIndex);
+                targetRotation = startWheelAnimation(winningIndex);
+            }
 
             spinFinishTimeoutRef.current = setTimeout(async () => {
-                const normalizedRotation = normalizeRotation(targetRotation);
-                rotationRef.current = normalizedRotation;
-                setIsSpinning(false);
-                setSpinMode('idle');
-                setRotationPath(null);
-                setRotation(normalizedRotation);
-                setWinResult({ label: resultLabel, type: resultType, value: resultValue });
-                setSpinsLeft(remainingSpins);
-                spinFinishTimeoutRef.current = null;
+                try {
+                    const spinResponse = await spinRequest;
+                    if ('error' in spinResponse) throw spinResponse.error;
+                    const res = spinResponse.res;
+                    if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
+                    const serverResult = parseSpinResult((res as { result?: unknown }).result);
+                    const remainingSpins = Number((res as { spinsLeft?: unknown }).spinsLeft);
+                    const normalizedRotation = normalizeRotation(targetRotation || rotationRef.current);
+                    rotationRef.current = normalizedRotation;
+                    setIsSpinning(false);
+                    setSpinMode('idle');
+                    setRotationPath(null);
+                    setRotation(normalizedRotation);
+                    setWinResult(serverResult);
+                    if (Number.isFinite(remainingSpins)) setSpinsLeft(remainingSpins);
+                    setPlannedSpins((current) => current.slice(1));
+                    spinFinishTimeoutRef.current = null;
 
-                const currentId = spinCounter;
-                setSpinCounter(prev => prev + 1);
+                    const currentId = spinCounter;
+                    setSpinCounter(prev => prev + 1);
 
-                // History: Keep last 3 items, latest at bottom, FIFO
-                setHistory(prev => {
-                    const newItem = { label: resultLabel, id: currentId };
-                    const newHistory = [...prev, newItem];
-                    if (newHistory.length > 3) {
-                        return newHistory.slice(newHistory.length - 3);
+                    // History: Keep last 3 items, latest at bottom, FIFO
+                    setHistory(prev => {
+                        const newItem = { label: serverResult.label, id: currentId };
+                        const newHistory = [...prev, newItem];
+                        if (newHistory.length > 3) {
+                            return newHistory.slice(newHistory.length - 3);
+                        }
+                        return newHistory;
+                    });
+
+                    if (serverResult.type === 'k') {
+                        setTodayWins(prev => ({
+                            total: prev.total + (Number(serverResult.value) || 0),
+                            best: Math.max(prev.best, Number(serverResult.value) || 0),
+                            count: prev.count + 1
+                        }));
                     }
-                    return newHistory;
-                });
-
-                if (resultType === 'k') {
-                    setTodayWins(prev => ({
-                        total: prev.total + (Number(resultValue) || 0),
-                        best: Math.max(prev.best, Number(resultValue) || 0),
-                        count: prev.count + 1
-                    }));
+                    emitRewardOffer((res as { boostOffer?: unknown }).boostOffer);
+                    await refreshUser();
+                    await fetchGlobalStats();
+                    await fetchUserStats();
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : '';
+                    toast.error(t('common.error'), message || t('fortune.spin_error'));
+                    setIsSpinning(false);
+                    setSpinMode('idle');
+                    setRotationPath(null);
+                    await fetchUserStats();
                 }
-                emitRewardOffer((res as { boostOffer?: unknown }).boostOffer);
-                await refreshUser();
-                await fetchGlobalStats();
-                await fetchUserStats();
             }, ROULETTE_SPIN_DURATION_MS);
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';

@@ -998,7 +998,14 @@ async function findOrCreateFortuneSpin(userId) {
 
 
 
-    const createPromise = upsertFortuneSpin(null, { user: userId, spinsToday: 0, totalSpins: 0 });
+    const createPromise = upsertFortuneSpin(null, {
+        user: userId,
+        spinsToday: 0,
+        totalSpins: 0,
+        adOfferSpinsToday: 0,
+        spinsSinceLastStar: 0,
+        pendingRouletteSpins: [],
+    });
 
     fortuneSpinCreateInflight.set(inflightKey, createPromise);
 
@@ -1024,17 +1031,25 @@ async function ensureFortuneSpinStateForToday(userId, now = new Date(), { persis
 
     const spinData = await findOrCreateFortuneSpin(userId);
 
+    spinData.spinsToday = Math.max(0, Math.floor(Number(spinData.spinsToday) || 0));
+
+    spinData.totalSpins = Math.max(0, Math.floor(Number(spinData.totalSpins) || 0));
+
+    spinData.adOfferSpinsToday = Math.max(0, Math.floor(Number(spinData.adOfferSpinsToday) || 0));
+
+    spinData.spinsSinceLastStar = Math.max(0, Math.floor(Number(spinData.spinsSinceLastStar) || 0));
+
+    if (!Array.isArray(spinData.pendingRouletteSpins)) {
+
+        spinData.pendingRouletteSpins = [];
+
+    }
+
     const lastSpin = spinData.lastSpinAt ? new Date(spinData.lastSpinAt) : null;
 
 
 
     if (!lastSpin || isSameLocalDay(now, lastSpin)) {
-
-        if (!Number.isFinite(Number(spinData.adOfferSpinsToday))) {
-
-            spinData.adOfferSpinsToday = Number(spinData.spinsToday) || 0;
-
-        }
 
         return spinData;
 
@@ -1048,6 +1063,8 @@ async function ensureFortuneSpinStateForToday(userId, now = new Date(), { persis
 
     spinData.adOfferSpinsToday = 0;
 
+    spinData.pendingRouletteSpins = [];
+
 
 
     if (shouldPersistReset) {
@@ -1059,6 +1076,220 @@ async function ensureFortuneSpinStateForToday(userId, now = new Date(), { persis
 
 
     return spinData;
+
+}
+
+function canRouletteWinStar({ spinData, minSpinsSinceStar, minDaysSinceStar, now, virtualSpinsSinceLastStar = null, virtualLastStarWinAt = null }) {
+
+    const spinsSinceLastStar = Math.max(0, Math.floor(Number(virtualSpinsSinceLastStar ?? spinData?.spinsSinceLastStar) || 0));
+
+    if (spinsSinceLastStar < minSpinsSinceStar) {
+
+        return false;
+
+    }
+
+    const lastStarWinAt = virtualLastStarWinAt || spinData?.lastStarWinAt;
+
+    if (lastStarWinAt) {
+
+        const daysSinceLastStar = (now - new Date(lastStarWinAt)) / (1000 * 60 * 60 * 24);
+
+        if (daysSinceLastStar < minDaysSinceStar) {
+
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+
+function pickRouletteResult(availableSectors = []) {
+
+    const sectors = Array.isArray(availableSectors) ? availableSectors : [];
+
+    const totalWeight = sectors.reduce((sum, s) => sum + Math.max(0, Number(s.weight) || 0), 0);
+
+    if (!sectors.length || totalWeight <= 0) return null;
+
+    let randomValue = Math.random() * totalWeight;
+
+    let result = sectors[sectors.length - 1];
+
+    for (const sector of sectors) {
+
+        const weight = Math.max(0, Number(sector.weight) || 0);
+
+        if (randomValue < weight) {
+
+            result = sector;
+
+            break;
+
+        }
+
+        randomValue -= weight;
+
+    }
+
+    return result;
+
+}
+
+function getRouletteSectorIndex(allSectors = [], result = null) {
+
+    const originalIndex = allSectors.findIndex((s) =>
+
+        s.label === result?.label
+
+        && s.type === result?.type
+
+        && Number(s.value) === Number(result?.value)
+
+    );
+
+    return originalIndex < 0 ? 0 : originalIndex;
+
+}
+
+function makeRoulettePlanId() {
+
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+
+    return crypto.randomBytes(16).toString('hex');
+
+}
+
+function normalizePlannedRouletteSpin(item = {}) {
+
+    const result = item?.result && typeof item.result === 'object' ? item.result : null;
+
+    if (!result) return null;
+
+    return {
+
+        id: String(item.id || makeRoulettePlanId()),
+
+        sectorIndex: Math.max(0, Math.floor(Number(item.sectorIndex) || 0)),
+
+        result: {
+
+            label: String(result.label || ''),
+
+            value: result.type === 'spin' ? 0 : Number(result.value) || 0,
+
+            type: String(result.type || 'k'),
+
+        },
+
+    };
+
+}
+
+function createRoulettePlanItem({ allSectors, availableSectors }) {
+
+    const result = pickRouletteResult(availableSectors);
+
+    if (!result) return null;
+
+    return normalizePlannedRouletteSpin({
+
+        id: makeRoulettePlanId(),
+
+        sectorIndex: getRouletteSectorIndex(allSectors, result),
+
+        result,
+
+    });
+
+}
+
+function ensurePlannedRouletteSpins({ spinData, rouletteConfig, count, now }) {
+
+    const allSectors = Array.isArray(rouletteConfig?.sectors) ? rouletteConfig.sectors : [];
+
+    const minSpinsSinceStar = Math.max(0, Number(rouletteConfig?.minSpinsSinceStar) || 21);
+
+    const minDaysSinceStar = Math.max(0, Number(rouletteConfig?.minDaysSinceStar) || 7);
+
+    const targetCount = Math.max(0, Math.min(30, Math.floor(Number(count) || 0)));
+
+    const existing = Array.isArray(spinData.pendingRouletteSpins)
+
+        ? spinData.pendingRouletteSpins.map(normalizePlannedRouletteSpin).filter(Boolean)
+
+        : [];
+
+    let virtualSpinsSinceLastStar = Math.max(0, Math.floor(Number(spinData.spinsSinceLastStar) || 0));
+
+    let virtualLastStarWinAt = spinData.lastStarWinAt || null;
+
+    existing.forEach((planned) => {
+
+        if (planned.result?.type === 'star') {
+
+            virtualSpinsSinceLastStar = 0;
+
+            virtualLastStarWinAt = now;
+
+        } else {
+
+            virtualSpinsSinceLastStar += 1;
+
+        }
+
+    });
+
+    while (existing.length < targetCount) {
+
+        let availableSectors = allSectors.filter((s) => s && s.enabled !== false);
+
+        if (!canRouletteWinStar({
+
+            spinData,
+
+            minSpinsSinceStar,
+
+            minDaysSinceStar,
+
+            now,
+
+            virtualSpinsSinceLastStar,
+
+            virtualLastStarWinAt,
+
+        })) {
+
+            availableSectors = availableSectors.filter((s) => s.type !== 'star');
+
+        }
+
+        const planned = createRoulettePlanItem({ allSectors, availableSectors });
+
+        if (!planned) break;
+
+        existing.push(planned);
+
+        if (planned.result?.type === 'star') {
+
+            virtualSpinsSinceLastStar = 0;
+
+            virtualLastStarWinAt = now;
+
+        } else {
+
+            virtualSpinsSinceLastStar += 1;
+
+        }
+
+    }
+
+    spinData.pendingRouletteSpins = existing.slice(0, targetCount);
+
+    return spinData.pendingRouletteSpins;
 
 }
 
@@ -1202,6 +1433,20 @@ exports.getSpinStatus = async (req, res) => {
 
         const spinsLeft = freeSpinsLeft + availableAdExtraSpins;
 
+        const plannedSpins = ensurePlannedRouletteSpins({
+
+            spinData,
+
+            rouletteConfig: fortuneConfig?.roulette || {},
+
+            count: spinsLeft,
+
+            now,
+
+        });
+
+        await upsertFortuneSpin(spinData._id, spinData);
+
         const alreadyToday = await hasClaimedPersonalLuckToday({
             userId: req.user._id,
             now,
@@ -1221,6 +1466,8 @@ exports.getSpinStatus = async (req, res) => {
             lastSpinAt: spinData.lastSpinAt,
 
             nextResetAt: nextMidnightLocal(now),
+
+            plannedSpins,
 
             luckyDayAvailable: !alreadyToday,
 
@@ -1258,10 +1505,6 @@ exports.spin = async (req, res) => {
 
         const dailyFreeSpins = Math.max(1, Number(rouletteConfig.dailyFreeSpins) || 3);
 
-        const minSpinsSinceStar = Math.max(0, Number(rouletteConfig.minSpinsSinceStar) || 21);
-
-        const minDaysSinceStar = Math.max(0, Number(rouletteConfig.minDaysSinceStar) || 7);
-
         const allSectors = Array.isArray(rouletteConfig.sectors) ? rouletteConfig.sectors : [];
 
         const userRowForBoost = await getUserRowById(req.user._id);
@@ -1292,49 +1535,39 @@ exports.spin = async (req, res) => {
 
 
 
-        const canWinStar = () => {
+        let plannedQueue = Array.isArray(spinData.pendingRouletteSpins)
 
-            if (spinData.spinsSinceLastStar < minSpinsSinceStar) {
+            ? spinData.pendingRouletteSpins.map(normalizePlannedRouletteSpin).filter(Boolean)
 
-                return false;
+            : [];
 
-            }
+        let plannedSpin = plannedQueue.shift();
 
+        if (!plannedSpin) {
 
+            const planned = ensurePlannedRouletteSpins({
 
-            if (spinData.lastStarWinAt) {
+                spinData,
 
-                const daysSinceLastStar = (now - new Date(spinData.lastStarWinAt)) / (1000 * 60 * 60 * 24);
+                rouletteConfig,
 
-                if (daysSinceLastStar < minDaysSinceStar) {
+                count: 1,
 
-                    return false;
+                now,
 
-                }
+            });
 
-            }
+            plannedQueue = Array.isArray(spinData.pendingRouletteSpins)
 
+                ? spinData.pendingRouletteSpins.map(normalizePlannedRouletteSpin).filter(Boolean)
 
+                : [];
 
-            return true;
-
-        };
-
-
-
-        let availableSectors = allSectors.filter((s) => s && s.enabled !== false);
-
-
-
-        if (!canWinStar()) {
-
-            availableSectors = availableSectors.filter(s => s.type !== 'star');
+            plannedSpin = Array.isArray(planned) && planned.length ? plannedQueue.shift() : null;
 
         }
 
-
-
-        if (!availableSectors.length) {
+        if (!plannedSpin) {
 
             return res.status(400).json({
 
@@ -1344,41 +1577,11 @@ exports.spin = async (req, res) => {
 
         }
 
+        spinData.pendingRouletteSpins = plannedQueue;
 
+        const result = plannedSpin.result;
 
-        const totalWeight = availableSectors.reduce((sum, s) => sum + s.weight, 0);
-
-        let randomValue = Math.random() * totalWeight;
-
-        let result = availableSectors[availableSectors.length - 1];
-
-
-
-        for (const sector of availableSectors) {
-
-            if (randomValue < sector.weight) {
-
-                result = sector;
-
-                break;
-
-            }
-
-            randomValue -= sector.weight;
-
-        }
-
-
-
-        const originalIndex = allSectors.findIndex((s) =>
-
-            s.label === result.label
-
-            && s.type === result.type
-
-            && Number(s.value) === Number(result.value)
-
-        );
+        const originalIndex = Math.max(0, Math.floor(Number(plannedSpin.sectorIndex) || 0));
 
 
 
@@ -1398,7 +1601,7 @@ exports.spin = async (req, res) => {
 
         spinData.lastSpinAt = now;
 
-        spinData.spinsSinceLastStar += 1;
+        spinData.spinsSinceLastStar = Math.max(0, Math.floor(Number(spinData.spinsSinceLastStar) || 0)) + 1;
 
 
 
