@@ -33,8 +33,12 @@ const ROULETTE_SECTORS = [
 
 const ROULETTE_SPIN_DURATION_MS = 6000;
 const ROULETTE_SPIN_DURATION_SEC = ROULETTE_SPIN_DURATION_MS / 1000;
-const ROULETTE_TOTAL_TURNS = 8;
-const ROULETTE_EDGE_TURNS = 1.15;
+const ROULETTE_TOTAL_TURNS = 6;
+const ROULETTE_START_TURNS = 0.22;
+const ROULETTE_ACCEL_TURNS = 0.85;
+const ROULETTE_SLOWDOWN_TURNS = 2.2;
+const ROULETTE_FINAL_SLOW_TURNS = 0.65;
+const ROULETTE_LAST_CRAWL_TURNS = 0.12;
 
 const normalizeRotation = (value: number) => ((value % 360) + 360) % 360;
 
@@ -69,8 +73,8 @@ const WheelComponent = ({
                 transition={spinMode === 'spinning'
                     ? {
                         duration: spinDuration,
-                        times: rotationPath ? [0, 0.16, 0.84, 1] : undefined,
-                        ease: rotationPath ? ['easeIn', 'linear', 'easeOut'] : 'easeInOut',
+                        times: rotationPath ? [0, 0.15, 0.32, 0.62, 0.86, 0.97, 1] : undefined,
+                        ease: rotationPath ? ['easeIn', 'easeIn', 'linear', 'easeOut', 'easeOut', 'easeOut'] : 'easeInOut',
                     }
                     : { duration: 0 }}
                 onUpdate={(latest) => {
@@ -311,11 +315,12 @@ export default function RoulettePage() {
             const diffMs = Math.max(0, reset - now);
             const hours = Math.floor(diffMs / (1000 * 60 * 60));
             const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-            setTimeUntilReset(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
+            const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+            setTimeUntilReset(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
         };
         if (isSpinning) return;
         updateTimer();
-        const interval = setInterval(updateTimer, 60000);
+        const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
     }, [nextResetAt, isSpinning]);
 
@@ -408,11 +413,13 @@ export default function RoulettePage() {
             if (angleDiff < 0) angleDiff += 360;
             const startRotation = rotationRef.current;
             const targetRotation = startRotation + (360 * ROULETTE_TOTAL_TURNS) + angleDiff;
-            const edgeRotation = 360 * ROULETTE_EDGE_TURNS;
             const path = [
                 startRotation,
-                startRotation + edgeRotation,
-                targetRotation - edgeRotation,
+                startRotation + 360 * ROULETTE_START_TURNS,
+                startRotation + 360 * ROULETTE_ACCEL_TURNS,
+                targetRotation - 360 * ROULETTE_SLOWDOWN_TURNS,
+                targetRotation - 360 * ROULETTE_FINAL_SLOW_TURNS,
+                targetRotation - 360 * ROULETTE_LAST_CRAWL_TURNS,
                 targetRotation,
             ];
 
