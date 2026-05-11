@@ -36,6 +36,7 @@ type HumanCheckStatus = {
 
 type HumanCheckResult = {
   blocked?: boolean;
+  challengeFailed?: boolean;
   blockedUntil?: string;
   attemptsLeft?: number;
   nextRequiredAt?: string;
@@ -74,11 +75,12 @@ function isHumanCheckExcludedPath(pathname: string) {
   );
 }
 
-function HoldVariant({ disabled, resetKey, t, onPass }: VariantProps) {
+function HoldVariant({ disabled, resetKey, t, onPass, onFail }: VariantProps) {
   const [holding, setHolding] = useState(false);
   const [progress, setProgress] = useState(0);
   const timerRef = useRef<number | null>(null);
   const passedRef = useRef(false);
+  const failedRef = useRef(false);
 
   const clearHold = useCallback(() => {
     if (timerRef.current != null) {
@@ -90,13 +92,14 @@ function HoldVariant({ disabled, resetKey, t, onPass }: VariantProps) {
   useEffect(() => {
     clearHold();
     passedRef.current = false;
+    failedRef.current = false;
     setHolding(false);
     setProgress(0);
     return clearHold;
   }, [clearHold, resetKey]);
 
   const startHold = () => {
-    if (disabled || passedRef.current || timerRef.current != null) return;
+    if (disabled || passedRef.current || failedRef.current || timerRef.current != null) return;
     setHolding(true);
     let nextProgress = 0;
     timerRef.current = window.setInterval(() => {
@@ -112,10 +115,15 @@ function HoldVariant({ disabled, resetKey, t, onPass }: VariantProps) {
   };
 
   const stopHold = () => {
-    if (disabled || passedRef.current) return;
+    if (disabled || passedRef.current || failedRef.current) return;
+    const wasHolding = timerRef.current != null;
     clearHold();
     setHolding(false);
     setProgress(0);
+    if (wasHolding) {
+      failedRef.current = true;
+      onFail();
+    }
   };
 
   return (
@@ -305,7 +313,7 @@ function RotateVariant({ disabled, resetKey, t, onPass, onFail }: VariantProps) 
   );
 }
 
-function CatchVariant({ disabled, resetKey, t, onPass }: VariantProps) {
+function CatchVariant({ disabled, resetKey, t, onPass, onFail }: VariantProps) {
   const [position, setPosition] = useState({ x: 50, y: 58 });
   const passedRef = useRef(false);
 
@@ -333,7 +341,14 @@ function CatchVariant({ disabled, resetKey, t, onPass }: VariantProps) {
   };
 
   return (
-    <div className={styles.catchField}>
+    <div
+      className={styles.catchField}
+      onClick={(event) => {
+        if (disabled || passedRef.current) return;
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (!target?.closest(`.${styles.orbButton}`)) onFail();
+      }}
+    >
       <p className={styles.catchHint}>{t('human_check.catch_hint')}</p>
       <motion.button
         type="button"
@@ -487,8 +502,8 @@ export function HumanCheckGate() {
         challengeId: current.challengeId,
         variant: current.variant,
       }, { suppressBoostOffer: true });
-      if (data.blocked) {
-        setBlockedMessage(data.message || t('human_check.blocked'));
+      if (data.blocked || data.challengeFailed) {
+        setBlockedMessage(data.message || (data.blocked ? t('human_check.blocked') : t('human_check.failed_logout')));
         window.setTimeout(() => logout(), 1300);
         return;
       }

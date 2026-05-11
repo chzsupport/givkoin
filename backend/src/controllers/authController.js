@@ -3522,7 +3522,7 @@ const humanCheckFail = async (req, res, next) => {
 
     }
 
-    if (result.blocked) {
+    if (result.blocked || result.challengeFailed) {
 
       await revokeAllUserSessions({
 
@@ -3562,6 +3562,8 @@ const humanCheckFail = async (req, res, next) => {
 
           blockedUntil: result.blockedUntil,
 
+          challengeFailed: Boolean(result.challengeFailed),
+
           variant: req.body?.variant || '',
 
         },
@@ -3574,7 +3576,9 @@ const humanCheckFail = async (req, res, next) => {
 
         ...result,
 
-        message: pickLang(getRequestLanguage(req), 'Проверка не пройдена. Доступ закрыт на 1 час.', 'The check failed. Access is closed for 1 hour.'),
+        message: result.blocked
+          ? pickLang(getRequestLanguage(req), 'Проверка не пройдена 3 раза подряд. Доступ закрыт на 1 час.', 'Three checks failed in a row. Access is closed for 1 hour.')
+          : pickLang(getRequestLanguage(req), 'Проверка не пройдена. Сейчас вы будете выведены из аккаунта.', 'The check failed. You will be signed out now.'),
 
       });
 

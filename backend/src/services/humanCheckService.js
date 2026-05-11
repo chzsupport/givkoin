@@ -12,6 +12,7 @@ const HUMAN_CHECK_BLOCK_MS = Math.max(
   Number(process.env.HUMAN_CHECK_BLOCK_MS) || (60 * 60 * 1000),
 );
 const HUMAN_CHECK_MAX_ATTEMPTS = 3;
+const HUMAN_CHECK_MAX_FAILED_CHECKS = 3;
 
 function nowIso(nowMs = Date.now()) {
   return new Date(nowMs).toISOString();
@@ -40,6 +41,7 @@ function normalizeHumanCheckState(rowOrUser) {
     blockedUntil: state.blockedUntil || '',
     lastFailedAt: state.lastFailedAt || '',
     lastVariant: state.lastVariant || '',
+    failedChecks: Math.max(0, Number(state.failedChecks) || 0),
     active: state.active && typeof state.active === 'object' ? state.active : null,
   };
 }
@@ -119,6 +121,12 @@ async function getHumanCheckStatus(userId, nowMs = Date.now()) {
   const currentState = currentData.humanCheck && typeof currentData.humanCheck === 'object'
     ? { ...currentData.humanCheck }
     : {};
+  const blockedUntilMs = parseTimeMs(state.blockedUntil);
+  const blockExpired = Boolean(blockedUntilMs && blockedUntilMs <= nowMs);
+  if (blockExpired) {
+    currentState.blockedUntil = '';
+    currentState.failedChecks = 0;
+  }
 
   let nextRequiredAtMs = parseTimeMs(state.nextRequiredAt);
 
@@ -129,6 +137,7 @@ async function getHumanCheckStatus(userId, nowMs = Date.now()) {
       lastPassedAt: currentState.lastPassedAt || nowIso(nowMs),
       nextRequiredAt,
       blockedUntil: '',
+      failedChecks: Math.max(0, Number(currentState.failedChecks) || 0),
       active: null,
     };
     await saveHumanCheckState(row, nextState);
@@ -141,6 +150,12 @@ async function getHumanCheckStatus(userId, nowMs = Date.now()) {
   }
 
   if (nextRequiredAtMs > nowMs) {
+    if (blockExpired) {
+      await saveHumanCheckState(row, {
+        ...currentState,
+        nextRequiredAt: new Date(nextRequiredAtMs).toISOString(),
+      });
+    }
     return {
       ok: true,
       blocked: false,
@@ -208,6 +223,7 @@ async function completeHumanCheck({ userId, challengeId, variant }, nowMs = Date
     nextRequiredAt,
     blockedUntil: '',
     lastVariant: active.variant || '',
+    failedChecks: 0,
     active: null,
   });
 
@@ -249,17 +265,27 @@ async function failHumanCheck({ userId, challengeId, variant }, nowMs = Date.now
     : {};
 
   if (attempts >= HUMAN_CHECK_MAX_ATTEMPTS) {
-    const blockedUntil = nowIso(nowMs + HUMAN_CHECK_BLOCK_MS);
+    const failedChecks = Math.max(0, Number(currentState.failedChecks) || 0) + 1;
+    const shouldBlock = failedChecks >= HUMAN_CHECK_MAX_FAILED_CHECKS;
+    const blockedUntil = shouldBlock ? nowIso(nowMs + HUMAN_CHECK_BLOCK_MS) : '';
+    const nextRequiredAt = nowIso(nowMs + HUMAN_CHECK_INTERVAL_MS);
     await saveHumanCheckState(row, {
       ...currentState,
       blockedUntil,
       lastFailedAt: nowIso(nowMs),
+      lastVariant: active.variant || '',
+      failedChecks,
+      nextRequiredAt,
       active: null,
     });
     return {
       ok: true,
-      blocked: true,
+      blocked: shouldBlock,
       blockedUntil,
+      challengeFailed: true,
+      failedChecks,
+      failedChecksLeft: Math.max(0, HUMAN_CHECK_MAX_FAILED_CHECKS - failedChecks),
+      nextRequiredAt,
       attemptsLeft: 0,
     };
   }
@@ -284,6 +310,7 @@ async function failHumanCheck({ userId, challengeId, variant }, nowMs = Date.now
 
 module.exports = {
   HUMAN_CHECK_MAX_ATTEMPTS,
+  HUMAN_CHECK_MAX_FAILED_CHECKS,
   HUMAN_CHECK_INTERVAL_MS,
   HUMAN_CHECK_BLOCK_MS,
   getHumanCheckStatus,
