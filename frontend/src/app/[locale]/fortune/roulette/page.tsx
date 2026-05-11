@@ -31,13 +31,10 @@ const ROULETTE_SECTORS = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
-const ROULETTE_ACCEL_DURATION_MS = 2000;
-const ROULETTE_CRUISE_DURATION_MS = 2000;
-const ROULETTE_SETTLE_DURATION_MS = 2000;
-const ROULETTE_SETTLE_DURATION_SEC = ROULETTE_SETTLE_DURATION_MS / 1000;
-const ROULETTE_ACCEL_TURNS = 1.35;
-const ROULETTE_CRUISE_TURNS = 2;
-const ROULETTE_RESULT_TURNS = 2;
+const ROULETTE_SPIN_DURATION_MS = 6000;
+const ROULETTE_SPIN_DURATION_SEC = ROULETTE_SPIN_DURATION_MS / 1000;
+const ROULETTE_TOTAL_TURNS = 8;
+const ROULETTE_EDGE_TURNS = 1.15;
 
 const normalizeRotation = (value: number) => ((value % 360) + 360) % 360;
 
@@ -45,6 +42,7 @@ const WheelComponent = ({
     size,
     isSpinning,
     rotation,
+    rotationPath,
     spinDuration,
     spinMode,
     onRotationUpdate,
@@ -52,8 +50,9 @@ const WheelComponent = ({
     size: number;
     isSpinning: boolean;
     rotation: number;
+    rotationPath: number[] | null;
     spinDuration: number;
-    spinMode: 'idle' | 'accelerating' | 'cruising' | 'settling';
+    spinMode: 'idle' | 'spinning';
     onRotationUpdate?: (rotation: number) => void;
 }) => {
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
@@ -66,14 +65,14 @@ const WheelComponent = ({
             {isSpinning && <div className="absolute inset-0 rounded-full bg-yellow-500/20 blur-2xl animate-pulse" />}
             <motion.div
                 className="w-full h-full rounded-full border-[5px] border-yellow-600/50 shadow-2xl relative overflow-hidden bg-[#1a1a2e]"
-                animate={{ rotate: rotation }}
-                transition={spinMode === 'accelerating'
-                    ? { duration: spinDuration, ease: [0.42, 0, 1, 1] }
-                    : spinMode === 'cruising'
-                        ? { duration: spinDuration, ease: 'linear' }
-                    : spinMode === 'settling'
-                        ? { duration: spinDuration, ease: [0.16, 0.76, 0.24, 1] }
-                        : { duration: 0 }}
+                animate={{ rotate: rotationPath || rotation }}
+                transition={spinMode === 'spinning'
+                    ? {
+                        duration: spinDuration,
+                        times: rotationPath ? [0, 0.16, 0.84, 1] : undefined,
+                        ease: rotationPath ? ['easeIn', 'linear', 'easeOut'] : 'easeInOut',
+                    }
+                    : { duration: 0 }}
                 onUpdate={(latest) => {
                     const nextRotate = latest.rotate;
                     if (typeof nextRotate === 'number') {
@@ -170,9 +169,9 @@ export default function RoulettePage() {
     const toast = useToast();
     const { t, localePath } = useI18n();
     const [isSpinning, setIsSpinning] = useState(false);
-    const [spinMode, setSpinMode] = useState<'idle' | 'accelerating' | 'cruising' | 'settling'>('idle');
+    const [spinMode, setSpinMode] = useState<'idle' | 'spinning'>('idle');
     const [rotation, setRotation] = useState(0);
-    const [spinDuration, setSpinDuration] = useState(ROULETTE_SETTLE_DURATION_SEC);
+    const [rotationPath, setRotationPath] = useState<number[] | null>(null);
     const [winResult, setWinResult] = useState<{ label: string; type: string; value: number | string } | null>(null);
     const [history, setHistory] = useState<{ label: string; id: number }[]>([]);
     const [spinCounter, setSpinCounter] = useState(1);
@@ -189,21 +188,6 @@ export default function RoulettePage() {
     const rotationRef = useRef(0);
     const spinFinishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
-
-    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    const animateWheelStep = async (
-        mode: 'accelerating' | 'cruising',
-        turns: number,
-        durationMs: number
-    ) => {
-        const targetRotation = rotationRef.current + 360 * turns;
-        rotationRef.current = targetRotation;
-        setSpinMode(mode);
-        setSpinDuration(durationMs / 1000);
-        setRotation(targetRotation);
-        await wait(durationMs);
-    };
 
     useEffect(() => {
         rotationRef.current = rotation;
@@ -315,6 +299,10 @@ export default function RoulettePage() {
         return () => window.removeEventListener('resize', updateLayout);
     }, []);
 
+    const handleRotationUpdate = useCallback((nextRotation: number) => {
+        rotationRef.current = nextRotation;
+    }, []);
+
     useEffect(() => {
         const updateTimer = () => {
             if (!nextResetAt) return;
@@ -323,13 +311,13 @@ export default function RoulettePage() {
             const diffMs = Math.max(0, reset - now);
             const hours = Math.floor(diffMs / (1000 * 60 * 60));
             const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-            setTimeUntilReset(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+            setTimeUntilReset(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
         };
+        if (isSpinning) return;
         updateTimer();
-        const interval = setInterval(updateTimer, 1000);
+        const interval = setInterval(updateTimer, 60000);
         return () => clearInterval(interval);
-    }, [nextResetAt]);
+    }, [nextResetAt, isSpinning]);
 
     const fetchGlobalStats = async () => {
         try {
@@ -384,29 +372,20 @@ export default function RoulettePage() {
     const handleSpin = async () => {
         if (!user || spinsLeft <= 0 || isSpinning) return;
         setIsSpinning(true);
-        setSpinMode('accelerating');
+        setSpinMode('spinning');
         setWinResult(null);
+        setRotationPath(null);
 
         if (spinFinishTimeoutRef.current) {
             clearTimeout(spinFinishTimeoutRef.current);
             spinFinishTimeoutRef.current = null;
         }
 
-        let requestDone = false;
         const spinRequest = apiPost<unknown>('/fortune/spin', {}, { suppressBoostOffer: true })
             .then((res) => ({ res }))
-            .catch((error: unknown) => ({ error }))
-            .finally(() => {
-                requestDone = true;
-            });
+            .catch((error: unknown) => ({ error }));
 
         try {
-            await animateWheelStep('accelerating', ROULETTE_ACCEL_TURNS, ROULETTE_ACCEL_DURATION_MS);
-            await animateWheelStep('cruising', ROULETTE_CRUISE_TURNS, ROULETTE_CRUISE_DURATION_MS);
-            while (!requestDone) {
-                await animateWheelStep('cruising', ROULETTE_CRUISE_TURNS, ROULETTE_CRUISE_DURATION_MS);
-            }
-
             const spinResponse = await spinRequest;
             if ('error' in spinResponse) throw spinResponse.error;
             const res = spinResponse.res;
@@ -427,11 +406,18 @@ export default function RoulettePage() {
             const currentAngle = normalizeRotation(rotationRef.current);
             let angleDiff = targetAngle - currentAngle;
             if (angleDiff < 0) angleDiff += 360;
-            const targetRotation = rotationRef.current + (360 * ROULETTE_RESULT_TURNS) + angleDiff;
+            const startRotation = rotationRef.current;
+            const targetRotation = startRotation + (360 * ROULETTE_TOTAL_TURNS) + angleDiff;
+            const edgeRotation = 360 * ROULETTE_EDGE_TURNS;
+            const path = [
+                startRotation,
+                startRotation + edgeRotation,
+                targetRotation - edgeRotation,
+                targetRotation,
+            ];
 
             rotationRef.current = targetRotation;
-            setSpinMode('settling');
-            setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
+            setRotationPath(path);
             setRotation(targetRotation);
 
             spinFinishTimeoutRef.current = setTimeout(async () => {
@@ -439,7 +425,7 @@ export default function RoulettePage() {
                 rotationRef.current = normalizedRotation;
                 setIsSpinning(false);
                 setSpinMode('idle');
-                setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
+                setRotationPath(null);
                 setRotation(normalizedRotation);
                 setWinResult({ label: resultLabel, type: resultType, value: resultValue });
                 setSpinsLeft(remainingSpins);
@@ -469,13 +455,13 @@ export default function RoulettePage() {
                 await refreshUser();
                 await fetchGlobalStats();
                 await fetchUserStats();
-            }, ROULETTE_SETTLE_DURATION_MS);
+            }, ROULETTE_SPIN_DURATION_MS);
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';
             toast.error(t('common.error'), message || t('fortune.spin_error'));
             setIsSpinning(false);
             setSpinMode('idle');
-            setSpinDuration(ROULETTE_SETTLE_DURATION_SEC);
+            setRotationPath(null);
         }
     };
 
@@ -591,11 +577,10 @@ export default function RoulettePage() {
                                     size={landscapeWheelSize}
                                     isSpinning={isSpinning}
                                     rotation={rotation}
-                                    spinDuration={spinDuration}
+                                    rotationPath={rotationPath}
+                                    spinDuration={ROULETTE_SPIN_DURATION_SEC}
                                     spinMode={spinMode}
-                                    onRotationUpdate={(nextRotation) => {
-                                        rotationRef.current = nextRotation;
-                                    }}
+                                    onRotationUpdate={handleRotationUpdate}
                                 />
                                 <SpinButton
                                     onClick={handleSpin}
@@ -738,11 +723,10 @@ export default function RoulettePage() {
                             size={portraitWheelSize}
                             isSpinning={isSpinning}
                             rotation={rotation}
-                            spinDuration={spinDuration}
+                            rotationPath={rotationPath}
+                            spinDuration={ROULETTE_SPIN_DURATION_SEC}
                             spinMode={spinMode}
-                            onRotationUpdate={(nextRotation) => {
-                                rotationRef.current = nextRotation;
-                            }}
+                            onRotationUpdate={handleRotationUpdate}
                         />
                         <SpinButton
                             onClick={handleSpin}
