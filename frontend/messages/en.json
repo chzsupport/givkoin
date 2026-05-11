@@ -76,7 +76,7 @@
   "human_check": {
     "eyebrow": "Check",
     "title": "Confirm that you are human",
-    "description": "This check is required. One check gives 3 attempts. If all attempts are used, you will be signed out. After 3 failed checks in a row, access will be closed for 1 hour.",
+    "description": "Complete this short check to continue.",
     "attempts_left": "Attempts left",
     "variant_hold": "Hold the button",
     "variant_slider": "Slider",
