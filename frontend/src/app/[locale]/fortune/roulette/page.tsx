@@ -31,22 +31,17 @@ const ROULETTE_SECTORS = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
-const ROULETTE_SPIN_DURATION_MS = 5600;
+const ROULETTE_SPIN_DURATION_MS = 6200;
 const ROULETTE_SPIN_DURATION_SEC = ROULETTE_SPIN_DURATION_MS / 1000;
-const ROULETTE_TOTAL_TURNS = 5;
-const ROULETTE_START_TURNS = 0.18;
-const ROULETTE_ACCEL_TURNS = 0.95;
-const ROULETTE_SLOWDOWN_TURNS = 1.85;
-const ROULETTE_FINAL_SLOW_TURNS = 0.48;
-const ROULETTE_LAST_CRAWL_TURNS = 0.08;
-const ROULETTE_PATH_TIMES = [0, 0.17, 0.34, 0.61, 0.83, 0.95, 1];
+const ROULETTE_TOTAL_TURNS = 10;
+const ROULETTE_TURNS_PER_STAGE = 2;
+const ROULETTE_PATH_TIMES = [0, 0.24, 0.41, 0.53, 0.70, 1];
 const ROULETTE_PATH_EASING = [
-    'cubic-bezier(0.55, 0, 0.85, 0.2)',
-    'cubic-bezier(0.25, 0.05, 0.65, 1)',
     'linear',
-    'cubic-bezier(0.2, 0.7, 0.22, 1)',
-    'cubic-bezier(0.12, 0.82, 0.18, 1)',
-    'cubic-bezier(0.04, 0.95, 0.08, 1)',
+    'linear',
+    'linear',
+    'linear',
+    'linear',
     'linear',
 ];
 
@@ -385,20 +380,20 @@ export default function RoulettePage() {
         let angleDiff = targetAngle - currentAngle;
         if (angleDiff < 0) angleDiff += 360;
         const startRotation = rotationRef.current;
+        const stageRotation = 360 * ROULETTE_TURNS_PER_STAGE;
         const targetRotation = startRotation + (360 * ROULETTE_TOTAL_TURNS) + angleDiff;
         const path = [
             startRotation,
-            startRotation + 360 * ROULETTE_START_TURNS,
-            startRotation + 360 * ROULETTE_ACCEL_TURNS,
-            targetRotation - 360 * ROULETTE_SLOWDOWN_TURNS,
-            targetRotation - 360 * ROULETTE_FINAL_SLOW_TURNS,
-            targetRotation - 360 * ROULETTE_LAST_CRAWL_TURNS,
+            startRotation + stageRotation,
+            startRotation + stageRotation * 2,
+            startRotation + stageRotation * 3,
+            startRotation + stageRotation * 4,
             targetRotation,
         ];
 
         rotationRef.current = targetRotation;
         setRotationPath(path);
-        setRotation(targetRotation);
+        setRotation(startRotation);
         return targetRotation;
     };
 
