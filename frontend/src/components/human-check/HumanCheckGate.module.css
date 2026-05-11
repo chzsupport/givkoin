@@ -147,6 +147,20 @@
   box-shadow: 0 0 38px rgba(255, 91, 122, 0.28);
 }
 
+.countdown {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 208, 218, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .variantWrap {
   position: relative;
   min-height: 250px;

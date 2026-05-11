@@ -384,20 +384,32 @@ function VariantRenderer(props: VariantProps & { variant: HumanCheckVariant }) {
 export function HumanCheckGate() {
   const pathname = usePathname();
   const { isAuthenticated, isAuthLoading, logout, user } = useAuth();
-  const { t } = useI18n();
+  const { t, localePath } = useI18n();
   const [challenge, setChallenge] = useState<ActiveChallenge | null>(null);
   const challengeRef = useRef<ActiveChallenge | null>(null);
   const [resetKey, setResetKey] = useState(0);
   const [successVisible, setSuccessVisible] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState('');
+  const [logoutCountdown, setLogoutCountdown] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [lastError, setLastError] = useState('');
+  const logoutStartedRef = useRef(false);
 
   useEffect(() => {
     challengeRef.current = challenge;
   }, [challenge]);
 
   const excluded = isHumanCheckExcludedPath(pathname || '/');
+
+  const startForcedLogout = useCallback((message: string) => {
+    setBlockedMessage(message);
+    setLogoutCountdown(10);
+    setChallenge(null);
+    challengeRef.current = null;
+    setSuccessVisible(false);
+    setLastError('');
+    logoutStartedRef.current = false;
+  }, []);
 
   const loadStatus = useCallback(async () => {
     if (isAuthLoading || !isAuthenticated || !user?._id || excluded) {
@@ -408,8 +420,7 @@ export function HumanCheckGate() {
     try {
       const data = await apiGet<HumanCheckStatus>('/auth/human-check/status', { suppressBoostOffer: true });
       if (data.blocked) {
-        setBlockedMessage(t('human_check.blocked'));
-        window.setTimeout(() => logout(), 900);
+        startForcedLogout(t('human_check.blocked'));
         return;
       }
 
@@ -432,7 +443,29 @@ export function HumanCheckGate() {
       const message = error instanceof Error ? error.message : '';
       if (message) setLastError(message);
     }
-  }, [excluded, isAuthLoading, isAuthenticated, logout, t, user?._id]);
+  }, [excluded, isAuthLoading, isAuthenticated, startForcedLogout, t, user?._id]);
+
+  useEffect(() => {
+    if (!blockedMessage || logoutCountdown == null) return undefined;
+
+    if (logoutCountdown <= 0) {
+      if (logoutStartedRef.current) return undefined;
+      logoutStartedRef.current = true;
+      setBlockedMessage('');
+      setChallenge(null);
+      challengeRef.current = null;
+      logout();
+      window.setTimeout(() => {
+        window.location.replace(localePath('/login'));
+      }, 50);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLogoutCountdown((value) => (value == null ? null : Math.max(0, value - 1)));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [blockedMessage, localePath, logout, logoutCountdown]);
 
   useEffect(() => {
     void loadStatus();
@@ -473,8 +506,7 @@ export function HumanCheckGate() {
         variant: current.variant,
       }, { suppressBoostOffer: true });
       if (data.blocked) {
-        setBlockedMessage(t('human_check.blocked'));
-        window.setTimeout(() => logout(), 900);
+        startForcedLogout(t('human_check.blocked'));
         return;
       }
       setSuccessVisible(true);
@@ -490,7 +522,7 @@ export function HumanCheckGate() {
     } finally {
       setSubmitting(false);
     }
-  }, [loadStatus, logout, submitting, t]);
+  }, [loadStatus, startForcedLogout, submitting, t]);
 
   const handleFail = useCallback(async () => {
     const current = challengeRef.current;
@@ -503,8 +535,7 @@ export function HumanCheckGate() {
         variant: current.variant,
       }, { suppressBoostOffer: true });
       if (data.blocked || data.challengeFailed) {
-        setBlockedMessage(data.message || (data.blocked ? t('human_check.blocked') : t('human_check.failed_logout')));
-        window.setTimeout(() => logout(), 1300);
+        startForcedLogout(data.message || (data.blocked ? t('human_check.blocked') : t('human_check.failed_logout')));
         return;
       }
       setChallenge({
@@ -515,12 +546,11 @@ export function HumanCheckGate() {
       setLastError(t('human_check.wrong'));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('human_check.blocked');
-      setBlockedMessage(message);
-      window.setTimeout(() => logout(), 1300);
+      startForcedLogout(message);
     } finally {
       setSubmitting(false);
     }
-  }, [logout, submitting, t]);
+  }, [startForcedLogout, submitting, t]);
 
   const active = challenge && !excluded;
 
@@ -578,7 +608,11 @@ export function HumanCheckGate() {
                   <XCircle size={44} />
                 </div>
                 <strong>{blockedMessage}</strong>
-                <span>{t('human_check.logout_notice')}</span>
+                {logoutCountdown != null && (
+                  <span className={styles.countdown}>
+                    {t('human_check.redirect_countdown')}: {logoutCountdown}
+                  </span>
+                )}
               </div>
             )}
           </div>
