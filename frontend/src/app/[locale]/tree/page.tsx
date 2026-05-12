@@ -709,7 +709,7 @@ export default function TreePage() {
       <DailyStreakCalendar inline={false} />
       {/* Background Image */}
       <div className="fixed inset-0 z-0">
-        <Image src="/8k_stars_milky_way.jpg" alt="Milky Way" fill quality={60} sizes="100vw" className="object-cover opacity-90" />
+        <Image src="/background.jpg" alt="Milky Way" fill quality={60} sizes="100vw" className="object-cover opacity-90" />
         <div className="absolute inset-0 bg-black/20" />
       </div>
 
