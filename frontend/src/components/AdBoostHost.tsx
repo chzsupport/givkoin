@@ -66,12 +66,23 @@ type CompleteResponse = {
   };
 };
 
-type DaoVideoInstance = {
-  loadAd: (callback: () => void) => void;
-  preroll: (options: { videoId: string }) => void;
+type DaoAdEventManager = {
+  addEventListener?: (eventType: string, callback: () => void) => void;
 };
 
-type DaoVideoConstructor = new (config: { sourceId: number; tagUrl: string }) => DaoVideoInstance;
+type DaoVideoInstance = {
+  loadAd: (callback: () => void, onError?: () => void) => void;
+  preroll: (options: { videoId: string }) => void;
+  destroy?: () => void;
+  adsManager?: DaoAdEventManager;
+};
+
+type DaoVideoConstructor = new (config: {
+  sourceId: number;
+  tagUrl: string;
+  allAdsComplete?: () => void;
+  notSupported?: () => void;
+}) => DaoVideoInstance;
 
 declare global {
   interface Window {
@@ -84,8 +95,10 @@ const DAO_PREROLL_VIDEO_ID = 'givkoin-ad-boost-video';
 const DAO_PREROLL_CREATIVE_ID = 'dao_preroll_61874';
 const DAO_PREROLL_SOURCE_ID = 61874;
 const DAO_PREROLL_SCRIPT_SRC = 'https://video.agenteimmobiliare.info/d-video.js?b=32';
-const DAO_PREROLL_TAG_URL = 'https://video.agenteimmobiliare.info/api/video/tag?sourceId=61874&tmax=500&video-skipafter=15&count=1';
-const DAO_PREROLL_REWARD_DELAY_MS = 15_000;
+const DAO_PREROLL_TAG_URL = 'https://video.agenteimmobiliare.info/api/video/tag?sourceId=61874&tmax=500&video-skipafter=30&count=1';
+const DAO_PREROLL_MIN_REWARD_DELAY_MS = 30_000;
+const DAO_PREROLL_MANAGER_TIMEOUT_MS = 20_000;
+const DAO_PREROLL_MANAGER_POLL_MS = 100;
 const DAO_REWARD_NOTICE_MS = 1_400;
 const TECHNICAL_VIDEO_SRC = '/bonus.mp4';
 
@@ -165,10 +178,18 @@ export function AdBoostHost() {
   const [daoPlayerActive, setDaoPlayerActive] = useState(false);
   const [daoStatus, setDaoStatus] = useState<'idle' | 'loading' | 'playing' | 'rewarding' | 'rewarded'>('idle');
   const [rewardNoticeVisible, setRewardNoticeVisible] = useState(false);
+  const [technicalVideoVisible, setTechnicalVideoVisible] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const daoInstanceRef = useRef<DaoVideoInstance | null>(null);
   const daoStartedRef = useRef(false);
+  const adStartedRef = useRef(false);
+  const adStartedAtRef = useRef(0);
+  const adSkippedRef = useRef(false);
+  const adCompletionHandledRef = useRef(false);
+  const rewardRequestStartedRef = useRef(false);
   const dismissedOfferIdsRef = useRef<Set<string>>(new Set());
   const rewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const adManagerPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTimers = useCallback(() => {
@@ -176,19 +197,44 @@ export function AdBoostHost() {
       clearTimeout(rewardTimerRef.current);
       rewardTimerRef.current = null;
     }
+    if (adManagerPollTimerRef.current) {
+      clearTimeout(adManagerPollTimerRef.current);
+      adManagerPollTimerRef.current = null;
+    }
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
   }, []);
 
+  const destroyDaoInstance = useCallback(() => {
+    if (daoInstanceRef.current?.destroy) {
+      try {
+        daoInstanceRef.current.destroy();
+      } catch {
+        // DAO.AD may throw if its container was already removed.
+      }
+    }
+    daoInstanceRef.current = null;
+    if (typeof window !== 'undefined') {
+      window.daoVideoPreRoll = undefined;
+    }
+  }, []);
+
   const resetPlayerState = useCallback(() => {
     clearTimers();
+    destroyDaoInstance();
     daoStartedRef.current = false;
+    adStartedRef.current = false;
+    adStartedAtRef.current = 0;
+    adSkippedRef.current = false;
+    adCompletionHandledRef.current = false;
+    rewardRequestStartedRef.current = false;
     setDaoPlayerActive(false);
     setDaoStatus('idle');
     setRewardNoticeVisible(false);
-  }, [clearTimers]);
+    setTechnicalVideoVisible(false);
+  }, [clearTimers, destroyDaoInstance]);
 
   const showOffer = useCallback((detail: AdBoostOffer | null | undefined) => {
     if (!detail?.id || dismissedOfferIdsRef.current.has(detail.id)) return;
@@ -270,7 +316,8 @@ export function AdBoostHost() {
   }, [creativeId, offer?.page]);
 
   const completeReward = useCallback(async () => {
-    if (!sessionId || completing) return;
+    if (!sessionId || rewardRequestStartedRef.current) return;
+    rewardRequestStartedRef.current = true;
     setCompleting(true);
     setDaoStatus('rewarding');
     try {
@@ -293,10 +340,11 @@ export function AdBoostHost() {
       const message = error instanceof Error ? error.message : t('ads.boost_complete_failed');
       toast.error(t('ads.boost_error'), message);
       setDaoStatus('playing');
+      rewardRequestStartedRef.current = false;
     } finally {
       setCompleting(false);
     }
-  }, [close, completing, recordRewardedAdEvent, sessionId, t, toast, updateUser, user]);
+  }, [close, recordRewardedAdEvent, sessionId, t, toast, updateUser, user]);
 
   const start = useCallback(async () => {
     if (!offer?.id) return;
@@ -329,6 +377,111 @@ export function AdBoostHost() {
     let cancelled = false;
     daoStartedRef.current = true;
     setDaoStatus('loading');
+    setTechnicalVideoVisible(false);
+
+    const failAdWatch = (message: string) => {
+      if (cancelled || adCompletionHandledRef.current || rewardRequestStartedRef.current) return;
+      adCompletionHandledRef.current = true;
+      recordRewardedAdEvent('vast_error');
+      video.pause();
+      toast.error(t('ads.boost_video_failed'), message);
+      close();
+    };
+
+    const finishAdWatch = () => {
+      if (cancelled || adCompletionHandledRef.current) return;
+
+      if (!adStartedRef.current || adSkippedRef.current) {
+        failAdWatch(t('ads.boost_ad_not_completed'));
+        return;
+      }
+
+      adCompletionHandledRef.current = true;
+      const elapsedMs = Date.now() - (adStartedAtRef.current || Date.now());
+      const waitMs = Math.max(0, DAO_PREROLL_MIN_REWARD_DELAY_MS - elapsedMs);
+
+      if (waitMs > 250) {
+        setTechnicalVideoVisible(true);
+        try {
+          video.currentTime = 0;
+        } catch {
+          // The browser may reject seeking if metadata is not ready yet.
+        }
+        video.play().catch(() => {});
+        rewardTimerRef.current = setTimeout(() => {
+          video.pause();
+          void completeReward();
+        }, waitMs);
+        return;
+      }
+
+      video.pause();
+      void completeReward();
+    };
+
+    const attachAdManagerGuards = (adsManager: DaoAdEventManager) => {
+      const googleIma = (window as typeof window & {
+        google?: {
+          ima?: {
+            AdEvent?: { Type?: Record<string, string> };
+            AdErrorEvent?: { Type?: Record<string, string> };
+          };
+        };
+      }).google?.ima;
+      const adEventTypes = googleIma?.AdEvent?.Type;
+      const adErrorTypes = googleIma?.AdErrorEvent?.Type;
+      const addListener = (eventType: string | undefined, callback: () => void) => {
+        if (eventType) {
+          adsManager.addEventListener?.(eventType, callback);
+        }
+      };
+
+      addListener(adEventTypes?.STARTED, () => {
+        if (adStartedRef.current) return;
+        adStartedRef.current = true;
+        adStartedAtRef.current = Date.now();
+        recordRewardedAdEvent('vast_start');
+        setDaoStatus('playing');
+      });
+      addListener(adEventTypes?.SKIPPED, () => {
+        adSkippedRef.current = true;
+        failAdWatch(t('ads.boost_ad_not_completed'));
+      });
+      addListener(adEventTypes?.USER_CLOSE, () => {
+        adSkippedRef.current = true;
+        failAdWatch(t('ads.boost_ad_not_completed'));
+      });
+      addListener(adEventTypes?.ALL_ADS_COMPLETED, finishAdWatch);
+      addListener(adErrorTypes?.AD_ERROR, () => failAdWatch(t('ads.boost_ad_unavailable')));
+    };
+
+    const waitForAdsManager = (daoVideoPreRoll: DaoVideoInstance) => {
+      const startedAt = Date.now();
+
+      const tick = () => {
+        if (cancelled) return;
+        const adsManager = daoVideoPreRoll.adsManager;
+        if (adsManager) {
+          adManagerPollTimerRef.current = null;
+          attachAdManagerGuards(adsManager);
+          video.currentTime = 0;
+          video.play().catch(() => {
+            failAdWatch(t('ads.boost_video_unavailable'));
+          });
+          return;
+        }
+
+        if (Date.now() - startedAt >= DAO_PREROLL_MANAGER_TIMEOUT_MS) {
+          adManagerPollTimerRef.current = null;
+          failAdWatch(t('ads.boost_ad_unavailable'));
+          return;
+        }
+
+        adManagerPollTimerRef.current = setTimeout(tick, DAO_PREROLL_MANAGER_POLL_MS);
+      };
+
+      tick();
+    };
 
     loadDaoVideoScript()
       .then(() => {
@@ -340,18 +493,16 @@ export function AdBoostHost() {
         const daoVideoPreRoll = new DaoVideo({
           sourceId: DAO_PREROLL_SOURCE_ID,
           tagUrl: DAO_PREROLL_TAG_URL,
+          allAdsComplete: finishAdWatch,
+          notSupported: () => failAdWatch(t('ads.boost_video_unavailable')),
         });
+        daoInstanceRef.current = daoVideoPreRoll;
         window.daoVideoPreRoll = daoVideoPreRoll;
         daoVideoPreRoll.loadAd(() => {
           if (cancelled) return;
           daoVideoPreRoll.preroll({ videoId: DAO_PREROLL_VIDEO_ID });
-          recordRewardedAdEvent('vast_start');
-          setDaoStatus('playing');
-          rewardTimerRef.current = setTimeout(() => {
-            void completeReward();
-          }, DAO_PREROLL_REWARD_DELAY_MS);
-          video.play().catch(() => {});
-        });
+          waitForAdsManager(daoVideoPreRoll);
+        }, () => failAdWatch(t('ads.boost_dao_load_failed')));
       })
       .catch((error) => {
         if (cancelled) return;
@@ -431,8 +582,8 @@ export function AdBoostHost() {
                 <video
                   id={DAO_PREROLL_VIDEO_ID}
                   ref={videoRef}
-                  className="aspect-video w-full bg-black"
-                  controls
+                  className={`aspect-video w-full bg-black transition-opacity duration-300 ${technicalVideoVisible ? 'opacity-100' : 'opacity-0'}`}
+                  controls={technicalVideoVisible}
                   playsInline
                   preload="metadata"
                 >

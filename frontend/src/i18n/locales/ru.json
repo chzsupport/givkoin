@@ -1345,8 +1345,10 @@
     "boost_loading_video": "Загружаем видео...",
     "boost_watch_video": "Смотреть видео и получить подарок",
     "boost_reward_after_video": "Награда будет выдана только после полного завершения видео.",
-    "boost_reward_after_ad": "Награда будет выдана после просмотра рекламы.",
+    "boost_reward_after_ad": "Награда будет выдана после полного просмотра рекламы и не раньше чем через 30 секунд.",
     "boost_reward_notice": "Вы получили награду",
+    "boost_ad_unavailable": "Реклама сейчас недоступна. Попробуйте позже.",
+    "boost_ad_not_completed": "Реклама не была досмотрена, награда не начислена.",
     "boost_dao_browser_unavailable": "Браузер недоступен",
     "boost_dao_load_failed": "Не удалось загрузить DAO.AD",
     "boost_dao_player_missing": "DAO.AD не вернул плеер"

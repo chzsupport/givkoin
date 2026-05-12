@@ -1346,8 +1346,10 @@
     "boost_loading_video": "Loading video...",
     "boost_watch_video": "Watch video and get gift",
     "boost_reward_after_video": "The reward is granted only after the video fully ends.",
-    "boost_reward_after_ad": "The reward will be granted after watching the ad.",
+    "boost_reward_after_ad": "The reward will be granted after watching the full ad and no earlier than 30 seconds.",
     "boost_reward_notice": "You received a reward",
+    "boost_ad_unavailable": "The ad is unavailable right now. Try again later.",
+    "boost_ad_not_completed": "The ad was not watched to the end, so the reward was not credited.",
     "boost_dao_browser_unavailable": "Browser is unavailable",
     "boost_dao_load_failed": "Could not load DAO.AD",
     "boost_dao_player_missing": "DAO.AD did not return the player"
