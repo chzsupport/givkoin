@@ -4,9 +4,6 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 type TreeSceneProps = {
   isTabVisible: boolean;
@@ -861,23 +858,15 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
     const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 5000);
     camera.position.set(0, 240, 620);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ReinhardToneMapping;
     renderer.toneMappingExposure = 1.26;
+    renderer.domElement.style.background = 'transparent';
     container.appendChild(renderer.domElement);
-
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.2, 0.72, 0.05);
-    bloomPass.threshold = 0;
-    bloomPass.strength = 1.35;
-    bloomPass.radius = 0.72;
-    composer.addPass(bloomPass);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -931,7 +920,6 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(nextWidth, nextHeight);
-      composer.setSize(nextWidth, nextHeight);
     };
 
     const animate = () => {
@@ -947,7 +935,7 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       updateSatellites(timeSeconds, satelliteState);
 
       controls.update();
-      composer.render();
+      renderer.render(scene, camera);
     };
 
     const init = async () => {
@@ -1021,7 +1009,6 @@ export default function TreeScene({ isTabVisible }: TreeSceneProps) {
       window.cancelAnimationFrame(frameId);
       window.removeEventListener('resize', onResize);
       controls.dispose();
-      composer.dispose();
       leafGlowTexture.dispose();
       disposeSatelliteState(satelliteState);
       renderer.dispose();
