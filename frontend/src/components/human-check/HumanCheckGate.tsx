@@ -58,6 +58,8 @@ type VariantProps = {
 };
 
 const POLL_INTERVAL_MS = 60 * 1000;
+const CATCH_MOVE_INTERVAL_MS = 1300;
+const CATCH_ORB_STIFFNESS = 77;
 const VARIANT_LABEL_KEYS: Record<HumanCheckVariant, string> = {
   hold: 'human_check.variant_hold',
   slider: 'human_check.variant_slider',
@@ -330,7 +332,7 @@ function CatchVariant({ disabled, resetKey, t, onPass, onFail }: VariantProps) {
         x: Math.random() * 74 + 13,
         y: Math.random() * 58 + 30,
       });
-    }, 900);
+    }, CATCH_MOVE_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [disabled, resetKey]);
 
@@ -356,7 +358,7 @@ function CatchVariant({ disabled, resetKey, t, onPass, onFail }: VariantProps) {
         aria-label={t('human_check.catch_button')}
         onClick={catchOrb}
         animate={{ left: `${position.x}%`, top: `${position.y}%` }}
-        transition={{ type: 'spring', damping: 12, stiffness: 110 }}
+        transition={{ type: 'spring', damping: 12, stiffness: CATCH_ORB_STIFFNESS }}
         whileHover={{ scale: disabled ? 1 : 1.12 }}
         whileTap={{ scale: disabled ? 1 : 0.9 }}
         style={{ transform: 'translate(-50%, -50%)' }}
