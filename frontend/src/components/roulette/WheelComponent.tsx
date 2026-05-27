@@ -16,6 +16,7 @@ export const WheelComponent = ({
     rotationPath,
     spinDuration,
     spinMode,
+    onSpinComplete,
     onRotationUpdate,
 }: {
     size: number;
@@ -24,6 +25,7 @@ export const WheelComponent = ({
     rotationPath: number[] | null;
     spinDuration: number;
     spinMode: RouletteSpinMode;
+    onSpinComplete?: (rotation: number) => void;
     onRotationUpdate?: (rotation: number) => void;
 }) => {
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
@@ -33,10 +35,14 @@ export const WheelComponent = ({
         const node = wheelRef.current;
         if (!node) return;
 
-        if (spinMode !== 'spinning' || !rotationPath?.length) {
-            node.style.transform = `rotate(${rotation}deg)`;
-            return;
-        }
+        if (spinMode === 'spinning') return;
+
+        node.style.transform = `rotate(${rotation}deg)`;
+    }, [rotation, spinMode]);
+
+    useEffect(() => {
+        const node = wheelRef.current;
+        if (!node || spinMode !== 'spinning' || !rotationPath?.length) return;
 
         const keyframes = rotationPath.map((item, index) => ({
             transform: `rotate(${item}deg)`,
@@ -51,14 +57,16 @@ export const WheelComponent = ({
         });
 
         animation.onfinish = () => {
-            node.style.transform = `rotate(${rotationPath[rotationPath.length - 1]}deg)`;
-            onRotationUpdate?.(rotationPath[rotationPath.length - 1]);
+            const finalRotation = rotationPath[rotationPath.length - 1];
+            node.style.transform = `rotate(${finalRotation}deg)`;
+            onRotationUpdate?.(finalRotation);
+            onSpinComplete?.(finalRotation);
         };
 
         return () => {
             animation.cancel();
         };
-    }, [onRotationUpdate, rotation, rotationPath, spinDuration, spinMode]);
+    }, [onRotationUpdate, onSpinComplete, rotationPath, spinDuration, spinMode]);
 
     return (
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>

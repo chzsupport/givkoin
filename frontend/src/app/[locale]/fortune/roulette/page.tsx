@@ -38,6 +38,7 @@ export default function RoulettePage() {
     const {
         handleRotationUpdate,
         handleSpin,
+        handleSpinComplete,
         isSpinning,
         rotation,
         rotationPath,
@@ -72,6 +73,7 @@ export default function RoulettePage() {
                 landscapeWheelSize={landscapeWheelSize}
                 onRotationUpdate={handleRotationUpdate}
                 onSpin={handleSpin}
+                onSpinComplete={handleSpinComplete}
                 onWinClose={() => setWinResult(null)}
                 rotation={rotation}
                 rotationPath={rotationPath}
@@ -99,6 +101,7 @@ export default function RoulettePage() {
             isSpinning={isSpinning}
             onRotationUpdate={handleRotationUpdate}
             onSpin={handleSpin}
+            onSpinComplete={handleSpinComplete}
             onWinClose={() => setWinResult(null)}
             portraitWheelSize={portraitWheelSize}
             rotation={rotation}

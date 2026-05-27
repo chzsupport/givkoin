@@ -18,16 +18,16 @@ export const ROULETTE_SECTORS: RouletteSector[] = [
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
-export const ROULETTE_SPIN_DURATION_MS = 6200;
+export const ROULETTE_SPIN_DURATION_MS = 7200;
 export const ROULETTE_SPIN_DURATION_SEC = ROULETTE_SPIN_DURATION_MS / 1000;
 export const ROULETTE_TOTAL_TURNS = 10;
 export const ROULETTE_TURNS_PER_STAGE = 2;
-export const ROULETTE_PATH_TIMES = [0, 0.24, 0.41, 0.53, 0.70, 1];
+export const ROULETTE_PATH_TIMES = [0, 0.18, 0.42, 0.58, 0.72, 1];
 export const ROULETTE_PATH_EASING = [
+    'cubic-bezier(0.42, 0, 0.78, 0.35)',
     'linear',
     'linear',
     'linear',
-    'linear',
-    'linear',
+    'cubic-bezier(0.08, 0.85, 0.12, 1)',
     'linear',
 ];

@@ -20,6 +20,7 @@ export function RouletteLandscapeView({
     landscapeWheelSize,
     onRotationUpdate,
     onSpin,
+    onSpinComplete,
     onWinClose,
     rotation,
     rotationPath,
@@ -43,6 +44,7 @@ export function RouletteLandscapeView({
     landscapeWheelSize: number;
     onRotationUpdate: (rotation: number) => void;
     onSpin: () => void;
+    onSpinComplete: (rotation: number) => void;
     onWinClose: () => void;
     rotation: number;
     rotationPath: number[] | null;
@@ -120,6 +122,7 @@ export function RouletteLandscapeView({
                                 spinDuration={ROULETTE_SPIN_DURATION_SEC}
                                 spinMode={spinMode}
                                 onRotationUpdate={onRotationUpdate}
+                                onSpinComplete={onSpinComplete}
                             />
                             <SpinButton
                                 onClick={onSpin}

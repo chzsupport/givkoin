@@ -18,6 +18,7 @@ export function RoulettePortraitView({
     isSpinning,
     onRotationUpdate,
     onSpin,
+    onSpinComplete,
     onWinClose,
     portraitWheelSize,
     rotation,
@@ -41,6 +42,7 @@ export function RoulettePortraitView({
     isSpinning: boolean;
     onRotationUpdate: (rotation: number) => void;
     onSpin: () => void;
+    onSpinComplete: (rotation: number) => void;
     onWinClose: () => void;
     portraitWheelSize: number;
     rotation: number;
@@ -109,6 +111,7 @@ export function RoulettePortraitView({
                             spinDuration={ROULETTE_SPIN_DURATION_SEC}
                             spinMode={spinMode}
                             onRotationUpdate={onRotationUpdate}
+                            onSpinComplete={onSpinComplete}
                         />
                         <SpinButton
                             onClick={onSpin}
