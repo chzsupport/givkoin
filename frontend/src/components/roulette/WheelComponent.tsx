@@ -1,114 +1,157 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useId, useMemo } from 'react';
 import { Star } from 'lucide-react';
-import {
-    ROULETTE_PATH_EASING,
-    ROULETTE_PATH_TIMES,
-    ROULETTE_SECTORS,
-} from './constants';
-import type { RouletteSpinMode } from './types';
+import { ROULETTE_SECTORS } from './constants';
+
+const CENTER = 50;
+const OUTER_RADIUS = 48;
+const INNER_RING_RADIUS = 12;
+const LABEL_RADIUS = 34;
+
+const polarPoint = (angle: number, radius: number) => {
+    const radians = (angle * Math.PI) / 180;
+    return {
+        x: CENTER + Math.sin(radians) * radius,
+        y: CENTER - Math.cos(radians) * radius,
+    };
+};
+
+const describeSector = (startAngle: number, endAngle: number) => {
+    const start = polarPoint(startAngle, OUTER_RADIUS);
+    const end = polarPoint(endAngle, OUTER_RADIUS);
+    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+
+    return [
+        `M ${CENTER} ${CENTER}`,
+        `L ${start.x} ${start.y}`,
+        `A ${OUTER_RADIUS} ${OUTER_RADIUS} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+        'Z',
+    ].join(' ');
+};
 
 export const WheelComponent = ({
     size,
     isSpinning,
     rotation,
-    rotationPath,
-    spinDuration,
-    spinMode,
-    onSpinComplete,
-    onRotationUpdate,
 }: {
     size: number;
     isSpinning: boolean;
     rotation: number;
-    rotationPath: number[] | null;
-    spinDuration: number;
-    spinMode: RouletteSpinMode;
-    onSpinComplete?: (rotation: number) => void;
-    onRotationUpdate?: (rotation: number) => void;
 }) => {
+    const gradientId = useId().replace(/:/g, '');
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
-    const wheelRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        const node = wheelRef.current;
-        if (!node) return;
-
-        if (spinMode === 'spinning') return;
-
-        node.style.transform = `rotate(${rotation}deg)`;
-    }, [rotation, spinMode]);
-
-    useEffect(() => {
-        const node = wheelRef.current;
-        if (!node || spinMode !== 'spinning' || !rotationPath?.length) return;
-
-        const keyframes = rotationPath.map((item, index) => ({
-            transform: `rotate(${item}deg)`,
-            offset: ROULETTE_PATH_TIMES[index] ?? undefined,
-            easing: ROULETTE_PATH_EASING[index] || 'linear',
-        }));
-
-        const animation = node.animate(keyframes, {
-            duration: spinDuration * 1000,
-            iterations: 1,
-            fill: 'forwards',
-        });
-
-        animation.onfinish = () => {
-            const finalRotation = rotationPath[rotationPath.length - 1];
-            node.style.transform = `rotate(${finalRotation}deg)`;
-            onRotationUpdate?.(finalRotation);
-            onSpinComplete?.(finalRotation);
-        };
-
-        return () => {
-            animation.cancel();
-        };
-    }, [onRotationUpdate, onSpinComplete, rotationPath, spinDuration, spinMode]);
+    const ticks = useMemo(
+        () => Array.from({ length: ROULETTE_SECTORS.length }, (_, index) => index * sectorAngle),
+        [sectorAngle],
+    );
 
     return (
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[2%] z-20">
-                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[16px] border-t-yellow-400 filter drop-shadow-[0_0_8px_rgba(234,179,8,0.8)]"
-                    style={{ transform: `scale(${size / 280})` }} />
+            <div className="absolute inset-[-8%] rounded-full bg-yellow-400/10 blur-3xl" />
+            {isSpinning && <div className="absolute inset-[-5%] rounded-full bg-cyan-300/10 blur-2xl" />}
+
+            <div className="absolute left-1/2 top-[-3%] z-30 -translate-x-1/2">
+                <div
+                    className="h-0 w-0 border-l-[12px] border-r-[12px] border-t-[28px] border-l-transparent border-r-transparent border-t-yellow-300 drop-shadow-[0_0_12px_rgba(250,204,21,0.9)]"
+                    style={{ transform: `scale(${Math.max(0.75, size / 360)})` }}
+                />
+                <div className="mx-auto -mt-1 h-2 w-2 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)]" />
             </div>
-            {isSpinning && <div className="absolute inset-0 rounded-full bg-yellow-500/20 blur-2xl animate-pulse" />}
+
             <div
-                ref={wheelRef}
-                className="w-full h-full rounded-full border-[5px] border-yellow-600/50 shadow-2xl relative overflow-hidden bg-[#1a1a2e]"
+                className="relative h-full w-full rounded-full border border-yellow-200/30 bg-[#090914] shadow-[0_18px_70px_rgba(0,0,0,0.55),0_0_42px_rgba(234,179,8,0.20)]"
                 style={{
-                    boxShadow: '0 0 30px rgba(234, 179, 8, 0.3), inset 0 0 20px rgba(0,0,0,0.5)',
                     transform: `rotate(${rotation}deg)`,
                     willChange: isSpinning ? 'transform' : 'auto',
                     backfaceVisibility: 'hidden',
                 }}
             >
-                {ROULETTE_SECTORS.map((sector, index) => {
-                    const angle = index * sectorAngle;
-                    return (
-                        <div key={index} className="absolute w-full h-full top-0 left-0" style={{ transform: `rotate(${angle}deg)` }}>
-                            <div className="absolute w-0.5 h-1/2 bg-white/15 top-0 left-1/2 -translate-x-1/2 origin-bottom" />
-                            <div className="absolute w-full h-full top-0 left-0" style={{ transform: `rotate(${sectorAngle / 2}deg)` }}>
-                                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center" style={{ height: '40%', transformOrigin: 'bottom center' }}>
-                                    <span className="block font-bold drop-shadow-md"
-                                        style={{
-                                            textShadow: '0 1px 2px rgba(0,0,0,0.9)',
-                                            color: sector.color,
-                                            fontSize: `${Math.max(10, size / 28)}px`
-                                        }}>
-                                        {sector.label}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-900 rounded-full border-3 border-yellow-500 z-10 flex items-center justify-center shadow-lg"
-                    style={{ width: size * 0.11, height: size * 0.11 }}>
-                    <Star className="text-yellow-500 fill-yellow-500" style={{ width: size * 0.04, height: size * 0.04 }} />
-                </div>
+                <svg className="block h-full w-full rounded-full" viewBox="0 0 100 100" aria-hidden="true">
+                    <defs>
+                        <radialGradient id={`${gradientId}-metal`} cx="50%" cy="42%" r="64%">
+                            <stop offset="0%" stopColor="#fff7cc" stopOpacity="0.82" />
+                            <stop offset="34%" stopColor="#d9a928" stopOpacity="0.32" />
+                            <stop offset="67%" stopColor="#27170a" stopOpacity="0.18" />
+                            <stop offset="100%" stopColor="#050510" stopOpacity="0.84" />
+                        </radialGradient>
+                        <radialGradient id={`${gradientId}-shine`} cx="36%" cy="28%" r="70%">
+                            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.34" />
+                            <stop offset="38%" stopColor="#ffffff" stopOpacity="0.08" />
+                            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                        </radialGradient>
+                        <filter id={`${gradientId}-soft-shadow`} x="-20%" y="-20%" width="140%" height="140%">
+                            <feDropShadow dx="0" dy="2" stdDeviation="1.8" floodColor="#000000" floodOpacity="0.45" />
+                        </filter>
+                    </defs>
+
+                    <circle cx={CENTER} cy={CENTER} r="49" fill="#050510" />
+
+                    {ROULETTE_SECTORS.map((sector, index) => {
+                        const startAngle = index * sectorAngle;
+                        const endAngle = startAngle + sectorAngle;
+                        const labelAngle = startAngle + sectorAngle / 2;
+                        const labelPoint = polarPoint(labelAngle, LABEL_RADIUS);
+                        const label = sector.type === 'k' ? `${sector.label}K` : sector.label;
+
+                        return (
+                            <g key={`${sector.type}-${sector.label}-${index}`}>
+                                <path
+                                    d={describeSector(startAngle, endAngle)}
+                                    fill={sector.color}
+                                    opacity="0.92"
+                                    stroke="rgba(255,255,255,0.28)"
+                                    strokeWidth="0.35"
+                                />
+                                <path
+                                    d={describeSector(startAngle + 0.3, endAngle - 0.3)}
+                                    fill={`url(#${gradientId}-shine)`}
+                                    opacity="0.72"
+                                />
+                                <text
+                                    x={labelPoint.x}
+                                    y={labelPoint.y}
+                                    fill="#ffffff"
+                                    fontSize="4.6"
+                                    fontWeight="800"
+                                    textAnchor="middle"
+                                    dominantBaseline="middle"
+                                    transform={`rotate(${labelAngle} ${labelPoint.x} ${labelPoint.y})`}
+                                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.85)' }}
+                                >
+                                    {label}
+                                </text>
+                            </g>
+                        );
+                    })}
+
+                    {ticks.map((angle) => {
+                        const outer = polarPoint(angle, 48);
+                        const inner = polarPoint(angle, 41.5);
+                        return (
+                            <line
+                                key={angle}
+                                x1={inner.x}
+                                y1={inner.y}
+                                x2={outer.x}
+                                y2={outer.y}
+                                stroke="#fff7cc"
+                                strokeOpacity="0.54"
+                                strokeWidth="0.55"
+                            />
+                        );
+                    })}
+
+                    <circle cx={CENTER} cy={CENTER} r="49" fill="none" stroke={`url(#${gradientId}-metal)`} strokeWidth="3.5" />
+                    <circle cx={CENTER} cy={CENTER} r="43.2" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="0.7" />
+                    <circle cx={CENTER} cy={CENTER} r={INNER_RING_RADIUS} fill="#0a0a14" stroke="#ffd166" strokeWidth="1.3" filter={`url(#${gradientId}-soft-shadow)`} />
+                    <circle cx={CENTER} cy={CENTER} r="7.2" fill={`url(#${gradientId}-metal)`} stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
+                </svg>
+            </div>
+
+            <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-yellow-100/40 bg-[#090914] shadow-[0_0_18px_rgba(255,209,102,0.45)]"
+                style={{ width: size * 0.16, height: size * 0.16 }}>
+                <Star className="fill-yellow-300 text-yellow-300" style={{ width: size * 0.055, height: size * 0.055 }} />
             </div>
         </div>
     );

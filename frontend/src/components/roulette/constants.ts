@@ -19,15 +19,7 @@ export const ROULETTE_SECTORS: RouletteSector[] = [
 ];
 
 export const ROULETTE_SPIN_DURATION_MS = 7200;
-export const ROULETTE_SPIN_DURATION_SEC = ROULETTE_SPIN_DURATION_MS / 1000;
-export const ROULETTE_TOTAL_TURNS = 10;
-export const ROULETTE_TURNS_PER_STAGE = 2;
-export const ROULETTE_PATH_TIMES = [0, 0.18, 0.42, 0.58, 0.72, 1];
-export const ROULETTE_PATH_EASING = [
-    'cubic-bezier(0.42, 0, 0.78, 0.35)',
-    'linear',
-    'linear',
-    'linear',
-    'cubic-bezier(0.08, 0.85, 0.12, 1)',
-    'linear',
-];
+export const ROULETTE_TOTAL_TURNS = 9;
+export const ROULETTE_ACCELERATION_SHARE = 0.22;
+export const ROULETTE_COAST_SHARE = 0.42;
+export const ROULETTE_DECELERATION_SHARE = 0.36;

@@ -1,11 +1,10 @@
 import { Activity, Clock, Gift, RotateCw, Target, TrendingUp } from 'lucide-react';
 import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
-import { ROULETTE_SPIN_DURATION_SEC } from './constants';
 import { RouletteBackground } from './RouletteBackground';
 import { RouletteHeader } from './RouletteHeader';
 import { RouletteHistoryRows } from './RouletteHistoryRows';
 import { SpinButton } from './SpinButton';
-import type { RouletteGlobalStats, RouletteHistoryItem, RouletteSpinMode, RouletteSpinResult, RouletteTodayWins } from './types';
+import type { RouletteGlobalStats, RouletteHistoryItem, RouletteSpinResult, RouletteTodayWins } from './types';
 import { WheelComponent } from './WheelComponent';
 import { WinModal } from './WinModal';
 
@@ -16,14 +15,10 @@ export function RoulettePortraitView({
     globalStats,
     history,
     isSpinning,
-    onRotationUpdate,
     onSpin,
-    onSpinComplete,
     onWinClose,
     portraitWheelSize,
     rotation,
-    rotationPath,
-    spinMode,
     spinsLeft,
     t,
     timeUntilReset,
@@ -40,14 +35,10 @@ export function RoulettePortraitView({
     globalStats: RouletteGlobalStats | null;
     history: RouletteHistoryItem[];
     isSpinning: boolean;
-    onRotationUpdate: (rotation: number) => void;
     onSpin: () => void;
-    onSpinComplete: (rotation: number) => void;
     onWinClose: () => void;
     portraitWheelSize: number;
     rotation: number;
-    rotationPath: number[] | null;
-    spinMode: RouletteSpinMode;
     spinsLeft: number;
     t: (key: string) => string;
     timeUntilReset: string;
@@ -107,11 +98,6 @@ export function RoulettePortraitView({
                             size={portraitWheelSize}
                             isSpinning={isSpinning}
                             rotation={rotation}
-                            rotationPath={rotationPath}
-                            spinDuration={ROULETTE_SPIN_DURATION_SEC}
-                            spinMode={spinMode}
-                            onRotationUpdate={onRotationUpdate}
-                            onSpinComplete={onSpinComplete}
                         />
                         <SpinButton
                             onClick={onSpin}

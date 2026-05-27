@@ -36,14 +36,10 @@ export default function RoulettePage() {
         sideAdSlot,
     } = useRouletteLayout();
     const {
-        handleRotationUpdate,
         handleSpin,
-        handleSpinComplete,
         isSpinning,
         rotation,
-        rotationPath,
         setWinResult,
-        spinMode,
         winResult,
     } = useRouletteSpin({
         fetchGlobalStats,
@@ -71,14 +67,10 @@ export default function RoulettePage() {
                 history={history}
                 isSpinning={isSpinning}
                 landscapeWheelSize={landscapeWheelSize}
-                onRotationUpdate={handleRotationUpdate}
                 onSpin={handleSpin}
-                onSpinComplete={handleSpinComplete}
                 onWinClose={() => setWinResult(null)}
                 rotation={rotation}
-                rotationPath={rotationPath}
                 sideAdSlot={sideAdSlot}
-                spinMode={spinMode}
                 spinsLeft={spinsLeft}
                 t={t}
                 timeUntilReset={timeUntilReset}
@@ -99,14 +91,10 @@ export default function RoulettePage() {
             globalStats={globalStats}
             history={history}
             isSpinning={isSpinning}
-            onRotationUpdate={handleRotationUpdate}
             onSpin={handleSpin}
-            onSpinComplete={handleSpinComplete}
             onWinClose={() => setWinResult(null)}
             portraitWheelSize={portraitWheelSize}
             rotation={rotation}
-            rotationPath={rotationPath}
-            spinMode={spinMode}
             spinsLeft={spinsLeft}
             t={t}
             timeUntilReset={timeUntilReset}

@@ -5,8 +5,6 @@ export type RouletteSector = {
     color: string;
 };
 
-export type RouletteSpinMode = 'idle' | 'spinning';
-
 export type RouletteSpinResult = {
     label: string;
     type: string;

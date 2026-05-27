@@ -3,16 +3,45 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { apiPost } from '@/utils/api';
 import {
+    ROULETTE_ACCELERATION_SHARE,
+    ROULETTE_COAST_SHARE,
+    ROULETTE_DECELERATION_SHARE,
     ROULETTE_SECTORS,
     ROULETTE_SPIN_DURATION_MS,
     ROULETTE_TOTAL_TURNS,
-    ROULETTE_TURNS_PER_STAGE,
 } from './constants';
 import { emitRewardOffer, normalizeRotation, parseSpinResult } from './rouletteUtils';
-import type { RoulettePlannedSpin, RouletteSpinMode, RouletteSpinResult, RouletteTodayWins } from './types';
+import type { RoulettePlannedSpin, RouletteSpinResult, RouletteTodayWins } from './types';
 
 type RouletteToast = {
     error: (title: string, message?: string) => void;
+};
+
+const smoothstepIntegral = (value: number) => (value * value * value) - (0.5 * value * value * value * value);
+
+const getRouletteMotionProgress = (rawProgress: number) => {
+    const progress = Math.min(1, Math.max(0, rawProgress));
+    const acceleration = ROULETTE_ACCELERATION_SHARE;
+    const coast = ROULETTE_COAST_SHARE;
+    const deceleration = ROULETTE_DECELERATION_SHARE;
+    const totalDistance = (acceleration * 0.5) + coast + (deceleration * 0.5);
+
+    if (progress <= acceleration) {
+        const localProgress = progress / acceleration;
+        return (acceleration * smoothstepIntegral(localProgress)) / totalDistance;
+    }
+
+    if (progress <= acceleration + coast) {
+        const distance = (acceleration * 0.5) + (progress - acceleration);
+        return distance / totalDistance;
+    }
+
+    const localProgress = (progress - acceleration - coast) / deceleration;
+    const decelerationDistance = deceleration * (
+        localProgress - smoothstepIntegral(localProgress)
+    );
+    const distance = (acceleration * 0.5) + coast + decelerationDistance;
+    return distance / totalDistance;
 };
 
 export function useRouletteSpin({
@@ -43,14 +72,10 @@ export function useRouletteSpin({
     user: unknown;
 }) {
     const [isSpinning, setIsSpinning] = useState(false);
-    const [spinMode, setSpinMode] = useState<RouletteSpinMode>('idle');
     const [rotation, setRotation] = useState(0);
-    const [rotationPath, setRotationPath] = useState<number[] | null>(null);
     const [winResult, setWinResult] = useState<RouletteSpinResult | null>(null);
     const rotationRef = useRef(0);
-    const spinAnimationPromiseRef = useRef<Promise<number> | null>(null);
-    const spinAnimationResolveRef = useRef<((rotation: number) => void) | null>(null);
-    const spinAnimationSafetyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const spinAnimationFrameRef = useRef<number | null>(null);
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
 
     useEffect(() => {
@@ -59,84 +84,83 @@ export function useRouletteSpin({
 
     useEffect(() => {
         return () => {
-            if (spinAnimationSafetyTimeoutRef.current) {
-                clearTimeout(spinAnimationSafetyTimeoutRef.current);
+            if (spinAnimationFrameRef.current !== null) {
+                cancelAnimationFrame(spinAnimationFrameRef.current);
             }
         };
     }, []);
 
-    const handleRotationUpdate = useCallback((nextRotation: number) => {
-        rotationRef.current = nextRotation;
+    const cancelWheelAnimation = useCallback(() => {
+        if (spinAnimationFrameRef.current !== null) {
+            cancelAnimationFrame(spinAnimationFrameRef.current);
+            spinAnimationFrameRef.current = null;
+        }
     }, []);
 
-    const handleSpinComplete = useCallback((finalRotation: number) => {
-        rotationRef.current = finalRotation;
-        if (spinAnimationSafetyTimeoutRef.current) {
-            clearTimeout(spinAnimationSafetyTimeoutRef.current);
-            spinAnimationSafetyTimeoutRef.current = null;
-        }
-        const resolve = spinAnimationResolveRef.current;
-        spinAnimationResolveRef.current = null;
-        if (resolve) {
+    const animateWheelTo = useCallback((targetRotation: number) => new Promise<number>((resolve) => {
+        cancelWheelAnimation();
+
+        const startRotation = rotationRef.current;
+        const rotationDistance = targetRotation - startRotation;
+        const startedAt = performance.now();
+
+        const updateFrame = (now: number) => {
+            const elapsed = now - startedAt;
+            const progress = Math.min(1, elapsed / ROULETTE_SPIN_DURATION_MS);
+            const motionProgress = getRouletteMotionProgress(progress);
+            const nextRotation = progress >= 1
+                ? targetRotation
+                : startRotation + (rotationDistance * motionProgress);
+
+            rotationRef.current = nextRotation;
+            setRotation(nextRotation);
+
+            if (progress < 1) {
+                spinAnimationFrameRef.current = requestAnimationFrame(updateFrame);
+                return;
+            }
+
+            const finalRotation = normalizeRotation(targetRotation);
+            spinAnimationFrameRef.current = null;
+            rotationRef.current = finalRotation;
+            setRotation(finalRotation);
             resolve(finalRotation);
-        }
-    }, []);
+        };
+
+        spinAnimationFrameRef.current = requestAnimationFrame(updateFrame);
+    }), [cancelWheelAnimation]);
 
     const startWheelAnimation = useCallback((winningIndex: number) => {
-        const safeWinningIndex = Number.isFinite(winningIndex) ? winningIndex : 0;
-        const randomOffset = (Math.random() - 0.5) * Math.min(10, sectorAngle * 0.35);
+        const safeWinningIndex = Number.isFinite(winningIndex)
+            ? Math.max(0, Math.min(ROULETTE_SECTORS.length - 1, Math.floor(winningIndex)))
+            : 0;
+        const randomOffset = (Math.random() - 0.5) * Math.min(7, sectorAngle * 0.28);
         const targetAngle = (360 - (safeWinningIndex * sectorAngle + sectorAngle / 2) + randomOffset);
         const currentAngle = normalizeRotation(rotationRef.current);
         let angleDiff = targetAngle - currentAngle;
         if (angleDiff < 0) angleDiff += 360;
         const startRotation = rotationRef.current;
-        const stageRotation = 360 * ROULETTE_TURNS_PER_STAGE;
         const targetRotation = startRotation + (360 * ROULETTE_TOTAL_TURNS) + angleDiff;
-        const path = [
-            startRotation,
-            startRotation + stageRotation,
-            startRotation + stageRotation * 2,
-            startRotation + stageRotation * 3,
-            startRotation + stageRotation * 4,
-            targetRotation,
-        ];
 
-        rotationRef.current = targetRotation;
-        if (spinAnimationSafetyTimeoutRef.current) {
-            clearTimeout(spinAnimationSafetyTimeoutRef.current);
-        }
-        spinAnimationPromiseRef.current = new Promise((resolve) => {
-            spinAnimationResolveRef.current = resolve;
-            spinAnimationSafetyTimeoutRef.current = setTimeout(() => {
-                spinAnimationSafetyTimeoutRef.current = null;
-                spinAnimationResolveRef.current = null;
-                resolve(targetRotation);
-            }, ROULETTE_SPIN_DURATION_MS + 900);
-        });
-        setRotationPath(path);
-        setRotation(startRotation);
-        return targetRotation;
-    }, [sectorAngle]);
+        return animateWheelTo(targetRotation);
+    }, [animateWheelTo, sectorAngle]);
 
     const finishSpinAfterAnimation = useCallback(async (
         spinResponsePromise: Promise<{ res: unknown } | { error: unknown }>,
-        targetRotation: number | null,
+        animationPromise: Promise<number>,
     ) => {
         const [spinResponse, finalRotation] = await Promise.all([
             spinResponsePromise,
-            spinAnimationPromiseRef.current || Promise.resolve(targetRotation || rotationRef.current),
+            animationPromise,
         ]);
         if ('error' in spinResponse) throw spinResponse.error;
         const res = spinResponse.res;
         if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
         const serverResult = parseSpinResult((res as { result?: unknown }).result);
         const remainingSpins = Number((res as { spinsLeft?: unknown }).spinsLeft);
-        const normalizedRotation = normalizeRotation(finalRotation || targetRotation || rotationRef.current);
+        const normalizedRotation = normalizeRotation(finalRotation);
         rotationRef.current = normalizedRotation;
-        spinAnimationPromiseRef.current = null;
         setIsSpinning(false);
-        setSpinMode('idle');
-        setRotationPath(null);
         setRotation(normalizedRotation);
         setWinResult(serverResult);
         if (Number.isFinite(remainingSpins)) setSpinsLeft(remainingSpins);
@@ -169,16 +193,8 @@ export function useRouletteSpin({
     const handleSpin = useCallback(async () => {
         if (!user || spinsLeft <= 0 || isSpinning) return;
         setIsSpinning(true);
-        setSpinMode('spinning');
         setWinResult(null);
-        setRotationPath(null);
-
-        if (spinAnimationSafetyTimeoutRef.current) {
-            clearTimeout(spinAnimationSafetyTimeoutRef.current);
-            spinAnimationSafetyTimeoutRef.current = null;
-        }
-        spinAnimationPromiseRef.current = null;
-        spinAnimationResolveRef.current = null;
+        cancelWheelAnimation();
 
         const spinRequest = apiPost<unknown>('/fortune/spin', {}, { suppressBoostOffer: true })
             .then((res) => ({ res } as const))
@@ -186,37 +202,34 @@ export function useRouletteSpin({
 
         try {
             const plannedSpin = plannedSpins[0] || null;
-            let targetRotation: number | null = null;
+            let animationPromise: Promise<number>;
 
             if (plannedSpin) {
-                targetRotation = startWheelAnimation(plannedSpin.sectorIndex);
+                animationPromise = startWheelAnimation(plannedSpin.sectorIndex);
             } else {
                 const spinResponse = await spinRequest;
                 if ('error' in spinResponse) throw spinResponse.error;
                 const res = spinResponse.res;
                 if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
                 const winningIndex = Number((res as { sectorIndex?: unknown }).sectorIndex);
-                targetRotation = startWheelAnimation(winningIndex);
-                await finishSpinAfterAnimation(Promise.resolve(spinResponse), targetRotation);
+                animationPromise = startWheelAnimation(winningIndex);
+                await finishSpinAfterAnimation(Promise.resolve(spinResponse), animationPromise);
                 return;
             }
 
-            await finishSpinAfterAnimation(spinRequest, targetRotation);
+            await finishSpinAfterAnimation(spinRequest, animationPromise);
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';
             toast.error(t('common.error'), message || t('fortune.spin_error'));
+            cancelWheelAnimation();
             setIsSpinning(false);
-            setSpinMode('idle');
-            setRotationPath(null);
-            spinAnimationPromiseRef.current = null;
-            spinAnimationResolveRef.current = null;
-            if (spinAnimationSafetyTimeoutRef.current) {
-                clearTimeout(spinAnimationSafetyTimeoutRef.current);
-                spinAnimationSafetyTimeoutRef.current = null;
-            }
+            const normalizedRotation = normalizeRotation(rotationRef.current);
+            rotationRef.current = normalizedRotation;
+            setRotation(normalizedRotation);
             await fetchUserStats();
         }
     }, [
+        cancelWheelAnimation,
         fetchUserStats,
         finishSpinAfterAnimation,
         isSpinning,
@@ -229,14 +242,10 @@ export function useRouletteSpin({
     ]);
 
     return {
-        handleRotationUpdate,
         handleSpin,
-        handleSpinComplete,
         isSpinning,
         rotation,
-        rotationPath,
         setWinResult,
-        spinMode,
         winResult,
     };
 }
