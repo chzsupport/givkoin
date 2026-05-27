@@ -5,6 +5,7 @@ import { Star } from 'lucide-react';
 import {
     ROULETTE_ACCELERATION_SHARE,
     ROULETTE_COAST_SHARE,
+    ROULETTE_DECELERATION_SHARE,
     ROULETTE_SECTORS,
     ROULETTE_SPIN_DURATION_MS,
 } from './constants';
@@ -14,7 +15,7 @@ import type { RouletteSpinAnimation } from './types';
 const CENTER = 50;
 const OUTER_RADIUS = 48;
 const INNER_RING_RADIUS = 12;
-const LABEL_RADIUS = 34;
+const LABEL_RADIUS = 33.5;
 
 const polarPoint = (angle: number, radius: number) => {
     const radians = (angle * Math.PI) / 180;
@@ -59,6 +60,7 @@ export const WheelComponent = ({
     );
     const accelerationOffset = ROULETTE_ACCELERATION_SHARE;
     const coastOffset = ROULETTE_ACCELERATION_SHARE + ROULETTE_COAST_SHARE;
+    const decelerationOffset = ROULETTE_ACCELERATION_SHARE + ROULETTE_COAST_SHARE + ROULETTE_DECELERATION_SHARE;
 
     useEffect(() => {
         const node = wheelRef.current;
@@ -73,8 +75,9 @@ export const WheelComponent = ({
 
         const { startRotation, targetRotation } = spinAnimation;
         const distance = targetRotation - startRotation;
-        const firstStage = startRotation + (distance * 0.16);
-        const secondStage = startRotation + (distance * 0.74);
+        const firstStage = startRotation + (distance * 0.18);
+        const secondStage = startRotation + (distance * 0.62);
+        const thirdStage = startRotation + (distance * 0.9);
 
         node.style.transform = `rotate(${startRotation}deg)`;
 
@@ -82,7 +85,7 @@ export const WheelComponent = ({
             {
                 transform: `rotate(${startRotation}deg)`,
                 offset: 0,
-                easing: 'cubic-bezier(0.35, 0, 0.8, 0.45)',
+                easing: 'cubic-bezier(0.45, 0, 0.86, 0.52)',
             },
             {
                 transform: `rotate(${firstStage}deg)`,
@@ -92,7 +95,12 @@ export const WheelComponent = ({
             {
                 transform: `rotate(${secondStage}deg)`,
                 offset: coastOffset,
-                easing: 'cubic-bezier(0.08, 0.72, 0, 1)',
+                easing: 'cubic-bezier(0.18, 0.72, 0.08, 1)',
+            },
+            {
+                transform: `rotate(${thirdStage}deg)`,
+                offset: Math.min(0.92, decelerationOffset - 0.1),
+                easing: 'cubic-bezier(0.05, 0.78, 0.02, 1)',
             },
             {
                 transform: `rotate(${targetRotation}deg)`,
@@ -112,16 +120,16 @@ export const WheelComponent = ({
         return () => {
             animation.cancel();
         };
-    }, [accelerationOffset, coastOffset, onSpinComplete, spinAnimation]);
+    }, [accelerationOffset, coastOffset, decelerationOffset, onSpinComplete, spinAnimation]);
 
     return (
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-            <div className="absolute inset-[-8%] rounded-full bg-yellow-400/10 blur-3xl" />
-            {isSpinning && <div className="absolute inset-[-5%] rounded-full bg-cyan-300/10 blur-2xl" />}
+            <div className="absolute inset-[-7%] rounded-full bg-[#FFD166]/12 blur-3xl" />
+            {isSpinning && <div className="absolute inset-[-4%] rounded-full bg-[#9AE6FF]/10 blur-2xl" />}
 
             <div className="absolute left-1/2 top-[-3%] z-30 -translate-x-1/2">
                 <div
-                    className="h-0 w-0 border-l-[12px] border-r-[12px] border-t-[28px] border-l-transparent border-r-transparent border-t-yellow-300 drop-shadow-[0_0_12px_rgba(250,204,21,0.9)]"
+                    className="h-0 w-0 border-l-[11px] border-r-[11px] border-t-[28px] border-l-transparent border-r-transparent border-t-[#FFD166] drop-shadow-[0_0_12px_rgba(255,209,102,0.9)]"
                     style={{ transform: `scale(${Math.max(0.75, size / 360)})` }}
                 />
                 <div className="mx-auto -mt-1 h-2 w-2 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)]" />
@@ -129,7 +137,7 @@ export const WheelComponent = ({
 
             <div
                 ref={wheelRef}
-                className="relative h-full w-full rounded-full border border-yellow-200/30 bg-[#090914] shadow-[0_18px_70px_rgba(0,0,0,0.55),0_0_42px_rgba(234,179,8,0.20)]"
+                className="relative h-full w-full rounded-full border border-[#FFD166]/45 bg-[#05070D] shadow-[0_18px_70px_rgba(0,0,0,0.58),0_0_38px_rgba(255,209,102,0.20)]"
                 style={{
                     transform: `rotate(${rotation}deg)`,
                     willChange: isSpinning ? 'transform' : 'auto',
@@ -139,14 +147,14 @@ export const WheelComponent = ({
                 <svg className="block h-full w-full rounded-full" viewBox="0 0 100 100" aria-hidden="true">
                     <defs>
                         <radialGradient id={`${gradientId}-metal`} cx="50%" cy="42%" r="64%">
-                            <stop offset="0%" stopColor="#fff7cc" stopOpacity="0.82" />
-                            <stop offset="34%" stopColor="#d9a928" stopOpacity="0.32" />
-                            <stop offset="67%" stopColor="#27170a" stopOpacity="0.18" />
-                            <stop offset="100%" stopColor="#050510" stopOpacity="0.84" />
+                            <stop offset="0%" stopColor="#FFF3B8" stopOpacity="0.95" />
+                            <stop offset="34%" stopColor="#D7A928" stopOpacity="0.52" />
+                            <stop offset="68%" stopColor="#4A2D0E" stopOpacity="0.34" />
+                            <stop offset="100%" stopColor="#05070D" stopOpacity="0.92" />
                         </radialGradient>
                         <radialGradient id={`${gradientId}-shine`} cx="36%" cy="28%" r="70%">
                             <stop offset="0%" stopColor="#ffffff" stopOpacity="0.34" />
-                            <stop offset="38%" stopColor="#ffffff" stopOpacity="0.08" />
+                            <stop offset="36%" stopColor="#ffffff" stopOpacity="0.08" />
                             <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
                         </radialGradient>
                         <filter id={`${gradientId}-soft-shadow`} x="-20%" y="-20%" width="140%" height="140%">
@@ -154,7 +162,8 @@ export const WheelComponent = ({
                         </filter>
                     </defs>
 
-                    <circle cx={CENTER} cy={CENTER} r="49" fill="#050510" />
+                    <circle cx={CENTER} cy={CENTER} r="49" fill="#05070D" />
+                    <circle cx={CENTER} cy={CENTER} r="47.5" fill="#111827" stroke="#FFD166" strokeOpacity="0.18" strokeWidth="0.6" />
 
                     {ROULETTE_SECTORS.map((sector, index) => {
                         const startAngle = index * sectorAngle;
@@ -168,25 +177,25 @@ export const WheelComponent = ({
                                 <path
                                     d={describeSector(startAngle, endAngle)}
                                     fill={sector.color}
-                                    opacity="0.92"
-                                    stroke="rgba(255,255,255,0.28)"
-                                    strokeWidth="0.35"
+                                    stroke="#F8E7AA"
+                                    strokeOpacity="0.34"
+                                    strokeWidth="0.3"
                                 />
                                 <path
                                     d={describeSector(startAngle + 0.3, endAngle - 0.3)}
                                     fill={`url(#${gradientId}-shine)`}
-                                    opacity="0.72"
+                                    opacity="0.55"
                                 />
                                 <text
                                     x={labelPoint.x}
                                     y={labelPoint.y}
                                     fill="#ffffff"
-                                    fontSize="4.6"
+                                    fontSize="4.35"
                                     fontWeight="800"
                                     textAnchor="middle"
                                     dominantBaseline="middle"
                                     transform={`rotate(${labelAngle} ${labelPoint.x} ${labelPoint.y})`}
-                                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.85)' }}
+                                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
                                 >
                                     {label}
                                 </text>
@@ -204,23 +213,24 @@ export const WheelComponent = ({
                                 y1={inner.y}
                                 x2={outer.x}
                                 y2={outer.y}
-                                stroke="#fff7cc"
-                                strokeOpacity="0.54"
-                                strokeWidth="0.55"
+                                stroke="#FFD166"
+                                strokeOpacity="0.58"
+                                strokeWidth="0.5"
                             />
                         );
                     })}
 
                     <circle cx={CENTER} cy={CENTER} r="49" fill="none" stroke={`url(#${gradientId}-metal)`} strokeWidth="3.5" />
-                    <circle cx={CENTER} cy={CENTER} r="43.2" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="0.7" />
-                    <circle cx={CENTER} cy={CENTER} r={INNER_RING_RADIUS} fill="#0a0a14" stroke="#ffd166" strokeWidth="1.3" filter={`url(#${gradientId}-soft-shadow)`} />
+                    <circle cx={CENTER} cy={CENTER} r="43.2" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.65" />
+                    <circle cx={CENTER} cy={CENTER} r="18" fill="none" stroke="rgba(255,209,102,0.34)" strokeWidth="0.7" />
+                    <circle cx={CENTER} cy={CENTER} r={INNER_RING_RADIUS} fill="#080B12" stroke="#FFD166" strokeWidth="1.3" filter={`url(#${gradientId}-soft-shadow)`} />
                     <circle cx={CENTER} cy={CENTER} r="7.2" fill={`url(#${gradientId}-metal)`} stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
                 </svg>
             </div>
 
-            <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-yellow-100/40 bg-[#090914] shadow-[0_0_18px_rgba(255,209,102,0.45)]"
+            <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#FFD166]/45 bg-[#080B12] shadow-[0_0_18px_rgba(255,209,102,0.42)]"
                 style={{ width: size * 0.16, height: size * 0.16 }}>
-                <Star className="fill-yellow-300 text-yellow-300" style={{ width: size * 0.055, height: size * 0.055 }} />
+                <Star className="fill-[#FFD166] text-[#FFD166]" style={{ width: size * 0.055, height: size * 0.055 }} />
             </div>
         </div>
     );
