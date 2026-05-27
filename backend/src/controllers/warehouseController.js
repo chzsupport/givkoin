@@ -4,10 +4,11 @@ const { updateEntityMoodForUser } = require('../services/entityMoodService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getRequestLanguage } = require('../utils/requestLanguage');
-
-
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const {
+  getDocByModelAndId,
+  listDocsByModel,
+  updateDocByModel,
+} = require('../services/documentStore');
 
 
 
@@ -98,21 +99,12 @@ async function updateUserDataById(userId, patch) {
 
 
 async function listWarehouseItems(userId) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-
-    .select('id,data,created_at')
-
-    .eq('model', 'WarehouseItem')
-
-    .eq('data->>user', String(userId))
-
-    .order('created_at', { ascending: false })
-    .limit(500);
-  if (error || !Array.isArray(data)) return [];
-  const items = data
-    .map((row) => ({ ...row.data, _id: row.id, createdAt: row.created_at }))
+  const items = (await listDocsByModel('WarehouseItem', {
+    dataEq: { user: String(userId) },
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 500,
+  }))
     .sort((a, b) => (b.purchasedAt || b.createdAt || '').localeCompare(a.purchasedAt || a.createdAt || ''));
 
   const usedItemIds = items
@@ -121,17 +113,17 @@ async function listWarehouseItems(userId) {
     .filter(Boolean);
   if (!usedItemIds.length) return items;
 
-  const { data: offerRows } = await supabase
-    .from(DOC_TABLE)
-    .select('data')
-    .eq('model', 'AdBoostOffer')
-    .eq('data->>user', String(userId))
-    .eq('data->>type', 'warehouse_item_upgrade')
-    .eq('data->>status', 'completed')
-    .limit(1000);
+  const offerRows = await listDocsByModel('AdBoostOffer', {
+    dataEq: {
+      user: String(userId),
+      type: 'warehouse_item_upgrade',
+      status: 'completed',
+    },
+    limit: 1000,
+  });
   const boostedItemIds = new Set(
     (Array.isArray(offerRows) ? offerRows : [])
-      .map((row) => String(row?.data?.reward?.itemId || row?.data?.contextKey || '').replace(/^warehouse:/, ''))
+      .map((row) => String(row?.reward?.itemId || row?.contextKey || '').replace(/^warehouse:/, ''))
       .filter((id) => usedItemIds.includes(id))
   );
 
@@ -151,44 +143,24 @@ async function listWarehouseItems(userId) {
 
 
 async function findWarehouseItem(itemId, userId) {
-
-  const supabase = getSupabaseClient();
-
-  const { data, error } = await supabase
-
-    .from(DOC_TABLE)
-
-    .select('id,data')
-
-    .eq('model', 'WarehouseItem')
-
-    .eq('id', String(itemId))
-
-    .eq('data->>user', String(userId))
-
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  return { ...data.data, _id: data.id };
+  const item = await getDocByModelAndId('WarehouseItem', itemId);
+  if (!item || String(item.user) !== String(userId)) return null;
+  return item;
 
 }
 
 
 
 async function updateWarehouseItem(itemId, patch, currentData = null) {
-
-  const supabase = getSupabaseClient();
-
-  const nowIso = new Date().toISOString();
-
   const baseData = currentData && typeof currentData === 'object'
 
     ? (() => {
 
-      const { _id, ...rest } = currentData;
+      const { _id, createdAt, updatedAt, ...rest } = currentData;
 
       void _id;
+      void createdAt;
+      void updatedAt;
 
       return rest;
 
@@ -196,21 +168,13 @@ async function updateWarehouseItem(itemId, patch, currentData = null) {
 
     : await (async () => {
 
-      const { data: existing, error: findError } = await supabase
-
-        .from(DOC_TABLE)
-
-        .select('id,data')
-
-        .eq('model', 'WarehouseItem')
-
-        .eq('id', String(itemId))
-
-        .maybeSingle();
-
-      if (findError || !existing) return null;
-
-      return existing.data || null;
+      const existing = await getDocByModelAndId('WarehouseItem', itemId);
+      if (!existing) return null;
+      const { _id, createdAt, updatedAt, ...rest } = existing;
+      void _id;
+      void createdAt;
+      void updatedAt;
+      return rest;
 
     })();
 
@@ -220,21 +184,7 @@ async function updateWarehouseItem(itemId, patch, currentData = null) {
 
   const nextData = { ...baseData, ...patch };
 
-  const { data, error } = await supabase
-
-    .from(DOC_TABLE)
-
-    .update({ data: nextData, updated_at: nowIso })
-
-    .eq('id', String(itemId))
-
-    .select('id,data')
-
-    .maybeSingle();
-
-  if (error) return null;
-
-  return { ...data.data, _id: data.id };
+  return updateDocByModel('WarehouseItem', itemId, nextData).catch(() => null);
 
 }
 

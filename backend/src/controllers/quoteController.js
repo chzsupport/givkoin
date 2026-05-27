@@ -1,8 +1,13 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const { adminAudit } = require('../middleware/adminAudit');
 const { deleteQuoteTotally } = require('../services/adminCleanupService');
+const {
+  deleteDoc,
+  getDocByModelAndId,
+  insertDoc,
+  listAllDocsByModel,
+  updateDocByModel,
+} = require('../services/documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const QUOTE_MODEL = 'Quote';
 
 const ACTIVE_QUOTE_CACHE_TTL_MS = Math.max(
@@ -40,14 +45,12 @@ function normalizeQuoteTranslations(raw, existing = null) {
   };
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeQuoteDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
@@ -97,23 +100,8 @@ function invalidateQuoteRuntimeState() {
 }
 
 async function loadAllQuotes() {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = 1000;
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', QUOTE_MODEL)
-      .range(from, from + size - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < size) break;
-    from += data.length;
-  }
-  return out;
+  const rows = await listAllDocsByModel(QUOTE_MODEL, { pageSize: 1000 });
+  return rows.map(normalizeQuoteDoc).filter(Boolean);
 }
 
 async function loadActiveQuote(now = new Date()) {
@@ -158,18 +146,13 @@ async function createQuote(req, res) {
     const author = normalizeQuoteText(req.body?.author, 300);
     const dayOfWeek = req.body?.dayOfWeek;
     const translations = normalizeQuoteTranslations(req.body?.translations);
-    const supabase = getSupabaseClient();
 
     // Удаляем все цитаты с тем же dayOfWeek
     const existing = await loadAllQuotes();
     const toDelete = existing.filter((q) => Number(q.dayOfWeek) === Number(dayOfWeek));
     for (const q of toDelete) {
       // eslint-disable-next-line no-await-in-loop
-      await supabase
-        .from(DOC_TABLE)
-        .delete()
-        .eq('model', QUOTE_MODEL)
-        .eq('id', String(q._id));
+      await deleteDoc(q._id);
     }
 
     const id = `quote_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
@@ -181,22 +164,7 @@ async function createQuote(req, res) {
       isActive: true,
     };
 
-    const nowIso = new Date().toISOString();
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .insert({
-        model: QUOTE_MODEL,
-        id,
-        data: doc,
-        created_at: nowIso,
-        updated_at: nowIso,
-      })
-      .select('id,data,created_at,updated_at')
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-
-    const quote = mapDocRow(data);
+    const quote = normalizeQuoteDoc(await insertDoc({ model: QUOTE_MODEL, id, data: doc }));
     invalidateQuoteRuntimeState();
     await adminAudit('quote.create', req, { text: text.substring(0, 50) + '...', dayOfWeek });
     res.status(201).json(quote);
@@ -209,42 +177,38 @@ async function updateQuote(req, res) {
   try {
     const text = normalizeQuoteText(req.body?.text, 5000);
     const author = normalizeQuoteText(req.body?.author, 300);
-    const supabase = getSupabaseClient();
 
-    const { data: existing, error: readErr } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', QUOTE_MODEL)
-      .eq('id', String(req.params.id))
-      .maybeSingle();
+    const existing = await getDocByModelAndId(QUOTE_MODEL, req.params.id);
 
-    if (readErr || !existing) {
+    if (!existing) {
       return res.status(404).json({ message: 'Цитата не найдена' });
     }
 
-    const current = existing.data && typeof existing.data === 'object' ? existing.data : {};
+    const current = existing && typeof existing === 'object' ? existing : {};
     const next = {
       ...current,
       text,
       author,
       translations: normalizeQuoteTranslations(req.body?.translations, current?.translations),
     };
+    delete next._id;
+    delete next.createdAt;
+    delete next.updatedAt;
 
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .update({ data: next, updated_at: new Date().toISOString() })
-      .eq('model', QUOTE_MODEL)
-      .eq('id', String(req.params.id))
-      .select('id,data,created_at,updated_at')
-      .maybeSingle();
+    let saved = null;
+    try {
+      saved = await updateDocByModel(QUOTE_MODEL, req.params.id, next);
+    } catch (_error) {
+      saved = null;
+    }
 
-    if (error || !data) {
+    if (!saved) {
       return res.status(404).json({ message: 'Цитата не найдена' });
     }
 
     invalidateQuoteRuntimeState();
     await adminAudit('quote.update', req, { id: req.params.id });
-    res.json(mapDocRow(data));
+    res.json(normalizeQuoteDoc(saved));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

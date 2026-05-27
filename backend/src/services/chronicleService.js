@@ -1,29 +1,21 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc, listDocsByModel } = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function getTreeDoc() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Tree')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  const rows = await listDocsByModel('Tree', {
+    limit: 1,
+    orderBy: 'created_at',
+    ascending: false,
+  });
+  return normalizeDoc(rows[0] || null);
 }
 
 async function snapshotTree() {
@@ -49,18 +41,12 @@ async function snapshotTree() {
 }
 
 async function snapshotBattles({ from, to }) {
-  const supabase = getSupabaseClient();
-  let query = supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Battle')
-    .order('created_at', { ascending: false })
-    .limit(100);
-
-  const { data, error } = await query;
-  if (error || !Array.isArray(data)) return [];
-
-  let battles = data.map(mapDocRow).filter((b) => b.status === 'finished');
+  let battles = await listDocsByModel('Battle', {
+    limit: 100,
+    orderBy: 'created_at',
+    ascending: false,
+  });
+  battles = battles.map(normalizeDoc).filter((b) => b.status === 'finished');
 
   if (from) {
     battles = battles.filter((b) => {
@@ -107,45 +93,27 @@ function buildSummary(treeSnapshot, battlesSnapshot) {
 }
 
 async function findChronicleByDate(date) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Chronicle')
-    .limit(500);
-  if (error || !Array.isArray(data)) return null;
-
-  const rows = data.map(mapDocRow).filter((row) => {
-    const rowDate = row.date ? new Date(row.date) : null;
-    if (!rowDate) return false;
-    const targetDate = new Date(date);
-    return rowDate.getTime() === targetDate.getTime();
+  const targetDate = new Date(date);
+  if (Number.isNaN(targetDate.getTime())) return null;
+  const rows = await listDocsByModel('Chronicle', {
+    dataEq: {
+      date: targetDate.toISOString(),
+    },
+    limit: 1,
   });
-
-  return rows[0] || null;
+  return normalizeDoc(rows[0] || null);
 }
 
 async function insertChronicleDoc(doc) {
-  const supabase = getSupabaseClient();
   const id = `chronicle_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const payload = { ...doc };
   delete payload._id;
 
-  const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({
-      model: 'Chronicle',
-      id,
-      data: payload,
-      created_at: nowIso,
-      updated_at: nowIso,
-    })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeDoc(await insertDoc({ model: 'Chronicle', id, data: payload }));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function createDailyChronicle(date = new Date()) {
@@ -176,16 +144,12 @@ async function getChronicle(date = new Date()) {
 }
 
 async function listChronicle(limit = 7) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Chronicle')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error || !Array.isArray(data)) return [];
-  return data.map(mapDocRow);
+  const rows = await listDocsByModel('Chronicle', {
+    limit,
+    orderBy: 'created_at',
+    ascending: false,
+  });
+  return rows.map(normalizeDoc).filter(Boolean);
 }
 
 module.exports = {

@@ -8,7 +8,6 @@ const { normalizeSitePath } = require('../utils/sitePath');
 
 const CRYSTAL_MODEL = 'CrystalShard';
 const PROGRESS_MODEL = 'UserCrystalProgress';
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const TOTAL_SHARDS = 12;
 
 const TARGET_PAGES = [
@@ -147,17 +146,22 @@ async function getDailyShardDoc(sessionStart) {
     if (direct) return direct;
 
     const sessionIso = toIsoDayKey(sessionStart);
-    const legacy = await listDocsByModel(CRYSTAL_MODEL, { limit: 2000 });
-    return legacy.find((row) => String(row.date || '') === sessionIso) || null;
+    const legacy = await listDocsByModel(CRYSTAL_MODEL, {
+        dataEq: { date: sessionIso },
+        limit: 1,
+    });
+    return legacy[0] || null;
 }
 
 async function listCrystalShards(filter = {}) {
-    const rows = await listDocsByModel(CRYSTAL_MODEL, { limit: 2000 });
-    return rows.filter((row) => {
-        for (const [key, value] of Object.entries(filter)) {
-            if (row?.[key] !== value) return false;
-        }
-        return true;
+    const dataEq = {};
+    for (const [key, value] of Object.entries(filter || {})) {
+        if (!key || value === undefined || value === null) continue;
+        dataEq[key] = String(value);
+    }
+    return listDocsByModel(CRYSTAL_MODEL, {
+        dataEq,
+        limit: 2000,
     });
 }
 
@@ -171,8 +175,14 @@ async function findCrystalProgress(userId, sessionStart) {
     if (direct) return mapProgressRow(direct, userId, sessionStart);
 
     const sessionIso = toIsoDayKey(sessionStart);
-    const legacyRows = await listDocsByModel(PROGRESS_MODEL, { limit: 2000 });
-    const legacy = legacyRows.find((row) => String(row.userId) === String(userId) && String(row.lastResetDate) === sessionIso);
+    const legacyRows = await listDocsByModel(PROGRESS_MODEL, {
+        dataEq: {
+            userId: String(userId),
+            lastResetDate: sessionIso,
+        },
+        limit: 1,
+    });
+    const legacy = legacyRows[0] || null;
     return legacy ? mapProgressRow(legacy, userId, sessionStart) : null;
 }
 
@@ -289,20 +299,6 @@ function buildDailyLocations(sessionKey) {
     }));
 }
 
-async function createTransaction(doc) {
-    const supabase = getSupabaseClient();
-    const id = `tx_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    const nowIso = new Date().toISOString();
-    await supabase.from(DOC_TABLE).insert({
-        model: 'Transaction',
-        id,
-        data: doc,
-        created_at: nowIso,
-        updated_at: nowIso,
-    });
-    return { ...doc, _id: id };
-}
-
 async function getUserRowById(userId) {
     if (!userId) return null;
     const supabase = getSupabaseClient();
@@ -374,7 +370,7 @@ async function applyCrystalCompletionReward(userId) {
         now: new Date(),
         baseMultiplier,
     });
-    const starsAward = Math.round(0.001 * baseMultiplier * 1000) / 1000;
+    const starsAward = 0.001;
     const nowIso = new Date().toISOString();
     const supabase = getSupabaseClient();
 
@@ -778,7 +774,18 @@ async function finalizeCrystalReview(progress, sessionStart) {
 }
 
 exports.processPendingCrystalSettlements = async (limit = 100) => {
-    const rows = await listDocsByModel(PROGRESS_MODEL, { limit: 5000 });
+    const [rewardRows, reviewRows] = await Promise.all([
+        listDocsByModel(PROGRESS_MODEL, { dataEq: { rewardLogStatus: 'pending' }, limit: 5000 }),
+        listDocsByModel(PROGRESS_MODEL, { dataEq: { reviewStatus: 'queued' }, limit: 5000 }),
+    ]);
+    const rows = Array.from(
+        new Map(
+            [...rewardRows, ...reviewRows]
+                .filter(Boolean)
+                .map((row) => [String(row?._id || ''), row])
+                .filter(([id]) => Boolean(id))
+        ).values()
+    );
     const pending = rows
         .map((row) => {
             const sessionStart = row?.lastResetDate ? new Date(row.lastResetDate) : null;

@@ -60,10 +60,8 @@ export default function PracticePage() {
     const fetchQuote = async () => {
       try {
         const res = await fetch('/quotes/active');
-        console.log('Quote response status:', res.status);
         if (res.ok) {
           const data = await res.json();
-          console.log('Quote data:', data);
           if (data) {
             setQuote({
               _id: data._id,

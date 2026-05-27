@@ -1,7 +1,12 @@
 const crypto = require('crypto');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+  countDocsByModel,
+  getDocByModelAndId,
+  listDocsByModel,
+  upsertDoc,
+} = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const RADIANCE_MODEL = 'RadianceEarning';
 const HOUR_MODEL = 'EntityMoodHour';
 const SNAPSHOT_MODEL = 'EntityMoodSnapshot';
@@ -169,17 +174,6 @@ function isSated(entity, now = new Date()) {
   return new Date(entity.satietyUntil).getTime() > now.getTime();
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
-  return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : null,
-    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
-  };
-}
-
 async function getEntityRowByUserId(userId) {
   if (!userId) return null;
   const supabase = getSupabaseClient();
@@ -223,18 +217,15 @@ async function getUserDebuffRow(userId) {
 }
 
 async function countAppealsByUser(userId, since) {
-  const supabase = getSupabaseClient();
   const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
-  const { count, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id', { head: true, count: 'exact' })
-    .eq('model', 'Appeal')
-    .eq('data->>againstUser', String(userId))
-    .eq('data->>status', 'resolved')
-    .eq('data->>penaltyApplied', 'true')
-    .gte('data->>resolvedAt', sinceIso);
-  if (error) return 0;
-  return Math.max(0, Number(count) || 0);
+  return countDocsByModel('Appeal', {
+    dataEq: {
+      againstUser: String(userId),
+      status: 'resolved',
+      penaltyApplied: true,
+    },
+    dataGte: { resolvedAt: sinceIso },
+  });
 }
 
 function resolveMoodUnits(activityType, rowData = {}) {
@@ -261,7 +252,6 @@ function resolveMoodUnits(activityType, rowData = {}) {
 
 async function listRadianceEarningsForUser({ userId, since, until = new Date(), pageSize = 1000 } = {}) {
   if (!userId) return [];
-  const supabase = getSupabaseClient();
   const out = [];
   const safePageSize = Math.max(1, Math.min(5000, Number(pageSize) || 1000));
   const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
@@ -270,20 +260,20 @@ async function listRadianceEarningsForUser({ userId, since, until = new Date(), 
 
   while (true) {
     // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', RADIANCE_MODEL)
-      .eq('data->>user', String(userId))
-      .gte('created_at', sinceIso)
-      .lt('created_at', untilIso)
-      .order('created_at', { ascending: true })
-      .range(from, from + safePageSize - 1);
+    const rows = await listDocsByModel(RADIANCE_MODEL, {
+      dataEq: { user: String(userId) },
+      columnGte: { created_at: sinceIso },
+      columnLt: { created_at: untilIso },
+      orderBy: 'created_at',
+      ascending: true,
+      limit: safePageSize,
+      offset: from,
+    });
 
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data);
-    if (data.length < safePageSize) break;
-    from += data.length;
+    if (!rows.length) break;
+    out.push(...rows);
+    if (rows.length < safePageSize) break;
+    from += rows.length;
   }
 
   return out;
@@ -291,7 +281,6 @@ async function listRadianceEarningsForUser({ userId, since, until = new Date(), 
 
 async function listMoodHourDocsForUser({ userId, since, pageSize = 250 } = {}) {
   if (!userId) return [];
-  const supabase = getSupabaseClient();
   const out = [];
   const safePageSize = Math.max(1, Math.min(500, Number(pageSize) || 250));
   const sinceIso = since instanceof Date ? since.toISOString() : new Date(since).toISOString();
@@ -299,18 +288,18 @@ async function listMoodHourDocsForUser({ userId, since, pageSize = 250 } = {}) {
 
   while (true) {
     // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', HOUR_MODEL)
-      .eq('data->>user', String(userId))
-      .gte('data->>hourStart', sinceIso)
-      .order('data->>hourStart', { ascending: true })
-      .range(from, from + safePageSize - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < safePageSize) break;
-    from += data.length;
+    const rows = await listDocsByModel(HOUR_MODEL, {
+      dataEq: { user: String(userId) },
+      dataGte: { hourStart: sinceIso },
+      orderBy: 'data->>hourStart',
+      ascending: true,
+      limit: safePageSize,
+      offset: from,
+    });
+    if (!rows.length) break;
+    out.push(...rows);
+    if (rows.length < safePageSize) break;
+    from += rows.length;
   }
 
   return out;
@@ -318,15 +307,7 @@ async function listMoodHourDocsForUser({ userId, since, pageSize = 250 } = {}) {
 
 async function getSnapshotDocByUserId(userId) {
   if (!userId) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', SNAPSHOT_MODEL)
-    .eq('id', getSnapshotDocId(userId))
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return getDocByModelAndId(SNAPSHOT_MODEL, getSnapshotDocId(userId));
 }
 
 function buildHourStatsPayload(byType = {}) {
@@ -347,11 +328,11 @@ function buildHourBucketsFromRadiance(rows = []) {
   const buckets = new Map();
 
   for (const row of rows) {
-    const data = row?.data && typeof row.data === 'object' ? row.data : {};
+    const data = row && typeof row === 'object' ? row : {};
     const activityType = String(data.activityType || '').trim();
     if (!activityType) continue;
 
-    const occurredAt = data.occurredAt || row?.created_at || null;
+    const occurredAt = data.occurredAt || row?.createdAt || null;
     const occurredDate = occurredAt ? new Date(occurredAt) : null;
     if (!occurredDate || Number.isNaN(occurredDate.getTime())) continue;
 
@@ -408,22 +389,23 @@ async function upsertMoodHourDocs(userId, buckets, since) {
 
     payloads.push({
       id: getHourDocId(userId, hourStart),
-      model: HOUR_MODEL,
       data: payload,
-      created_at: hourStart,
-      updated_at: nowIso,
+      createdAt: hourStart,
+      updatedAt: nowIso,
     });
   }
 
   if (!payloads.length) return;
 
-  const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from(DOC_TABLE)
-    .upsert(payloads, { onConflict: 'id' });
-
-  if (error) {
-    throw error;
+  for (const payload of payloads) {
+    // eslint-disable-next-line no-await-in-loop
+    await upsertDoc({
+      id: payload.id,
+      model: HOUR_MODEL,
+      data: payload.data,
+      createdAt: payload.createdAt,
+      updatedAt: payload.updatedAt,
+    });
   }
 }
 
@@ -520,7 +502,6 @@ function computeMoodByRules({ corePercent, additionalMet, confirmedCount, active
 }
 
 async function saveMoodSnapshot({ userId, snapshot }) {
-  const supabase = getSupabaseClient();
   const id = getSnapshotDocId(userId);
   const nowIso = new Date().toISOString();
   const payload = {
@@ -537,18 +518,13 @@ async function saveMoodSnapshot({ userId, snapshot }) {
   };
   payload.payloadHash = buildPayloadHash(payload);
 
-  const { error } = await supabase
-    .from(DOC_TABLE)
-    .upsert([{
-      id,
-      model: SNAPSHOT_MODEL,
-      data: payload,
-      created_at: nowIso,
-      updated_at: nowIso,
-    }], { onConflict: 'id' });
-  if (error) {
-    throw error;
-  }
+  await upsertDoc({
+    id,
+    model: SNAPSHOT_MODEL,
+    data: payload,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  });
   return payload;
 }
 

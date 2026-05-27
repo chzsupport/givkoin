@@ -10,9 +10,8 @@ const { awardRadianceForActivity } = require('../services/activityRadianceServic
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { createNotification } = require('./notificationController');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { listDocsByModel, updateDocByModel } = require('../services/documentStore');
 const { getRequestLanguage } = require('../utils/requestLanguage');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 function normalizeLang(value) {
     return value === 'en' ? 'en' : 'ru';
@@ -106,6 +105,31 @@ function toId(value, depth = 0) {
         }
     }
     return '';
+}
+
+async function markActiveBattleAttendance(userId, patch = {}) {
+    const safeUserId = toId(userId);
+    if (!safeUserId || !patch || typeof patch !== 'object') return false;
+    const battleRows = await listDocsByModel('Battle', {
+        dataEq: { status: 'active' },
+        limit: 100,
+    });
+
+    for (const row of battleRows) {
+        const attendance = Array.isArray(row?.attendance) ? row.attendance : [];
+        const idx = attendance.findIndex((entry) => String(entry?.user) === String(safeUserId));
+        if (idx < 0) continue;
+
+        const nextAttendance = attendance.slice();
+        nextAttendance[idx] = { ...nextAttendance[idx], ...patch };
+        const { _id, createdAt, updatedAt, ...battleData } = row;
+        void createdAt;
+        void updatedAt;
+        await updateDocByModel('Battle', _id, { ...battleData, attendance: nextAttendance });
+        return true;
+    }
+
+    return false;
 }
 
 function getUserData(row) {
@@ -336,28 +360,7 @@ async function finishSolarCollectBackground({
     }).catch(() => { });
 
     try {
-        const supabase = getSupabaseClient();
-        const { data: battleRows, error: battleError } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data')
-            .eq('model', 'Battle')
-            .eq('data->>status', 'active')
-            .limit(100);
-
-        if (!battleError && Array.isArray(battleRows)) {
-            for (const row of battleRows) {
-                const attendance = row.data?.attendance || [];
-                const idx = attendance.findIndex((a) => String(a.user) === String(userId));
-                if (idx >= 0) {
-                    attendance[idx].exitedAndReturnedWithSolarCharge = true;
-                    await supabase
-                        .from(DOC_TABLE)
-                        .update({ data: { ...row.data, attendance }, updated_at: new Date().toISOString() })
-                        .eq('id', row.id);
-                    break;
-                }
-            }
-        }
+        await markActiveBattleAttendance(userId, { exitedAndReturnedWithSolarCharge: true });
     } catch (e) {
         console.error('Achievement #26 track error:', e);
     }
@@ -533,28 +536,7 @@ async function deliverSolarLumensInBackground({ senderId, amountLm, userLang, io
 
     // Ачивка #27. Альтруист боя
     try {
-        const supabase = getSupabaseClient();
-        const { data: battleRows, error: battleError } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data')
-            .eq('model', 'Battle')
-            .eq('data->>status', 'active')
-            .limit(100);
-
-        if (!battleError && Array.isArray(battleRows)) {
-            for (const row of battleRows) {
-                const attendance = row.data?.attendance || [];
-                const idx = attendance.findIndex((a) => String(a.user) === String(receiverRow.id));
-                if (idx >= 0) {
-                    attendance[idx].receivedGiftInBattle = true;
-                    await supabase
-                        .from(DOC_TABLE)
-                        .update({ data: { ...row.data, attendance }, updated_at: new Date().toISOString() })
-                        .eq('id', row.id);
-                    break;
-                }
-            }
-        }
+        await markActiveBattleAttendance(receiverRow.id, { receivedGiftInBattle: true });
     } catch (e) {
         console.error('Achievement #27 recipient track error:', e);
     }
@@ -691,10 +673,7 @@ exports.shareSolarLumens = async (req, res) => {
             kAward
         );
         const baseStarsAward = Math.round((Math.random() * (0.01 - 0.001) + 0.001) * 1000) / 1000;
-        const starsAward = keepPositiveReward(
-            Math.round(baseStarsAward * rewardMultiplier * 1000) / 1000,
-            baseStarsAward
-        );
+        const starsAward = baseStarsAward;
         const nextSenderLumens = (Number(senderData.lumens) || 0) - amountLm;
         const nextSenderK = (Number(senderData.k) || 0) + finalKAward;
 

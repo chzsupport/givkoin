@@ -1,37 +1,30 @@
 const crypto = require('crypto');
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc } = require('./documentStore');
 
 function buildDocId(prefix) {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`;
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function insertModelDoc(model, payload) {
-  const supabase = getSupabaseClient();
   const id = payload && (payload._id || payload.id) ? String(payload._id || payload.id) : buildDocId(String(model));
   const doc = payload && typeof payload === 'object' ? { ...payload } : {};
   delete doc._id;
   delete doc.id;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({ id, model: String(model), data: doc })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeDoc(await insertDoc({ id, model: String(model), data: doc }));
+  } catch (_error) {
+    return null;
+  }
 }
 
 function safeClone(value) {

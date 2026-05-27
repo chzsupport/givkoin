@@ -4,14 +4,13 @@ const chatService = require('../services/chatService');
 const friendService = require('../services/friendService');
 const matchingService = require('../services/matchingService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc, listDocsByModel } = require('../services/documentStore');
 const { getRequestLanguage } = require('../utils/requestLanguage');
 const { normalizeComplaintReason } = require('../utils/complaintReason');
 const {
     applyChatCompletionEffects,
     computeChatDurationSeconds,
 } = require('../services/chatCompletionService');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 function normalizeLang(value) {
     return value === 'en' ? 'en' : 'ru';
@@ -28,35 +27,24 @@ function parsePositiveInt(value, fallback) {
 }
 
 async function findPendingAppealByUser(againstUser) {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .select('id,data')
-        .eq('model', 'Appeal')
-        .limit(500);
-    if (error || !Array.isArray(data)) return null;
-    return data.find((row) => {
-        const d = row.data || {};
-        return String(d.againstUser) === String(againstUser) && d.status === 'pending';
-    }) || null;
+    const data = await listDocsByModel('Appeal', {
+        dataEq: {
+            againstUser: String(againstUser),
+            status: 'pending',
+        },
+        limit: 1,
+    });
+    return data[0] || null;
 }
 
 async function insertAppeal(doc) {
-    const supabase = getSupabaseClient();
     const id = `app_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    const nowIso = new Date().toISOString();
     const appealData = {
         status: 'pending',
         ...doc,
     };
-    await supabase.from(DOC_TABLE).insert({
-        model: 'Appeal',
-        id,
-        data: appealData,
-        created_at: nowIso,
-        updated_at: nowIso,
-    });
-    return { _id: id, ...appealData };
+    const inserted = await insertDoc({ model: 'Appeal', id, data: appealData });
+    return { _id: inserted?._id || id, ...appealData };
 }
 
 function toId(value, depth = 0) {

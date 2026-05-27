@@ -1,6 +1,5 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc, listDocsByModel, updateDocByModel } = require('./documentStore');
 
 const CLUSTERS = ['young', 'adult', 'experienced', 'wise'];
 const INITIAL_BRANCHES_PER_CLUSTER = 10;
@@ -9,84 +8,68 @@ const BRANCH_BATCH_SIZE = 10;
 let injuredBranchesCache = { at: 0, set: null };
 const INJURED_BRANCHES_CACHE_TTL_MS = 30 * 1000;
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function getTreeDoc() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Tree')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  const rows = await listDocsByModel('Tree', {
+    limit: 1,
+    orderBy: 'created_at',
+    ascending: false,
+  });
+  return normalizeDoc(rows[0] || null);
+}
+
+function buildTreeBranchDataEq(filter = {}) {
+  const dataEq = {};
+  for (const [key, value] of Object.entries(filter || {})) {
+    if (!key || value === undefined || value === null) continue;
+    dataEq[key] = String(value);
+  }
+  return dataEq;
 }
 
 async function listTreeBranches(filter = {}) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'TreeBranch')
-    .limit(1000);
-  if (error || !Array.isArray(data)) return [];
-
-  return data.map(mapDocRow).filter((row) => {
-    for (const [key, val] of Object.entries(filter)) {
-      if (row[key] !== val) return false;
-    }
-    return true;
+  const rows = await listDocsByModel('TreeBranch', {
+    limit: 1000,
+    dataEq: buildTreeBranchDataEq(filter),
   });
-}
-
-async function countTreeBranches(filter = {}) {
-  const rows = await listTreeBranches(filter);
-  return rows.length;
+  return rows.map(normalizeDoc).filter(Boolean);
 }
 
 async function insertTreeBranches(docs) {
-  const supabase = getSupabaseClient();
-  const nowIso = new Date().toISOString();
-  const inserts = docs.map((d) => ({
+  await Promise.all(docs.map((doc) => insertDoc({
     model: 'TreeBranch',
-    id: d.branchId || `branch_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-    data: d,
-    created_at: nowIso,
-    updated_at: nowIso,
-  }));
-  await supabase.from(DOC_TABLE).insert(inserts);
+    id: doc.branchId || `branch_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    data: doc,
+  })));
 }
 
 async function updateTreeBranch(branchId, update) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'TreeBranch')
-    .limit(500);
-  if (error || !Array.isArray(data)) return null;
-
-  const row = data.find((r) => r.data?.branchId === branchId);
+  const rows = await listDocsByModel('TreeBranch', {
+    limit: 1,
+    dataEq: { branchId: String(branchId) },
+  });
+  const row = rows[0] || null;
   if (!row) return null;
 
-  const newData = { ...row.data, ...update };
-  await supabase
-    .from(DOC_TABLE)
-    .update({ data: newData, updated_at: new Date().toISOString() })
-    .eq('id', row.id);
+  const newData = { ...row, ...update };
+  delete newData._id;
+  delete newData.createdAt;
+  delete newData.updatedAt;
 
-  return { ...newData, _id: row.id };
+  try {
+    const saved = await updateDocByModel('TreeBranch', row._id, newData);
+    return normalizeDoc(saved) || { ...newData, _id: row._id };
+  } catch (_error) {
+    return { ...newData, _id: row._id };
+  }
 }
 
 function padOrdinal(n, width = 6) {

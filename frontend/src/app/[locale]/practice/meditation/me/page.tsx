@@ -1,15 +1,19 @@
 'use client';
 
-import Link from 'next/link';
-import Image from 'next/image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AdaptiveAdWrapper } from '@/components/AdaptiveAdWrapper';
-import { PageTitle } from '@/components/PageTitle';
 import { StickySideAdRail } from '@/components/StickySideAdRail';
-import { Sparkles } from 'lucide-react';
-import { apiPost, apiPostKeepalive } from '@/utils/api';
 import { getResponsiveSideAdSlot } from '@/utils/sideAdSlot';
 import { useI18n } from '@/context/I18nContext';
+import {
+    MEDITATION_EXHALE_DURATION_MS,
+    MEDITATION_INHALE_DURATION_MS,
+} from '@/components/meditation-me/constants';
+import { MandalaRippleStyles } from '@/components/meditation-me/MandalaRippleStyles';
+import { MeditationBreathingSurface } from '@/components/meditation-me/MeditationBreathingSurface';
+import { MeditationMeBackground } from '@/components/meditation-me/MeditationMeBackground';
+import { MeditationMeHeader } from '@/components/meditation-me/MeditationMeHeader';
+import { useIndividualBreathingSession } from '@/components/meditation-me/useIndividualBreathingSession';
 
 export default function MeditationMePage() {
     const { localePath, t } = useI18n();
@@ -19,20 +23,20 @@ export default function MeditationMePage() {
     const [isLandscape, setIsLandscape] = useState(false);
     const sideAdSlot = getResponsiveSideAdSlot(windowWidth, windowHeight);
     const hasSideAds = Boolean(sideAdSlot);
-    const [isBreathing, setIsBreathing] = useState(false);
-    const inhaleStartedAtRef = useRef<number | null>(null);
-    const clientSessionIdRef = useRef<string>('');
-    const completedBreathsRef = useRef(0);
-    const settledBreathsRef = useRef(0);
-    const isSettlingRef = useRef(false);
     const [instructionHeight, setInstructionHeight] = useState(0);
     const [cardWidth, setCardWidth] = useState(0);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const cardRef = useRef<HTMLDivElement | null>(null);
     const instructionRef = useRef<HTMLDivElement | null>(null);
     const instructionSecondaryRef = useRef<HTMLDivElement | null>(null);
-    const inhaleDuration = 4000;
-    const exhaleDuration = 2500;
+    const inhaleDuration = MEDITATION_INHALE_DURATION_MS;
+    const exhaleDuration = MEDITATION_EXHALE_DURATION_MS;
+    const {
+        isBreathing,
+        startBreath,
+        finishBreath,
+        cancelBreath,
+    } = useIndividualBreathingSession({ inhaleDuration });
     const breathTransition = `${isBreathing ? inhaleDuration : exhaleDuration}ms`;
     const safeWidth = windowWidth || 360;
     const safeHeight = windowHeight || 720;
@@ -143,41 +147,6 @@ export default function MeditationMePage() {
         )
     );
 
-    const flushBreaths = useCallback(async (useKeepalive = false) => {
-        if (!clientSessionIdRef.current) return;
-        if (completedBreathsRef.current <= settledBreathsRef.current) return;
-        if (isSettlingRef.current) return;
-
-        const payload = {
-            clientSessionId: clientSessionIdRef.current,
-            completedBreaths: completedBreathsRef.current,
-        };
-
-        if (useKeepalive) {
-            apiPostKeepalive('/meditation/individual/settle', payload);
-            settledBreathsRef.current = completedBreathsRef.current;
-            return;
-        }
-
-        isSettlingRef.current = true;
-        try {
-            await apiPost('/meditation/individual/settle', payload);
-            settledBreathsRef.current = completedBreathsRef.current;
-        } catch {
-            // ignore
-        } finally {
-            isSettlingRef.current = false;
-        }
-    }, []);
-
-    const recordCompletedBreath = useCallback(() => {
-        completedBreathsRef.current += 1;
-        const unsent = completedBreathsRef.current - settledBreathsRef.current;
-        if (unsent >= 10) {
-            void flushBreaths(false);
-        }
-    }, [flushBreaths]);
-
     useEffect(() => {
         const updateLayout = () => {
             const w = window.innerWidth;
@@ -245,66 +214,6 @@ export default function MeditationMePage() {
     }, []);
 
     useEffect(() => {
-        clientSessionIdRef.current =
-            typeof window !== 'undefined' && typeof window.crypto?.randomUUID === 'function'
-                ? window.crypto.randomUUID()
-                : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    }, []);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.code !== 'Space' && event.key !== ' ') return;
-            if (event.repeat) return;
-            event.preventDefault();
-            inhaleStartedAtRef.current = Date.now();
-            setIsBreathing(true);
-        };
-
-        const handleKeyUp = (event: KeyboardEvent) => {
-            if (event.code !== 'Space' && event.key !== ' ') return;
-            event.preventDefault();
-            const startedAt = inhaleStartedAtRef.current;
-            inhaleStartedAtRef.current = null;
-            if (startedAt && Date.now() - startedAt >= inhaleDuration) {
-                recordCompletedBreath();
-            }
-            setIsBreathing(false);
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('keyup', handleKeyUp);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-            window.removeEventListener('keyup', handleKeyUp);
-        };
-    }, [inhaleDuration, recordCompletedBreath]);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'hidden') {
-                void flushBreaths(true);
-            }
-        };
-
-        const handlePageHide = () => {
-            void flushBreaths(true);
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('pagehide', handlePageHide);
-
-        return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('pagehide', handlePageHide);
-            void flushBreaths(false);
-        };
-    }, [flushBreaths]);
-
-    useEffect(() => {
         const element = contentRef.current;
         if (!element) return;
 
@@ -351,11 +260,7 @@ export default function MeditationMePage() {
             onSelect={(event) => event.preventDefault()}
             style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
         >
-            <div className="fixed inset-0 z-0 pointer-events-none">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/20 via-[#050510] to-[#050510]" />
-                <div className="absolute top-1/4 right-1/4 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
-                <div className="absolute bottom-1/3 left-1/4 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl" />
-            </div>
+            <MeditationMeBackground />
 
             <div className="relative z-10 flex flex-1 min-h-0">
                 <StickySideAdRail adSlot={sideAdSlot} page="practice_meditation" placement="practice_meditation_sidebar_left" />
@@ -369,40 +274,12 @@ export default function MeditationMePage() {
                         />
                     </div>
 
-                    <header className={`mb-2 flex-shrink-0 flex flex-col gap-3 ${isSplitHeader ? '' : 'sm:gap-4'}`}>
-                        <div className="flex items-center gap-2 w-full">
-                            <Link
-                                href={localePath('/practice')}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/5 border border-white/10 rounded-lg font-bold uppercase tracking-widest text-tiny hover:bg-white/10 transition-all active:scale-95 group backdrop-blur-md"
-                            >
-                                <span className="group-hover:-translate-x-1 transition-transform">←</span> {t('meditation_collective.to_practice')}
-                            </Link>
-
-                            <div className="flex flex-1 justify-center">
-                                <div className="inline-flex rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-md">
-                                    <span
-                                        className="px-4 py-1.5 rounded-full text-tiny font-bold uppercase tracking-widest bg-cyan-500/25 text-cyan-100 border border-cyan-400/30"
-                                    >
-                                        {t('meditation_collective.tab_me')}
-                                    </span>
-                                    <Link
-                                        href={localePath('/practice/meditation/we')}
-                                        className="px-4 py-1.5 rounded-full text-tiny font-bold uppercase tracking-widest transition-all text-white/55 hover:text-white/80"
-                                    >
-                                        {t('meditation_collective.tab_we')}
-                                    </Link>
-                                </div>
-                            </div>
-                        </div>
-
-                        <PageTitle
-                            title={t('meditation_collective.page_title')}
-                            Icon={Sparkles}
-                            gradientClassName="from-cyan-200 via-cyan-400 to-blue-500"
-                            iconClassName="w-4 h-4 xl:w-5 xl:h-5 text-cyan-200"
-                            className="w-fit mx-auto"
-                        />
-                    </header>
+                    <MeditationMeHeader
+                        practiceHref={localePath('/practice')}
+                        collectiveHref={localePath('/practice/meditation/we')}
+                        isSplitHeader={isSplitHeader}
+                        t={t}
+                    />
 
                     <div ref={contentRef} className="flex-1 min-h-0 flex items-stretch justify-center overflow-x-hidden overflow-y-auto no-scrollbar pb-2">
                         <div
@@ -411,187 +288,26 @@ export default function MeditationMePage() {
                             style={{ maxWidth: cardMaxWidth, padding: `${contentPaddingY}px ${contentPaddingX}px` }}
                         >
                             <div className="flex h-full flex-col items-center justify-center" style={{ gap: instructionGap }}>
-                                {!usePortraitLayout && (
-                                    <div
-                                        ref={instructionRef}
-                                        className="text-center leading-relaxed text-white/70 text-secondary"
-                                        style={{ maxWidth: instructionMaxWidth }}
-                                    >
-                                        <p className="text-white/90 font-semibold">{t('practice.look_center')}</p>
-                                    </div>
-                                )}
-                                <div
-                                    className="w-full select-none"
-                                    onMouseDown={(event) => {
-                                        event.preventDefault();
-                                        inhaleStartedAtRef.current = Date.now();
-                                        setIsBreathing(true);
-                                    }}
-                                    onMouseUp={(event) => {
-                                        event.preventDefault();
-                                        const startedAt = inhaleStartedAtRef.current;
-                                        inhaleStartedAtRef.current = null;
-                                        if (startedAt && Date.now() - startedAt >= inhaleDuration) {
-                                            recordCompletedBreath();
-                                        }
-                                        setIsBreathing(false);
-                                    }}
-                                    onMouseLeave={() => {
-                                        inhaleStartedAtRef.current = null;
-                                        setIsBreathing(false);
-                                    }}
-                                    onTouchStart={(event) => {
-                                        event.preventDefault();
-                                        inhaleStartedAtRef.current = Date.now();
-                                        setIsBreathing(true);
-                                    }}
-                                    onTouchEnd={(event) => {
-                                        event.preventDefault();
-                                        const startedAt = inhaleStartedAtRef.current;
-                                        inhaleStartedAtRef.current = null;
-                                        if (startedAt && Date.now() - startedAt >= inhaleDuration) {
-                                            recordCompletedBreath();
-                                        }
-                                        setIsBreathing(false);
-                                    }}
-                                    onTouchCancel={() => {
-                                        inhaleStartedAtRef.current = null;
-                                        setIsBreathing(false);
-                                    }}
-                                    style={{ touchAction: 'none' }}
-                                >
-                                    {usePortraitLayout ? (
-                                        <div className="flex flex-col items-center" style={{ gap: portraitStackGap }}>
-                                            <div className="flex flex-col items-center gap-2">
-                                                <div
-                                                    className="relative rounded-full border border-white/15 bg-white/5 overflow-hidden"
-                                                    style={{ width: horizontalBarWidth, height: horizontalBarHeight }}
-                                                >
-                                                    <div
-                                                        className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-400 via-cyan-300 to-emerald-200 transition-transform ease-linear origin-center"
-                                                        style={{
-                                                            transform: isBreathing ? 'scaleX(1)' : 'scaleX(0)',
-                                                            transitionDuration: breathTransition,
-                                                        }}
-                                                    />
-                                                </div>
-                                                <span className="uppercase tracking-[0.35em] text-white/40 text-tiny">
-                                                    {t('meditation_me.inhale')}
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col items-center gap-2">
-                                                <div
-                                                    className="relative flex items-center justify-center overflow-visible"
-                                                    style={{ width: mandalaSize, height: mandalaSize }}
-                                                >
-                                                    {isBreathing && (
-                                                        <>
-                                                            <span className="mandala-ripple mandala-ripple--one" />
-                                                            <span className="mandala-ripple mandala-ripple--two" />
-                                                        </>
-                                                    )}
-                                                    <Image
-                                                        src="/mandala.jpeg"
-                                                        alt={t('meditation_me.mandala_alt')}
-                                                        fill
-                                                        sizes="256px"
-                                                        className="relative z-10 rounded-full transition-[filter,box-shadow] ease-linear object-cover"
-                                                        style={{
-                                                            transitionDuration: breathTransition,
-                                                            filter: isBreathing ? 'brightness(1.08) saturate(1.05)' : 'brightness(1) saturate(1)',
-                                                            boxShadow: isBreathing
-                                                                ? '0 0 70px rgba(56,189,248,0.38)'
-                                                                : '0 0 40px rgba(56,189,248,0.18)',
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div
-                                                ref={instructionRef}
-                                                className="text-center leading-relaxed text-white/70 text-secondary space-y-1"
-                                                style={{ maxWidth: instructionMaxWidth }}
-                                            >
-                                                <p className="text-white/90 font-semibold">{t('practice.look_center')}</p>
-                                                {useSingleLineInstructions ? (
-                                                    <p>{t('practice.inhale_space')}</p>
-                                                ) : (
-                                                    <>
-                                                        <p>{t('practice.inhale_space_only')}</p>
-                                                        <p>{t('practice.exhale_release')}</p>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div
-                                            className="grid w-full grid-cols-[auto_auto_auto] items-center justify-center"
-                                            style={{ columnGap: landscapeGap }}
-                                        >
-                                            <div className="flex flex-col items-center gap-2 justify-self-end">
-                                                <div
-                                                    className="relative rounded-full border border-white/15 bg-white/5 overflow-hidden"
-                                                    style={{ height: sliderHeight, width: sliderWidth }}
-                                                >
-                                                    <div
-                                                        className="absolute inset-x-0 bottom-0 rounded-full bg-gradient-to-t from-cyan-400 via-cyan-300 to-emerald-200 transition-[height] ease-linear"
-                                                        style={{
-                                                            height: isBreathing ? '100%' : '0%',
-                                                            transitionDuration: breathTransition,
-                                                        }}
-                                                    />
-                                                </div>
-                                                <span className="uppercase tracking-[0.35em] text-white/40 text-tiny">
-                                                    {t('meditation_me.inhale')}
-                                                </span>
-                                            </div>
-                                            <div className="flex flex-col items-center gap-2 justify-self-center">
-                                                <div
-                                                    className="relative flex items-center justify-center overflow-visible"
-                                                    style={{ width: mandalaSize, height: mandalaSize }}
-                                                >
-                                                    {isBreathing && (
-                                                        <>
-                                                            <span className="mandala-ripple mandala-ripple--one" />
-                                                            <span className="mandala-ripple mandala-ripple--two" />
-                                                        </>
-                                                    )}
-                                                    <Image
-                                                        src="/mandala.jpeg"
-                                                        alt={t('meditation_me.mandala_alt')}
-                                                        fill
-                                                        sizes="256px"
-                                                        className="relative z-10 rounded-full transition-[filter,box-shadow] ease-linear object-cover"
-                                                        style={{
-                                                            transitionDuration: breathTransition,
-                                                            filter: isBreathing ? 'brightness(1.08) saturate(1.05)' : 'brightness(1) saturate(1)',
-                                                            boxShadow: isBreathing
-                                                                ? '0 0 70px rgba(56,189,248,0.38)'
-                                                                : '0 0 40px rgba(56,189,248,0.18)',
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div aria-hidden style={{ width: sliderWidth }} />
-                                        </div>
-                                    )}
-                                </div>
-                                {!usePortraitLayout && (
-                                    <div
-                                        ref={instructionSecondaryRef}
-                                        className="text-center leading-relaxed text-white/70 space-y-1 text-secondary"
-                                        style={{ maxWidth: instructionMaxWidth }}
-                                    >
-                                        {useSingleLineInstructions ? (
-                                            <p>{t('practice.inhale_space')}</p>
-                                        ) : (
-                                            <>
-                                                <p>{t('practice.inhale_space_only')}</p>
-                                                <p>{t('practice.exhale_release')}</p>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
+                                <MeditationBreathingSurface
+                                    usePortraitLayout={usePortraitLayout}
+                                    portraitStackGap={portraitStackGap}
+                                    horizontalBarWidth={horizontalBarWidth}
+                                    horizontalBarHeight={horizontalBarHeight}
+                                    mandalaSize={mandalaSize}
+                                    isBreathing={isBreathing}
+                                    breathTransition={breathTransition}
+                                    instructionMaxWidth={instructionMaxWidth}
+                                    useSingleLineInstructions={useSingleLineInstructions}
+                                    landscapeGap={landscapeGap}
+                                    sliderHeight={sliderHeight}
+                                    sliderWidth={sliderWidth}
+                                    instructionRef={instructionRef}
+                                    instructionSecondaryRef={instructionSecondaryRef}
+                                    onBreathStart={startBreath}
+                                    onBreathEnd={finishBreath}
+                                    onBreathCancel={cancelBreath}
+                                    t={t}
+                                />
                             </div>
                         </div>
                     </div>
@@ -599,36 +315,7 @@ export default function MeditationMePage() {
 
                 <StickySideAdRail adSlot={sideAdSlot} page="practice_meditation" placement="practice_meditation_sidebar_right" />
             </div>
-            <style jsx>{`
-        @keyframes mandala-ripple {
-          0% {
-            transform: scale(1);
-            opacity: 0.35;
-          }
-          70% {
-            opacity: 0.15;
-          }
-          100% {
-            transform: scale(1.35);
-            opacity: 0;
-          }
-        }
-
-        .mandala-ripple {
-          position: absolute;
-          inset: 0;
-          border-radius: 9999px;
-          border: 1px solid rgba(56, 189, 248, 0.35);
-          box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
-          animation: mandala-ripple 2.4s ease-out infinite;
-          pointer-events: none;
-          will-change: transform, opacity;
-        }
-
-        .mandala-ripple--two {
-          animation-delay: 1.2s;
-        }
-      `}</style>
+            <MandalaRippleStyles />
         </div>
     );
 }

@@ -46,9 +46,12 @@ function mapListedDoc(row) {
   };
 }
 
-async function listModelDocsRaw(model, { limit = 5000 } = {}) {
+async function listModelDocsRaw(model, { limit = 5000, dataEq = {} } = {}) {
   const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 5000));
-  const rows = await listDocsByModel(String(model), { limit: safeLimit });
+  const rows = await listDocsByModel(String(model), {
+    dataEq,
+    limit: safeLimit,
+  });
   return rows
     .map((row) => ({
       id: String(row?._id || ''),
@@ -221,11 +224,13 @@ async function ensureSessionSnapshot(session) {
 async function listQueueEntries(sessionId) {
   const safeSessionId = String(sessionId || '').trim();
   if (!safeSessionId) return [];
-  const rows = await listModelDocsRaw(QUEUE_MODEL, { limit: 5000 });
+  const rows = await listModelDocsRaw(QUEUE_MODEL, {
+    dataEq: { sessionId: safeSessionId },
+    limit: 5000,
+  });
   return rows
     .map(mapListedDoc)
     .filter(Boolean)
-    .filter((row) => String(row.sessionId || '').trim() === safeSessionId)
     .sort((a, b) => (safeMs(a.queuedAt) || 0) - (safeMs(b.queuedAt) || 0));
 }
 
@@ -275,11 +280,13 @@ async function getParticipation(sessionId, userId) {
 async function listSessionParticipations(sessionId) {
   const safeSessionId = String(sessionId || '').trim();
   if (!safeSessionId) return [];
-  const rows = await listModelDocsRaw(PARTICIPATION_MODEL, { limit: 5000 });
+  const rows = await listModelDocsRaw(PARTICIPATION_MODEL, {
+    dataEq: { sessionId: safeSessionId },
+    limit: 5000,
+  });
   return rows
     .map(mapListedDoc)
     .filter(Boolean)
-    .filter((row) => String(row.sessionId || '').trim() === safeSessionId)
     .sort((a, b) => (safeMs(a.joinedAt) || 0) - (safeMs(b.joinedAt) || 0));
 }
 

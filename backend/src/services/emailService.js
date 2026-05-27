@@ -1,7 +1,7 @@
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 const logger = require('../utils/logger');
-const { getSupabaseClient } = require('../lib/supabaseClient');
+const { listDocsByModel } = require('./documentStore');
 
 const hasResendApi = Boolean(process.env.RESEND_API_KEY);
 const isSmtpConfigured = Boolean(
@@ -11,7 +11,6 @@ const isSmtpConfigured = Boolean(
 );
 const EMAIL_SEND_TIMEOUT_MS = Number(process.env.EMAIL_SEND_TIMEOUT_MS) || 12000;
 const RESEND_API_URL = String(process.env.RESEND_API_URL || 'https://api.resend.com/emails').trim();
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 let transporter = null;
 
@@ -40,35 +39,14 @@ function applyTemplateVars(template, vars) {
   });
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
-  return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
-  };
-}
-
-async function listEmailTemplateDocs({ pageSize = 2000 } = {}) {
-  const supabase = getSupabaseClient();
-  const size = Math.max(1, Math.min(2000, Number(pageSize) || 2000));
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'EmailTemplate')
-    .range(0, size - 1);
-  if (error || !Array.isArray(data)) return [];
-  return data.map(mapDocRow).filter(Boolean);
-}
-
 async function getEmailTemplateByKey(key) {
   const safeKey = String(key || '').trim();
   if (!safeKey) return null;
-  const list = await listEmailTemplateDocs({ pageSize: 2000 });
-  const found = list.find((row) => String(row?.key || '') === safeKey) || null;
-  return found;
+  const rows = await listDocsByModel('EmailTemplate', {
+    dataEq: { key: safeKey },
+    limit: 1,
+  });
+  return rows[0] || null;
 }
 
 async function sendTemplateEmail({
@@ -162,7 +140,7 @@ if (isSmtpConfigured) {
 if (!hasResendApi && !isSmtpConfigured) {
   if (process.env.NODE_ENV === 'production') {
     logger.warn('[EMAIL] No email provider is configured in production. Emails are disabled.');
-  } else {
+  } else if (process.env.NODE_ENV !== 'test') {
     // В dev без настроек почты письма не отправляем, только логируем
     logger.warn('Email transport is not fully configured. Emails will be mocked in development.');
   }
@@ -221,10 +199,12 @@ async function sendViaResendApi(options) {
 
 const sendMailSafe = async (options) => {
   if (!hasResendApi && (!isSmtpConfigured || !transporter)) {
-    logger.warn('[EMAIL] send skipped: transporter is disabled', {
-      to: options?.to,
-      subject: options?.subject,
-    });
+    if (process.env.NODE_ENV !== 'test') {
+      logger.warn('[EMAIL] send skipped: transporter is disabled', {
+        to: options?.to,
+        subject: options?.subject,
+      });
+    }
     return;
   }
 

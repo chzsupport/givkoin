@@ -1,6 +1,5 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc, listDocsByModel, updateDoc } = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const TREE_MODEL = 'Tree';
 const LUMEN_TO_RADIANCE = 4; // 1 Lm = 4 Сияния
 
@@ -10,28 +9,21 @@ function ensurePositive(amount) {
   }
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeTreeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function getTree() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', TREE_MODEL)
-    .limit(1)
-    .maybeSingle();
+  const trees = await listDocsByModel(TREE_MODEL, { limit: 1 });
+  const existing = Array.isArray(trees) && trees.length > 0 ? trees[0] : null;
 
-  if (!error && data) {
-    return mapDocRow(data);
+  if (existing) {
+    return normalizeTreeDoc(existing);
   }
 
   // Дерево не найдено — создаём новое
@@ -47,17 +39,12 @@ async function getTree() {
     nextFruitAt: null,
   };
 
-  await supabase.from(DOC_TABLE).insert({
-    model: TREE_MODEL,
-    id,
-    data: newTree,
-  });
+  await insertDoc({ model: TREE_MODEL, id, data: newTree });
 
   return { ...newTree, _id: id };
 }
 
 async function saveTree(tree) {
-  const supabase = getSupabaseClient();
   const id = tree._id;
   const payload = { ...tree };
   delete payload._id;
@@ -65,11 +52,7 @@ async function saveTree(tree) {
   delete payload.createdAt;
   delete payload.updatedAt;
 
-  await supabase
-    .from(DOC_TABLE)
-    .update({ data: payload, updated_at: new Date().toISOString() })
-    .eq('model', TREE_MODEL)
-    .eq('id', String(id));
+  await updateDoc(id, payload);
 }
 
 function resetInjuryRuntimeCaches() {

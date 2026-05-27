@@ -1,20 +1,10 @@
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc } = require('../services/documentStore');
 
 async function insertFeedbackMessage(doc) {
-  const supabase = getSupabaseClient();
   const id = `fb_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-  const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).insert({
-    model: 'FeedbackMessage',
-    id,
-    data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
-  return { ...doc, _id: id };
+  const inserted = await insertDoc({ model: 'FeedbackMessage', id, data: doc });
+  return { ...doc, _id: inserted?._id || id };
 }
 
 exports.createFeedback = async (req, res) => {

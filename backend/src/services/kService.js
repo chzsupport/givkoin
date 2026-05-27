@@ -1,6 +1,7 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const { awardRadianceForActivity } = require('./activityRadianceService');
 const { getNumericSettingValue } = require('./settingsRegistryService');
+const { listDocsByModel } = require('./documentStore');
 const {
   getTreeBlessingRewardMultiplierForUser,
   __resetTreeBlessingRuntimeState,
@@ -9,8 +10,6 @@ const {
   CHAT_K_PER_HOUR: DEFAULT_CHAT_K_PER_HOUR,
   CHAT_MINUTES_PER_DAY_CAP: DEFAULT_CHAT_MINUTES_PER_DAY_CAP,
 } = require('../config/constants');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 const CHAT_NEW_PARTNER_HOURS_WINDOW = 72;
 const CHAT_MINUTES_BEFORE_HOUR_START = 5;
@@ -305,28 +304,22 @@ async function getUserKDebuffMultiplier(userId) {
 let injuryDebuffCache = { at: 0, percent: null };
 const INJURY_DEBUFF_CACHE_TTL_MS = 30 * 1000;
 
-function mapDocRow(row) {
+function mapDocumentStoreRow(row) {
   if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...row,
+    createdAt: row.createdAt ? new Date(row.createdAt) : null,
+    updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
   };
 }
 
 async function getTreeDoc() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Tree')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  const rows = await listDocsByModel('Tree', {
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 1,
+  });
+  return mapDocumentStoreRow(rows[0]);
 }
 
 async function getCurrentInjuryDebuffPercent() {
@@ -385,15 +378,14 @@ async function getTotalRewardMultiplier(userId) {
 }
 
 async function getActiveBattleWithGlobalDebuff() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Battle')
-    .limit(100);
-  if (error || !Array.isArray(data)) return null;
-
-  const battles = data.map(mapDocRow).filter((b) => b.status === 'active' && b.globalDebuffActive === true);
+  const rows = await listDocsByModel('Battle', {
+    dataEq: {
+      status: 'active',
+      globalDebuffActive: true,
+    },
+    limit: 1,
+  });
+  const battles = rows.map(mapDocumentStoreRow);
   return battles[0] || null;
 }
 

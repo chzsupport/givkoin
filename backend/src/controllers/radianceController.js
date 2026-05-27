@@ -1,7 +1,5 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const { getOrLoadPage, makePageCacheKey, warmPage } = require('../services/pageCacheService');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { listDocsByModel } = require('../services/documentStore');
 
 function toInt(value, fallback) {
   const n = Number(value);
@@ -10,41 +8,34 @@ function toInt(value, fallback) {
 }
 
 function mapEarningRow(row) {
-  const data = row?.data && typeof row.data === 'object' ? row.data : {};
+  const data = row?.data && typeof row.data === 'object' ? row.data : (row || {});
   return {
-    _id: String(row.id),
+    _id: String(row?._id || row?.id || ''),
     amount: Number(data.amount) || 0,
     activityType: String(data.activityType || ''),
     meta: data.meta && typeof data.meta === 'object' ? data.meta : {},
-    occurredAt: data.occurredAt || row.created_at || null,
+    occurredAt: data.occurredAt || row?.createdAt || row?.created_at || null,
   };
 }
 
 async function listRadianceEarnings(userId, limit, offset) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at', { count: 'exact' })
-    .eq('model', 'RadianceEarning')
-    .eq('data->>user', String(userId))
-    .order('data->>occurredAt', { ascending: false, nullsFirst: false })
-    .range(offset, offset + limit - 1);
-
-  if (error || !Array.isArray(data)) return [];
+  const data = await listDocsByModel('RadianceEarning', {
+    limit,
+    offset,
+    dataEq: { user: String(userId) },
+    orderBy: 'data->>occurredAt',
+    ascending: false,
+    nullsFirst: false,
+  });
   return data.map(mapEarningRow);
 }
 
 async function getTotalRadianceEarned(userId) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('data')
-    .eq('model', 'RadianceEarning')
-    .eq('data->>user', String(userId))
-    .limit(10000);
-
-  if (error || !Array.isArray(data)) return 0;
-  return data.reduce((sum, row) => sum + (Number(row?.data?.amount) || 0), 0);
+  const data = await listDocsByModel('RadianceEarning', {
+    limit: 10000,
+    dataEq: { user: String(userId) },
+  });
+  return data.reduce((sum, row) => sum + (Number(row?.amount) || 0), 0);
 }
 
 exports.getHistory = async (req, res) => {

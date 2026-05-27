@@ -1,11 +1,14 @@
 const { getAdRate, getTier } = require('../config/adRateMatrix');
 const { AD_TARGETS, normalizeAdTargetList } = require('../config/adTargets');
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const { deleteCreativeTotally } = require('../services/adminCleanupService');
+const {
+    getDocByModelAndId,
+    insertDoc,
+    listDocsByModel,
+    updateDocByModel,
+} = require('../services/documentStore');
 
 const geoip = require('geoip-lite');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 const AD_CREATIVE_CACHE_TTL_MS = Math.max(
     1000,
@@ -110,17 +113,28 @@ function getCreativeKind(data) {
 
 function mapCreativeRow(row) {
     if (!row) return null;
-    const data = row.data && typeof row.data === 'object' ? row.data : {};
+    const data = row.data && typeof row.data === 'object' ? row.data : row;
     const kind = getCreativeKind(data);
     return {
-        _id: row.id,
+        _id: row.id || row._id,
         ...data,
         kind: kind || String(data.kind || data.type || 'legacy'),
         type: kind || String(data.type || data.kind || 'legacy'),
         targetPages: normalizeAdTargetList(data.targetPages || 'all'),
         targetPlacements: normalizeTargetPlacements(data.targetPlacements || 'all'),
-        createdAt: row.created_at || data.createdAt || null,
-        updatedAt: row.updated_at || data.updatedAt || null,
+        createdAt: row.created_at || row.createdAt || data.createdAt || null,
+        updatedAt: row.updated_at || row.updatedAt || data.updatedAt || null,
+    };
+}
+
+function toLegacyDocRow(row) {
+    if (!row) return null;
+    const { _id, createdAt, updatedAt, ...data } = row;
+    return {
+        id: _id,
+        data,
+        created_at: createdAt || null,
+        updated_at: updatedAt || null,
     };
 }
 
@@ -247,22 +261,15 @@ async function loadActiveCreative(page, placement, now = new Date(), kind = 'ban
     if (inflight) return inflight;
 
     const promise = (async () => {
-        const supabase = getSupabaseClient();
-        const { data, error } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data,created_at,updated_at')
-            .eq('model', 'AdCreative')
-            .eq('data->>active', 'true')
-            .limit(100);
-        
-        if (error || !Array.isArray(data)) return null;
-        
+        const data = await listDocsByModel('AdCreative', {
+            dataEq: { active: true },
+            limit: 100,
+        });
         const filtered = data.filter((row) => {
-            const d = row.data || {};
-            return creativeMatchesTarget(d, { page, placement, kind, now });
+            return creativeMatchesTarget(row, { page, placement, kind, now });
         });
         
-        filtered.sort((a, b) => (Number(b.data?.priority) || 0) - (Number(a.data?.priority) || 0));
+        filtered.sort((a, b) => (Number(b.priority) || 0) - (Number(a.priority) || 0));
         
         const creative = filtered[0] ? mapCreativeRow(filtered[0]) : null;
         return setCachedActiveCreative(cacheKey, creative, nowMs);
@@ -285,25 +292,18 @@ async function loadRotationCreatives(now = new Date(), { page = '', placement = 
     if (inflight) return inflight;
 
     const promise = (async () => {
-        const supabase = getSupabaseClient();
-        const { data, error } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data,created_at,updated_at')
-            .eq('model', 'AdCreative')
-            .eq('data->>active', 'true')
-            .limit(100);
-        
-        if (error || !Array.isArray(data)) return [];
-        
+        const data = await listDocsByModel('AdCreative', {
+            dataEq: { active: true },
+            limit: 100,
+        });
         const filtered = data.filter((row) => {
-            const d = row.data || {};
-            return creativeMatchesTarget(d, { page, placement, kind, now });
+            return creativeMatchesTarget(row, { page, placement, kind, now });
         });
         
         filtered.sort((a, b) => {
-            const prioDiff = (Number(b.data?.priority) || 0) - (Number(a.data?.priority) || 0);
+            const prioDiff = (Number(b.priority) || 0) - (Number(a.priority) || 0);
             if (prioDiff !== 0) return prioDiff;
-            return (b.created_at || '').localeCompare(a.created_at || '');
+            return (b.createdAt || '').localeCompare(a.createdAt || '');
         });
         
         return setCachedRotationCreatives(cacheKey, filtered.map(mapCreativeRow).filter(Boolean), nowMs);
@@ -318,25 +318,24 @@ async function loadRotationCreatives(now = new Date(), { page = '', placement = 
 }
 
 async function listAdImpressionRows() {
-    const supabase = getSupabaseClient();
     const out = [];
     let from = 0;
     const pageSize = 1000;
 
     while (true) {
         // eslint-disable-next-line no-await-in-loop
-        const { data, error } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data,created_at')
-            .eq('model', 'AdImpression')
-            .order('created_at', { ascending: false })
-            .range(from, from + pageSize - 1);
+        const data = await listDocsByModel('AdImpression', {
+            orderBy: 'created_at',
+            ascending: false,
+            limit: pageSize,
+            offset: from,
+        });
 
-        if (error || !Array.isArray(data) || data.length === 0) {
+        if (!Array.isArray(data) || data.length === 0) {
             break;
         }
 
-        out.push(...data);
+        out.push(...data.map(toLegacyDocRow).filter(Boolean));
         if (data.length < pageSize) {
             break;
         }
@@ -382,7 +381,6 @@ exports.recordImpression = async (req, res) => {
         const safeDurationSeconds = eventType === 'session' ? normalizeDurationSeconds(durationSeconds) : 0;
         const adRate = getAdRate(country);
 
-        const supabase = getSupabaseClient();
         const nowIso = new Date().toISOString();
         const id = `ai_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
         
@@ -402,12 +400,12 @@ exports.recordImpression = async (req, res) => {
             adRate
         };
         
-        await supabase.from(DOC_TABLE).insert({
+        await insertDoc({
             model: 'AdImpression',
             id,
             data: impressionData,
-            created_at: nowIso,
-            updated_at: nowIso,
+            createdAt: nowIso,
+            updatedAt: nowIso,
         });
 
         res.json({ success: true, country, adRate, deviceType, eventType });
@@ -648,15 +646,7 @@ exports.getStats = async (req, res) => {
 // Get all creatives
 exports.getCreatives = async (req, res) => {
     try {
-        const supabase = getSupabaseClient();
-        const { data, error } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data,created_at,updated_at')
-            .eq('model', 'AdCreative')
-            .limit(500);
-        
-        if (error) return res.status(500).json({ message: error.message });
-        
+        const data = await listDocsByModel('AdCreative', { limit: 500 });
         const creatives = (data || [])
             .map(mapCreativeRow)
             .filter(Boolean)
@@ -675,18 +665,17 @@ exports.getCreatives = async (req, res) => {
 // Create creative
 exports.createCreative = async (req, res) => {
     try {
-        const supabase = getSupabaseClient();
         const nowIso = new Date().toISOString();
         const id = `ac_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
         
         const creativeData = normalizeCreativeInput(req.body);
         
-        await supabase.from(DOC_TABLE).insert({
+        await insertDoc({
             model: 'AdCreative',
             id,
             data: creativeData,
-            created_at: nowIso,
-            updated_at: nowIso,
+            createdAt: nowIso,
+            updatedAt: nowIso,
         });
         
         invalidateCreativeRuntimeState();
@@ -699,13 +688,7 @@ exports.createCreative = async (req, res) => {
 // Update creative
 exports.updateCreative = async (req, res) => {
     try {
-        const supabase = getSupabaseClient();
-        const { data: existing, error: findError } = await supabase
-            .from(DOC_TABLE)
-            .select('id,data')
-            .eq('model', 'AdCreative')
-            .eq('id', req.params.id)
-            .maybeSingle();
+        const existing = await getDocByModelAndId('AdCreative', req.params.id);
         
         if (!existing) {
             return res.status(404).json({ message: 'Креатив не найден' });
@@ -713,17 +696,18 @@ exports.updateCreative = async (req, res) => {
         
         const onlyActiveToggle = req.body
             && Object.keys(req.body).every((key) => key === 'active')
-            && !normalizeCreativeKind(existing.data?.kind || existing.data?.type);
+            && !normalizeCreativeKind(existing.kind || existing.type);
         const nextData = onlyActiveToggle
-            ? { ...existing.data, active: req.body.active !== false }
-            : normalizeCreativeInput(req.body, existing.data);
-        await supabase
-            .from(DOC_TABLE)
-            .update({ data: nextData, updated_at: new Date().toISOString() })
-            .eq('id', req.params.id);
+            ? { ...existing, active: req.body.active !== false }
+            : normalizeCreativeInput(req.body, existing);
+        const { _id, createdAt, updatedAt, ...cleanNextData } = nextData;
+        void _id;
+        void createdAt;
+        void updatedAt;
+        await updateDocByModel('AdCreative', req.params.id, cleanNextData);
         
         invalidateCreativeRuntimeState();
-        res.json({ _id: existing.id, ...nextData });
+        res.json({ _id: existing._id, ...cleanNextData });
     } catch (error) {
         res.status(error.statusCode || 500).json({ message: error.message });
     }

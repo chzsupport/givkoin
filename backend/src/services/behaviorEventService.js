@@ -1,6 +1,4 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc } = require('./documentStore');
 
 function trimString(value, maxLen = 300) {
   return String(value || '').trim().slice(0, maxLen);
@@ -37,17 +35,9 @@ function sanitizeMeta(meta) {
 }
 
 async function insertBehaviorEvent(doc) {
-  const supabase = getSupabaseClient();
   const id = `be_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-  const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).insert({
-    model: 'BehaviorEvent',
-    id,
-    data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
-  return { ...doc, _id: id };
+  const inserted = await insertDoc({ model: 'BehaviorEvent', id, data: doc });
+  return { ...doc, _id: inserted?._id || id };
 }
 
 async function recordBehaviorEvent({

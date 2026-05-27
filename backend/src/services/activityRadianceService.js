@@ -1,8 +1,6 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const { addRadiance } = require('./radianceService');
+const { countDocsByModel, insertDoc, listDocsByModel } = require('./documentStore');
 const { RADIANCE_RULES, resolveRadianceAmount } = require('../config/radianceRules');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 const INJURY_ACTIVE_CACHE_TTL_MS = Math.max(1000, Number(process.env.ACTIVITY_RADIANCE_INJURY_CACHE_TTL_MS) || 10000);
 const DAILY_STATS_CACHE_TTL_MS = Math.max(1000, Number(process.env.ACTIVITY_RADIANCE_DAILY_LIMIT_CACHE_TTL_MS) || 10000);
@@ -12,14 +10,12 @@ let injuryActiveInflight = null;
 const dailyStatsCache = new Map();
 const dailyStatsInflight = new Map();
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
@@ -82,16 +78,12 @@ function incrementCachedDailyStats({ userId, activityType, grantedAmount, now = 
 }
 
 async function getTreeDoc() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Tree')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  const rows = await listDocsByModel('Tree', {
+    limit: 1,
+    orderBy: 'created_at',
+    ascending: false,
+  });
+  return normalizeDoc(rows[0] || null);
 }
 
 async function hasActiveInjury({ nowMs = Date.now(), useCache = true } = {}) {
@@ -129,16 +121,14 @@ async function hasActiveInjury({ nowMs = Date.now(), useCache = true } = {}) {
 
 async function alreadyAwarded({ userId, activityType, dedupeKey }) {
   if (!dedupeKey) return false;
-  const supabase = getSupabaseClient();
-  const { count, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id', { head: true, count: 'exact' })
-    .eq('model', 'RadianceEarning')
-    .eq('data->>user', String(userId))
-    .eq('data->>activityType', String(activityType))
-    .eq('data->>dedupeKey', String(dedupeKey));
-  if (error) return false;
-  return Number(count || 0) > 0;
+  const count = await countDocsByModel('RadianceEarning', {
+    dataEq: {
+      user: String(userId),
+      activityType: String(activityType),
+      dedupeKey: String(dedupeKey),
+    },
+  });
+  return count > 0;
 }
 
 async function getDailyStats({ userId, activityType, now = new Date(), useCache = true } = {}) {
@@ -156,23 +146,18 @@ async function getDailyStats({ userId, activityType, now = new Date(), useCache 
   }
 
   const promise = (async () => {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data')
-      .eq('model', 'RadianceEarning')
-      .eq('data->>user', String(userId))
-      .eq('data->>activityType', String(activityType))
-      .gte('data->>occurredAt', dayStart.toISOString())
-      .lt('data->>occurredAt', dayEnd.toISOString())
-      .limit(5000);
-
-    if (error || !Array.isArray(data)) {
-      return { count: 0, amount: 0 };
-    }
+    const data = await listDocsByModel('RadianceEarning', {
+      limit: 5000,
+      dataEq: {
+        user: String(userId),
+        activityType: String(activityType),
+      },
+      dataGte: { occurredAt: dayStart.toISOString() },
+      dataLt: { occurredAt: dayEnd.toISOString() },
+    });
 
     const stats = data.reduce((acc, row) => {
-      const amount = Number(row?.data?.amount) || 0;
+      const amount = Number(row?.amount) || 0;
       return {
         count: acc.count + 1,
         amount: round3(acc.amount + Math.max(0, amount)),
@@ -232,7 +217,6 @@ function clampAwardAmount({ requestedAmount, alreadyAwardedAmount, dailyLimitAmo
 
 async function insertRadianceEarning({ userId, amount, activityType, meta = {}, dedupeKey = null, occurredAt = new Date() }) {
   const safeOccurredAt = occurredAt instanceof Date ? occurredAt : new Date(occurredAt);
-  const supabase = getSupabaseClient();
   const earningId = `re_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const safeMeta = meta && typeof meta === 'object' ? { ...meta } : {};
   if (dedupeKey) {
@@ -247,14 +231,13 @@ async function insertRadianceEarning({ userId, amount, activityType, meta = {}, 
     occurredAt: safeOccurredAt.toISOString(),
   };
 
-  const { error } = await supabase.from(DOC_TABLE).insert({
+  await insertDoc({
     model: 'RadianceEarning',
     id: earningId,
     data: payload,
-    created_at: safeOccurredAt.toISOString(),
-    updated_at: safeOccurredAt.toISOString(),
+    createdAt: safeOccurredAt,
+    updatedAt: safeOccurredAt,
   });
-  if (error) throw error;
   return payload;
 }
 

@@ -1,7 +1,16 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { getDocById, upsertDoc, updateDoc, mapDocRow } = require('./documentStore');
+const {
+  getDocById,
+  getDocByModelAndId,
+  insertDoc,
+  listDocsByModel,
+  updateDoc,
+  updateDocByModel,
+  updateDocByModelIfDataEq,
+  upsertDoc,
+} = require('./documentStore');
 const { loadActiveAdCreative } = require('../controllers/adController');
 const { creditK, recordTransaction } = require('./kService');
 const { applyStarsDelta } = require('../utils/stars');
@@ -9,7 +18,6 @@ const { awardRadianceForActivity } = require('./activityRadianceService');
 const { __resetTreeBlessingRuntimeState } = require('./treeBlessingService');
 const { SHOP_ITEMS_BY_KEY, getWarehouseItemEffect, localizeShopItem } = require('../config/shopCatalog');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const OFFER_MODEL = 'AdBoostOffer';
 const WATCH_MODEL = 'AdBoostWatch';
 const OFFER_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.AD_BOOST_OFFER_TTL_MS) || 30 * 60 * 1000);
@@ -69,23 +77,12 @@ function stripDocMeta(doc) {
 
 async function updateDocIfStatus(doc, expectedStatus, patch, now = new Date()) {
   if (!doc?._id || !expectedStatus) return null;
-  const supabase = getSupabaseClient();
   const nextData = {
     ...stripDocMeta(doc),
     ...(patch && typeof patch === 'object' ? patch : {}),
   };
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .update({
-      data: nextData,
-      updated_at: now.toISOString(),
-    })
-    .eq('id', String(doc._id))
-    .eq('data->>status', String(expectedStatus))
-    .select('id,model,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return updateDocByModelIfDataEq(OFFER_MODEL, doc._id, nextData, { status: expectedStatus }, { updatedAt: now })
+    .catch(() => null);
 }
 
 function offerToClient(offer) {
@@ -104,20 +101,15 @@ function offerToClient(offer) {
 async function getPendingAdBoostOffer({ userId, page = '' } = {}) {
   const safeUserId = String(userId || '').trim();
   if (!safeUserId) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,model,data,created_at,updated_at')
-    .eq('model', OFFER_MODEL)
-    .eq('data->>user', safeUserId)
-    .eq('data->>status', 'pending')
-    .order('updated_at', { ascending: false })
-    .limit(20);
-  if (error || !Array.isArray(data)) return null;
+  const data = await listDocsByModel(OFFER_MODEL, {
+    dataEq: { user: safeUserId, status: 'pending' },
+    orderBy: 'updated_at',
+    ascending: false,
+    limit: 20,
+  });
 
   const wantedPage = normalizePage(page);
-  for (const row of data) {
-    const offer = mapDocRow(row);
+  for (const offer of data) {
     const clientOffer = offerToClient(offer);
     if (!clientOffer) continue;
     if (!page || clientOffer.page === wantedPage || clientOffer.page === 'all') {
@@ -162,7 +154,6 @@ async function insertWarehouseItem({ userId, itemKey, sourceOfferId }) {
   const item = SHOP_ITEMS_BY_KEY[itemKey];
   if (!item) return null;
   const localized = localizeShopItem(item, 'ru');
-  const supabase = getSupabaseClient();
   const id = `wi_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const nowIso = new Date().toISOString();
   const doc = {
@@ -177,14 +168,14 @@ async function insertWarehouseItem({ userId, itemKey, sourceOfferId }) {
     source: 'ad_boost',
     sourceOfferId,
   };
-  await supabase.from(DOC_TABLE).insert({
+  const inserted = await insertDoc({
     model: 'WarehouseItem',
     id,
     data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
   });
-  return { ...doc, _id: id };
+  return inserted || { ...doc, _id: id };
 }
 
 async function createAdBoostOffer({
@@ -488,17 +479,9 @@ async function grantShopRandomItem({ userId, offerId }) {
 async function markWarehouseItemAdBoosted({ userId, itemId, itemKey, now = new Date() }) {
   const safeItemId = String(itemId || '').trim();
   if (!safeItemId) return null;
-  const supabase = getSupabaseClient();
-  const { data: row, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'WarehouseItem')
-    .eq('id', safeItemId)
-    .eq('data->>user', String(userId))
-    .maybeSingle();
-  if (error || !row?.data) return null;
+  const existing = await getDocByModelAndId('WarehouseItem', safeItemId);
+  if (!existing || String(existing.user) !== String(userId)) return null;
 
-  const existing = row.data && typeof row.data === 'object' ? row.data : {};
   const existingEffect = existing.usageEffect && typeof existing.usageEffect === 'object' ? existing.usageEffect : {};
   const boostedAt = now.toISOString();
   const usageEffect = getWarehouseItemEffect(itemKey || existing.itemKey, {
@@ -509,16 +492,10 @@ async function markWarehouseItemAdBoosted({ userId, itemId, itemKey, now = new D
   if (!usageEffect) return null;
 
   const nextData = {
-    ...existing,
+    ...stripDocMeta(existing),
     usageEffect,
   };
-  const { data: updated } = await supabase
-    .from(DOC_TABLE)
-    .update({ data: nextData, updated_at: boostedAt })
-    .eq('id', safeItemId)
-    .select('id,data')
-    .maybeSingle();
-  return updated?.data ? { ...updated.data, _id: updated.id } : null;
+  return updateDocByModel('WarehouseItem', safeItemId, nextData, { updatedAt: boostedAt }).catch(() => null);
 }
 
 async function applyWarehouseUpgrade({ userId, reward }) {

@@ -1,313 +1,29 @@
 'use client';
 
-import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { Merriweather } from 'next/font/google';
-import type { BattleSummary } from '@/lib/battleSummary';
-import { getAchievementCatalogItem } from '@/lib/achievementCatalog';
 import { useI18n } from '@/context/I18nContext';
-
-type BattleSummaryOverlayProps = {
-    isOpen: boolean;
-    summary: BattleSummary | null;
-    loading?: boolean;
-    playAnimation?: boolean;
-    onClose: () => void;
-    onPrimaryAction: () => void;
-    primaryActionLabel: string;
-    onSecondaryAction?: (() => void) | null;
-    secondaryActionLabel?: string | null;
-};
+import {
+    INTRO_TYPE_DELAY_MS,
+    INTRO_TYPE_STEP,
+    LINE_REVEAL_DELAY_MS,
+} from '@/components/battle/summary-overlay/constants';
+import { ResultWord } from '@/components/battle/summary-overlay/ResultWord';
+import { SummaryLineCard } from '@/components/battle/summary-overlay/SummaryLineCard';
+import type { BattleSummaryOverlayProps } from '@/components/battle/summary-overlay/types';
+import {
+    formatIntroText,
+    getFinalTreeNote,
+    getOrderedLines,
+} from '@/components/battle/summary-overlay/summaryOverlayUtils';
 
 const parchmentSerif = Merriweather({
     subsets: ['latin', 'cyrillic'],
     weight: ['400', '700'],
     display: 'swap',
 });
-
-const INTRO_TYPE_DELAY_MS = 334;
-const INTRO_TYPE_STEP = 3;
-const LINE_REVEAL_DELAY_MS = 850;
-const LINE_LABEL_TYPE_DELAY_MS = 52;
-const LINE_LABEL_TYPE_STEP = 4;
-
-const DISPLAY_LINE_ORDER = [
-    'user_damage',
-    'reward_k',
-    'duration',
-    'best_player',
-    'achievements',
-    'total_dark_damage',
-    'total_light_damage',
-] as const;
-
-const RESULT_LABEL_KEYS: Record<NonNullable<BattleSummary['result']>, 'battle_summary.result_victory' | 'battle_summary.result_defeat' | 'battle_summary.result_draw'> = {
-    light: 'battle_summary.result_victory',
-    dark: 'battle_summary.result_defeat',
-    draw: 'battle_summary.result_draw',
-};
-
-function TypingText({
-    text,
-    delayMs,
-    step,
-    instant = false,
-    showCaret = false,
-    className = '',
-}: {
-    text: string;
-    delayMs: number;
-    step: number;
-    instant?: boolean;
-    showCaret?: boolean;
-    className?: string;
-}) {
-    const [visibleChars, setVisibleChars] = useState(instant ? text.length : 0);
-
-    useEffect(() => {
-        if (instant) {
-            setVisibleChars(text.length);
-            return;
-        }
-
-        setVisibleChars(0);
-        let cancelled = false;
-        let timer = 0;
-
-        const tick = (nextValue: number) => {
-            if (cancelled) return;
-            const bounded = Math.min(text.length, nextValue);
-            setVisibleChars(bounded);
-            if (bounded >= text.length) {
-                return;
-            }
-            timer = window.setTimeout(() => tick(bounded + step), delayMs);
-        };
-
-        tick(step);
-
-        return () => {
-            cancelled = true;
-            if (timer) {
-                window.clearTimeout(timer);
-            }
-        };
-    }, [delayMs, instant, step, text]);
-
-    const displayText = text.slice(0, visibleChars);
-    const showBlinkingCaret = showCaret && visibleChars < text.length;
-
-    return (
-        <span className={className}>
-            {displayText}
-            {showBlinkingCaret ? <span className="ml-1 inline-block h-[1.05em] w-[2px] animate-pulse bg-[#c79d4a] align-[-0.16em]" /> : null}
-        </span>
-    );
-}
-
-function getOrderedLines(summary: BattleSummary | null) {
-    if (!summary) return [];
-    const linesByKey = new Map(summary.lines.map((line) => [line.key, line]));
-    return DISPLAY_LINE_ORDER
-        .map((key) => linesByKey.get(key))
-        .filter((line): line is BattleSummary['lines'][number] => Boolean(line));
-}
-
-function getLineLabel(_summary: BattleSummary | null, line: BattleSummary['lines'][number]) {
-    return line.label;
-}
-
-function getFinalTreeNote(summary: BattleSummary | null, loading: boolean, t: (key: string) => string) {
-    if (!summary) return null;
-
-    const injuryLine = summary.lines.find((line) => line.key === 'injury') || null;
-    if (loading || (injuryLine && injuryLine.state !== 'ready')) {
-        return t('battle_summary.tree_note_pending');
-    }
-
-    if (summary.injury?.branchName) {
-        return t('battle_summary.tree_note_injury');
-    }
-
-    return t('battle_summary.tree_note_no_injury');
-}
-
-function formatIntroText(text: string, marker: string) {
-    if (!text) return text;
-
-    if (marker && text.includes(marker)) {
-        return text.replace(marker, `\n\n${marker.trimStart()}`);
-    }
-
-    return text;
-}
-
-function renderPendingValue(lineIndex: number, t: (key: string) => string) {
-    return (
-        <div className="inline-flex items-center justify-end gap-2 text-sm text-[#7a5b34]">
-            <span>{lineIndex >= 4 ? t('battle_summary.pending_ink_dry') : t('battle_summary.pending_line_printing')}</span>
-            <span className="inline-flex gap-1">
-                <span className="h-2 w-2 rounded-full bg-[#8c5b28] animate-pulse" />
-                <span className="h-2 w-2 rounded-full bg-[#8c5b28]/80 animate-pulse [animation-delay:140ms]" />
-                <span className="h-2 w-2 rounded-full bg-[#8c5b28]/60 animate-pulse [animation-delay:280ms]" />
-            </span>
-        </div>
-    );
-}
-
-function renderLineValue(
-    summary: BattleSummary | null,
-    lineIndex: number,
-    line: BattleSummary['lines'][number],
-    t: (key: string) => string,
-    language: string,
-) {
-    if (line.key === 'achievements') {
-        if (line.state === 'error') {
-            return <div className="text-right text-sm font-semibold text-[#c98d63]">{line.errorText || t('battle_summary.achievements_closed')}</div>;
-        }
-
-        if (line.state !== 'ready') {
-            return renderPendingValue(lineIndex, t);
-        }
-
-        const achievementCards = (summary?.awardedAchievements || [])
-            .map((achievementId) => getAchievementCatalogItem(achievementId, language))
-            .filter((achievement): achievement is NonNullable<ReturnType<typeof getAchievementCatalogItem>> => Boolean(achievement));
-
-        if (!achievementCards.length) {
-            return <div className="text-right text-lg font-semibold text-[#e2c27a]">{t('battle_summary.achievements_none')}</div>;
-        }
-
-        return (
-            <div className="flex flex-wrap justify-end gap-3">
-                {achievementCards.map((achievement) => (
-                    <div
-                        key={achievement.id}
-                        className="flex min-w-[172px] max-w-[220px] items-center gap-3 rounded-[22px] border border-[#8a6433]/40 bg-[linear-gradient(180deg,rgba(77,49,22,0.94)_0%,rgba(61,39,18,0.96)_100%)] px-3 py-3 text-left shadow-[0_10px_30px_rgba(0,0,0,0.26)]"
-                    >
-                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-[16px] border border-[#9c7640]/40 bg-[#7a5a2d]">
-                            <Image
-                                src={achievement.imageSrc}
-                                alt={achievement.title}
-                                width={56}
-                                height={56}
-                                className="h-full w-full object-cover"
-                            />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="text-base font-semibold leading-tight text-[#f0d38d]">
-                                {achievement.title}
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        );
-    }
-
-    if (line.state === 'error') {
-        return (
-            <div className="text-right text-sm font-semibold text-[#c98d63]">
-                {line.errorText || t('battle_summary.line_not_written')}
-            </div>
-        );
-    }
-
-    if (line.state !== 'ready') {
-        return renderPendingValue(lineIndex, t);
-    }
-
-    return (
-        <div className="text-right text-xl font-semibold leading-snug text-[#f0d38d] md:text-2xl">
-            {line.valueText || t('battle_summary.value_dash')}
-        </div>
-    );
-}
-
-function SummaryLineCard({
-    summary,
-    line,
-    lineIndex,
-    instant,
-    t,
-    language,
-}: {
-    summary: BattleSummary | null;
-    line: BattleSummary['lines'][number];
-    lineIndex: number;
-    instant: boolean;
-    t: (key: string) => string;
-    language: string;
-}) {
-    const label = getLineLabel(summary, line);
-    const achievementsLine = line.key === 'achievements';
-
-    return (
-        <motion.div
-            layout
-            initial={{ opacity: 0, y: 14, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
-            className="relative overflow-hidden rounded-[26px] border border-[#8d6839]/38 bg-[linear-gradient(180deg,rgba(96,66,34,0.96)_0%,rgba(74,49,24,0.97)_52%,rgba(56,37,18,0.98)_100%)] px-4 py-4 shadow-[0_16px_42px_rgba(0,0,0,0.28)]"
-        >
-            <div className="absolute inset-x-0 top-0 h-[1px] bg-[#dfbf82]/60" />
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(212,181,109,0.14)_0%,rgba(212,181,109,0)_22%),radial-gradient(circle_at_82%_78%,rgba(31,18,8,0.22)_0%,rgba(31,18,8,0)_28%),radial-gradient(circle_at_52%_42%,rgba(150,112,56,0.12)_0%,rgba(150,112,56,0)_36%)] mix-blend-screen" />
-            <div className={`grid gap-4 ${achievementsLine ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.9fr)] md:items-start'}`}>
-                <div className="min-w-0">
-                    <div className="text-[1.15rem] leading-snug text-[#dcc18a] md:text-[1.35rem]">
-                        <TypingText
-                            text={label}
-                            delayMs={LINE_LABEL_TYPE_DELAY_MS}
-                            step={LINE_LABEL_TYPE_STEP}
-                            instant={instant}
-                            className={parchmentSerif.className}
-                        />
-                    </div>
-                </div>
-                <div className={`${achievementsLine ? 'pt-1' : 'self-center'}`}>
-                    {renderLineValue(summary, lineIndex, line, t, language)}
-                </div>
-            </div>
-        </motion.div>
-    );
-}
-
-function ResultWord({ result, t }: { result: BattleSummary['result']; t: (key: string) => string }) {
-    if (!result) return null;
-
-    const colorClass = result === 'light'
-        ? 'text-[#b7df93]'
-        : result === 'dark'
-            ? 'text-[#e29a72]'
-            : 'text-[#e2c27a]';
-
-    return (
-        <motion.div
-            className={`py-1 text-center ${parchmentSerif.className} ${colorClass}`}
-            animate={{
-                scale: [1, 1.035, 1],
-                opacity: [0.92, 1, 0.92],
-                textShadow: [
-                    '0 0 0 rgba(0,0,0,0)',
-                    result === 'light'
-                        ? '0 0 18px rgba(68,146,84,0.28)'
-                        : result === 'dark'
-                            ? '0 0 18px rgba(159,61,52,0.24)'
-                            : '0 0 16px rgba(163,116,53,0.22)',
-                    '0 0 0 rgba(0,0,0,0)',
-                ],
-            }}
-            transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-        >
-            <div className="text-[2.6rem] font-bold leading-none tracking-[0.04em] md:text-[4.2rem]">
-                {t(RESULT_LABEL_KEYS[result])}
-            </div>
-        </motion.div>
-    );
-}
 
 export function BattleSummaryOverlay({
     isOpen,
@@ -512,13 +228,18 @@ export function BattleSummaryOverlay({
                                                 instant={instantReveal}
                                                 t={t}
                                                 language={language}
+                                                parchmentClassName={parchmentSerif.className}
                                             />
                                         ))}
                                     </motion.div>
 
                                     {showResultWord && displaySummary?.result ? (
                                         <div className="mt-7">
-                                            <ResultWord result={displaySummary?.result || null} t={t} />
+                                            <ResultWord
+                                                result={displaySummary?.result || null}
+                                                t={t}
+                                                parchmentClassName={parchmentSerif.className}
+                                            />
                                         </div>
                                     ) : null}
 
@@ -536,6 +257,7 @@ export function BattleSummaryOverlay({
                                                 instant={instantReveal}
                                                 t={t}
                                                 language={language}
+                                                parchmentClassName={parchmentSerif.className}
                                             />
                                         ))}
                                     </motion.div>

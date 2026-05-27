@@ -19,8 +19,7 @@ const {
   getSystemJobDefinition,
 } = require('../services/systemJobsService');
 const { logAdminAction } = require('../services/adminActionService');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { getDocByModelAndId, listAllDocsByModel } = require('../services/documentStore');
 
 function toId(value, depth = 0) {
   if (depth > 3) return '';
@@ -50,48 +49,23 @@ async function getUsersByIds(ids) {
   return new Map((Array.isArray(data) ? data : []).map((row) => [String(row.id), row]));
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function listModelDocs(model) {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = 1000;
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', String(model))
-      .range(from, from + size - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < size) break;
-    from += data.length;
-  }
-  return out;
+  const docs = await listAllDocsByModel(model, { pageSize: 1000 });
+  return docs.map(normalizeDoc).filter(Boolean);
 }
 
 async function getModelDocById(model, id) {
   if (!id) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', String(model))
-    .eq('id', String(id))
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return normalizeDoc(await getDocByModelAndId(model, id));
 }
 
 function hydrateActor(row, usersById) {

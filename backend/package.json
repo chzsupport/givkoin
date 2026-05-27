@@ -4,6 +4,9 @@
   "private": true,
   "main": "src/app.js",
   "scripts": {
+    "check": "npm run check:syntax && npm test",
+    "check:syntax": "node scripts/check-js-syntax.js",
+    "test": "node scripts/run-unit-tests.js",
     "start": "node src/app.js",
     "dev": "nodemon src/app.js"
   },

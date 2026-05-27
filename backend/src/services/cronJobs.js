@@ -13,6 +13,12 @@ const { getIO } = require('../socket');
 const { getFrontendBaseUrl } = require('../config/env');
 const { forEachUserBatch } = require('./userBatchService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+  deleteDocsByModelWhereDataEq,
+  getDocByModelAndId,
+  listDocsByModel,
+  updateDocByModel,
+} = require('./documentStore');
 const { finalizeDueCollectiveSessions } = require('./meditationRuntimeService');
 const { processDueNightShiftSettlements, processPendingNightShiftFinalReviews, processStaleNightShiftClosures } = require('./nightShiftRuntimeService');
 const { cleanupExpiredTranscripts } = require('./chatTranscriptService');
@@ -20,76 +26,42 @@ const battleRuntimeStore = require('./battleRuntimeStore');
 const { processPendingCrystalSettlements } = require('../controllers/crystalController');
 const { processOnlineEntityMoodRefresh } = require('./entityMoodService');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
-  return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
-  };
-}
-
 async function getTreeDoc() {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Tree')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  const rows = await listDocsByModel('Tree', {
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 1,
+  });
+  return rows[0] || null;
 }
 
 async function updateTreeDoc(treeId, updates) {
-  const supabase = getSupabaseClient();
-  const { data: existing, error: loadError } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('id', treeId)
-    .maybeSingle();
-  if (loadError || !existing) return null;
+  const existing = await getDocByModelAndId('Tree', treeId);
+  if (!existing) return null;
 
-  const newData = { ...existing.data, ...updates };
-  await supabase
-    .from(DOC_TABLE)
-    .update({ data: newData, updated_at: new Date().toISOString() })
-    .eq('id', treeId);
+  const { _id, createdAt, updatedAt, ...existingData } = existing;
+  void _id;
+  void createdAt;
+  void updatedAt;
+  const newData = { ...existingData, ...updates };
+  await updateDocByModel('Tree', treeId, newData);
 
   return { ...newData, _id: treeId };
 }
 
 async function getBattleDoc(battleId) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Battle')
-    .eq('id', battleId)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return getDocByModelAndId('Battle', battleId);
 }
 
 async function listBattles(filter = {}) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Battle')
-    .limit(200);
-  if (error || !Array.isArray(data)) return [];
-
-  return data.map(mapDocRow).filter((row) => {
-    for (const [key, val] of Object.entries(filter)) {
-      if (row[key] !== val) return false;
-    }
-    return true;
+  const dataEq = {};
+  for (const [key, value] of Object.entries(filter || {})) {
+    if (!key || value === undefined || value === null) continue;
+    dataEq[key] = String(value);
+  }
+  return listDocsByModel('Battle', {
+    dataEq,
+    limit: 200,
   });
 }
 const DURATION_SECONDS = battleService.BATTLE_NO_ENTRY_DURATION_SECONDS || 10800;
@@ -264,13 +236,10 @@ async function buildDarknessDecisionSnapshot(now = new Date()) {
   ];
 
   const loadAppeals = async () => {
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', 'Appeal')
-      .limit(5000);
-    if (error || !Array.isArray(data)) return [];
-    return data.map(mapDocRow).filter(Boolean);
+    return listDocsByModel('Appeal', {
+      dataEq: { status: 'pending' },
+      limit: 5000,
+    });
   };
 
   const [usersResult, activityRows, appeals, battles] = await Promise.all([
@@ -338,7 +307,7 @@ async function buildDarknessDecisionSnapshot(now = new Date()) {
     }
   }
 
-  const pendingAppeals = (Array.isArray(appeals) ? appeals : []).filter((row) => String(row?.status || '') === 'pending').length;
+  const pendingAppeals = Array.isArray(appeals) ? appeals.length : 0;
   const recentBattles = (Array.isArray(battles) ? battles : []).filter((battle) => {
     const battleTime = battle?.startsAt ? new Date(battle.startsAt).getTime() : 0;
     return battleTime >= since7d.getTime();
@@ -753,26 +722,13 @@ function registerCronJobs() {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayKey = dateKey(yesterday);
       
-      const supabase = getSupabaseClient();
-      const { error: deleteError } = await supabase
-        .from(DOC_TABLE)
-        .delete()
-        .eq('model', 'NewsViewBucket')
-        .eq('data->>dateKey', yesterdayKey);
+      await deleteDocsByModelWhereDataEq('NewsViewBucket', { dateKey: yesterdayKey }).catch((error) => {
+        console.error('News views daily reset delete error:', error);
+      });
 
-      if (deleteError) {
-        console.error('News views daily reset delete error:', deleteError);
-      }
-
-      const { error: counterDeleteError } = await supabase
-        .from(DOC_TABLE)
-        .delete()
-        .eq('model', 'NewsDailyCounter')
-        .eq('data->>dateKey', yesterdayKey);
-
-      if (counterDeleteError) {
-        console.error('News daily counter cleanup error:', counterDeleteError);
-      }
+      await deleteDocsByModelWhereDataEq('NewsDailyCounter', { dateKey: yesterdayKey }).catch((error) => {
+        console.error('News daily counter cleanup error:', error);
+      });
     } catch (err) {
       console.error('News views daily reset cron error:', err);
     }

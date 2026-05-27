@@ -2,11 +2,11 @@ const { recordActivity } = require('../services/activityService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc, listDocsByModel, updateDocByModel } = require('../services/documentStore');
 const nightShiftRuntimeService = require('../services/nightShiftRuntimeService');
 const { createNotification } = require('./notificationController');
 const emailService = require('../services/emailService');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const NIGHT_SHIFT_DEFAULT_SALARY = Object.freeze({ k: 100, lm: 100, stars: 0.001 });
 
 function normalizeLang(value) {
@@ -34,14 +34,10 @@ function normalizeNightShiftSalary(value) {
 }
 
 async function getSystemSettings() {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .select('id,data')
-        .eq('model', 'SystemSettings')
-        .maybeSingle();
+    const rows = await listDocsByModel('SystemSettings', { limit: 1 });
+    const data = rows[0] || null;
     
-    if (error || !data) {
+    if (!data) {
         // Return defaults
         return {
             _id: 'system_settings',
@@ -51,41 +47,25 @@ async function getSystemSettings() {
     }
     
     return {
-        _id: data.id,
-        ...(data.data || {}),
-        nightShiftSalary: normalizeNightShiftSalary(data.data?.nightShiftSalary),
-        nightShiftSchedule: data.data?.nightShiftSchedule || { start: null, end: null },
+        _id: data._id,
+        ...data,
+        nightShiftSalary: normalizeNightShiftSalary(data.nightShiftSalary),
+        nightShiftSchedule: data.nightShiftSchedule || { start: null, end: null },
     };
 }
 
 async function saveSystemSettings(settings) {
-    const supabase = getSupabaseClient();
-    const nowIso = new Date().toISOString();
-    
-    const { data: existing, error: findError } = await supabase
-        .from(DOC_TABLE)
-        .select('id')
-        .eq('model', 'SystemSettings')
-        .maybeSingle();
-    
+    const rows = await listDocsByModel('SystemSettings', { limit: 1 });
+    const existing = rows[0] || null;
     const payload = {
         nightShiftSalary: normalizeNightShiftSalary(settings.nightShiftSalary),
         nightShiftSchedule: settings.nightShiftSchedule || { start: null, end: null },
     };
     
     if (existing) {
-        await supabase
-            .from(DOC_TABLE)
-            .update({ data: payload, updated_at: nowIso })
-            .eq('id', existing.id);
+        await updateDocByModel('SystemSettings', existing._id, payload);
     } else {
-        await supabase.from(DOC_TABLE).insert({
-            model: 'SystemSettings',
-            id: 'system_settings',
-            data: payload,
-            created_at: nowIso,
-            updated_at: nowIso,
-        });
+        await insertDoc({ model: 'SystemSettings', id: 'system_settings', data: payload });
     }
     
     return settings;

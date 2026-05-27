@@ -53,8 +53,8 @@ const RAW_GENERAL_ACHIEVEMENTS_RU = `1→Первая Искра — Нанес�
 26→Второе дыхание — Выйти из боя, зарядиться «Солнечным зарядом» и вернуться в тот же бой.
 27→Альтруист боя — Получить подарок Люменов от другого игрока прямо во время сражения.
 28→Сияющий донор — Раздать Люмены 5 раз сразу после окончания боя.
-29→Начало Потока — Достичь комбо x1.2.
-30→В Потоке — Достичь комбо x1.5.
+29→Начало Потока — Достичь комбо x1.5.
+30→В Потоке — Достичь комбо x2.0.
 31→Абсолютный Резонанс — Достичь и удержать комбо x2.0 в течение 2 минут.
 32→Неудержимый — Совершить 500 кликов без потери комбо.
 33→Мастер Комбо — Совершить 1000 кликов без потери комбо.
@@ -106,7 +106,7 @@ const RAW_GENERAL_ACHIEVEMENTS_RU = `1→Первая Искра — Нанес�
 79→Удар Судьбы — Выиграть 100 K в рулетке 3 раза за всё время.
 80→Триумф Удачи — Получить сектор «Доп. вращение» и сразу после него выиграть 50+ K.
 81→Марафонец Рулетки — Использовать все 3 вращения в день на протяжении 30 дней подряд.
-82→Благословение Фортуны — Получить 0.5 звезды душевности в рулетке.
+82→Благословение Фортуны — Получить 0.1 звезды душевности в рулетке.
 83→Джекпот Пророка — Угадать 6 из 7 цифр в лотерее.
 84→Властелин Лотереи — Угадать все 7 цифр в лотерее (Джекпот).
 85→Двойное Попадание — Угадать 5+ цифр в лотерее дважды за всё время.
@@ -154,8 +154,8 @@ const RAW_GENERAL_ACHIEVEMENTS_EN = `1→First Spark — Deal your first damage 
 26→Second Wind — Leave a battle, recharge with Solar Charge, and return to the same battle.
 27→Battle Altruist — Receive a Lumen gift from another player during battle.
 28→Radiant Donor — Share Lumens 5 times right after a battle ends.
-29→Beginning of the Flow — Reach an x1.2 combo.
-30→In the Flow — Reach an x1.5 combo.
+29→Beginning of the Flow — Reach an x1.5 combo.
+30→In the Flow — Reach an x2.0 combo.
 31→Absolute Resonance — Reach and hold an x2.0 combo for 2 minutes.
 32→Unstoppable — Make 500 clicks without losing your combo.
 33→Combo Master — Make 1,000 clicks without losing your combo.
@@ -207,7 +207,7 @@ const RAW_GENERAL_ACHIEVEMENTS_EN = `1→First Spark — Deal your first damage 
 79→Stroke of Fate — Win 100 K in roulette 3 times overall.
 80→Triumph of Luck — Hit the Bonus Spin sector and then immediately win 50+ K.
 81→Roulette Marathoner — Use all 3 daily spins for 30 days in a row.
-82→Fortune's Blessing — Receive 0.5 soul star in roulette.
+82→Fortune's Blessing — Receive 0.1 soul star in roulette.
 83→Prophet's Jackpot — Guess 6 out of 7 numbers in the lottery.
 84→Lord of the Lottery — Guess all 7 numbers in the lottery (Jackpot).
 85→Double Hit — Guess 5+ lottery numbers twice overall.

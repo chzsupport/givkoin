@@ -1,8 +1,7 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
-const { creditK, getTotalRewardMultiplier, recordTransaction } = require('../services/kService');
+const { creditK, recordTransaction } = require('../services/kService');
 const emailService = require('../services/emailService');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { countDocsByModel } = require('../services/documentStore');
 
 async function getUserRowById(userId) {
   if (!userId) return null;
@@ -76,12 +75,8 @@ async function applyStarsDelta({
   occurredAt = new Date(),
 }) {
   const safeDelta = Number(delta) || 0;
-  const rewardMultiplier = safeDelta > 0 && !skipDebuff
-    ? await getTotalRewardMultiplier(userId)
-    : 1;
-  const effectiveDelta = safeDelta > 0
-    ? Math.round(safeDelta * rewardMultiplier * 1000) / 1000
-    : safeDelta;
+  void skipDebuff;
+  const effectiveDelta = safeDelta;
 
   const userRow = await getUserRowById(userId);
   if (!userRow) {
@@ -116,17 +111,14 @@ async function applyStarsDelta({
   }
 
   async function countNewsInteractions(userId, type, since) {
-    const supabase = getSupabaseClient();
     const sinceIso = since instanceof Date ? since.toISOString() : since;
-    const { count, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id', { head: true, count: 'exact' })
-      .eq('model', 'NewsInteraction')
-      .eq('data->>user', String(userId))
-      .eq('data->>type', String(type))
-      .gte('created_at', sinceIso);
-    if (error) return 0;
-    return Math.max(0, Number(count) || 0);
+    return countDocsByModel('NewsInteraction', {
+      dataEq: {
+        user: String(userId),
+        type: String(type),
+      },
+      columnGte: { created_at: sinceIso },
+    });
   }
 
   async function hasCompletedRecovery() {

@@ -1,10 +1,15 @@
 const { grantAchievement } = require('./achievementService');
 const { createNotification } = require('../controllers/notificationController');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+  getDocByModelAndId,
+  listAllDocsByModel,
+  listDocsByModel,
+  updateDocByModel,
+} = require('./documentStore');
 const battleRuntimeStore = require('./battleRuntimeStore');
 const { computeBattleRewardK } = require('../utils/battleReward');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const BATTLE_SUMMARY_DETAILS_BATCH_SIZE = Math.max(1, parseInt(process.env.BATTLE_SUMMARY_DETAILS_BATCH_SIZE || '25', 10) || 25);
 const BATTLE_SUMMARY_DETAILS_BATCH_DELAY_MS = Math.max(0, parseInt(process.env.BATTLE_SUMMARY_DETAILS_BATCH_DELAY_MS || '120', 10) || 120);
 const BATTLE_SETTLEMENT_BATCH_SIZE = Math.max(1, parseInt(process.env.BATTLE_SETTLEMENT_BATCH_SIZE || '10', 10) || 10);
@@ -28,17 +33,6 @@ function chunkArray(items, size) {
     out.push(safeItems.slice(index, index + safeSize));
   }
   return out;
-}
-
-function mapBattleRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
-  return {
-    ...data,
-    _id: data._id || row.id,
-    createdAt: data.createdAt || row.created_at || null,
-    updatedAt: data.updatedAt || row.updated_at || null,
-  };
 }
 
 function getUserData(row) {
@@ -90,15 +84,7 @@ function emitReadyBattleSummaries(rows = []) {
 
 async function getBattleDocById(battleId) {
   if (!battleId) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'Battle')
-    .eq('id', String(battleId))
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapBattleRow(data);
+  return getDocByModelAndId('Battle', battleId);
 }
 
 async function updateBattleDocById(battleId, nextBattle) {
@@ -109,16 +95,7 @@ async function updateBattleDocById(battleId, nextBattle) {
   delete payloadDoc.createdAt;
   delete payloadDoc.updatedAt;
 
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .update({ data: payloadDoc })
-    .eq('model', 'Battle')
-    .eq('id', String(battleId))
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapBattleRow(data);
+  return updateDocByModel('Battle', battleId, payloadDoc).catch(() => null);
 }
 
 async function getUsersByIds(ids = []) {
@@ -242,30 +219,14 @@ async function buildExistingAchievementsMap(userIds = []) {
   const result = new Map();
   if (!targetIds.size) return result;
 
-  const supabase = getSupabaseClient();
-  let from = 0;
-  const pageSize = 1000;
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data')
-      .eq('model', 'UserAchievement')
-      .range(from, from + pageSize - 1);
-    if (error || !Array.isArray(data) || !data.length) break;
-
-    for (const row of data) {
-      const payload = row?.data && typeof row.data === 'object' ? row.data : {};
-      const userId = String(payload.user || '').trim();
+  const data = await listAllDocsByModel('UserAchievement', { pageSize: 1000 });
+  for (const payload of data) {
+      const userId = String(payload?.user || '').trim();
       if (!targetIds.has(userId)) continue;
-      const achievementId = Number(payload.achievementId);
+      const achievementId = Number(payload?.achievementId);
       if (!Number.isFinite(achievementId) || achievementId <= 0) continue;
       if (!result.has(userId)) result.set(userId, new Set());
       result.get(userId).add(achievementId);
-    }
-
-    if (data.length < pageSize) break;
-    from += data.length;
   }
 
   return result;
@@ -276,25 +237,22 @@ async function buildRecentAppealsCountMap(userIds = []) {
   const result = new Map();
   if (!targetIds.size) return result;
 
-  const supabase = getSupabaseClient();
   const thirtyDaysAgoIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   let from = 0;
   const pageSize = 1000;
   while (true) {
     // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at')
-      .eq('model', 'Appeal')
-      .gte('created_at', thirtyDaysAgoIso)
-      .range(from, from + pageSize - 1);
-    if (error || !Array.isArray(data) || !data.length) break;
+    const data = await listDocsByModel('Appeal', {
+      columnGte: { created_at: thirtyDaysAgoIso },
+      limit: pageSize,
+      offset: from,
+    });
+    if (!Array.isArray(data) || !data.length) break;
 
-    for (const row of data) {
-      const payload = row?.data && typeof row.data === 'object' ? row.data : {};
-      const userId = String(payload.againstUser || '').trim();
+    for (const payload of data) {
+      const userId = String(payload?.againstUser || '').trim();
       if (!targetIds.has(userId)) continue;
-      if (String(payload.status || '') === 'rejected') continue;
+      if (String(payload?.status || '') === 'rejected') continue;
       result.set(userId, (result.get(userId) || 0) + 1);
     }
 

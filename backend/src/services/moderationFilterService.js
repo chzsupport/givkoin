@@ -1,56 +1,21 @@
 const crypto = require('crypto');
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc, listAllDocsByModel } = require('./documentStore');
 
 function generateObjectId() {
   return crypto.randomBytes(12).toString('hex');
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
-  const out = {
-    ...data,
-    _id: data._id || row.id,
-  };
-  return out;
-}
-
 async function listModelDocs(modelName, { pageSize = 1000 } = {}) {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = Math.max(1, Math.min(2000, Number(pageSize) || 1000));
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', String(modelName))
-      .range(from, from + size - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < size) break;
-    from += size;
-  }
-  return out;
+  return listAllDocsByModel(modelName, { pageSize });
 }
 
 async function insertModelDoc(modelName, doc) {
-  const supabase = getSupabaseClient();
   const id = String(doc?._id || generateObjectId());
   const payload = { ...(doc && typeof doc === 'object' ? doc : {}) };
   payload._id = id;
   delete payload.id;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({ model: String(modelName), id, data: payload })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return mapDocRow(data);
+  return insertDoc({ model: String(modelName), id, data: payload });
 }
 
 const MODERATION_RULES_CACHE_TTL_MS = Math.max(

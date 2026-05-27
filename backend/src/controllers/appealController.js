@@ -5,8 +5,12 @@ const { getNumericSettingValue } = require('../services/settingsRegistryService'
 const { recordTransaction, awardReferralBlessingExternal } = require('../services/kService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const chatService = require('../services/chatService');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const {
+  getDocByModelAndId,
+  insertDoc,
+  listDocsByModel,
+  updateDocByModel,
+} = require('../services/documentStore');
 
 const DEBUFF_DURATION_HOURS = 72;
 const AUTO_RESOLVE_HOURS = 24;
@@ -47,99 +51,63 @@ function toId(value, depth = 0) {
 }
 
 async function findAppealById(id) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at')
-    .eq('model', 'Appeal')
-    .eq('id', String(id))
-    .maybeSingle();
-  if (error || !data) return null;
-  return { _id: data.id, ...data.data, createdAt: data.created_at };
+  return getDocByModelAndId('Appeal', id);
 }
 
 async function findPendingAppealByUser(againstUser) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'Appeal')
-    .limit(500);
-  if (error || !Array.isArray(data)) return null;
-  return data.find((row) => {
-    const d = row.data || {};
-    return String(d.againstUser) === String(againstUser) && d.status === 'pending';
-  }) || null;
+  const rows = await listDocsByModel('Appeal', {
+    dataEq: { againstUser: String(againstUser), status: 'pending' },
+    limit: 1,
+  });
+  return rows[0] || null;
 }
 
 async function insertAppeal(doc) {
-  const supabase = getSupabaseClient();
   const id = `app_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).insert({
+  const inserted = await insertDoc({
     model: 'Appeal',
     id,
     data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
   });
-  return { _id: id, ...doc };
+  return inserted || { _id: id, ...doc };
 }
 
 async function updateAppeal(id, patch) {
-  const supabase = getSupabaseClient();
-  const { data: existing, error: findError } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'Appeal')
-    .eq('id', String(id))
-    .maybeSingle();
-  if (findError || !existing) return null;
-  
-  const nextData = { ...existing.data, ...patch };
-  const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .update({ data: nextData, updated_at: nowIso })
-    .eq('id', String(id))
-    .select('id,data')
-    .maybeSingle();
-  if (error) return null;
-  return { _id: data.id, ...data.data };
+  const existing = await getDocByModelAndId('Appeal', id);
+  if (!existing) return null;
+
+  const { _id, createdAt, updatedAt, ...existingData } = existing;
+  const nextData = { ...existingData, ...patch };
+  return updateDocByModel('Appeal', id, nextData);
 }
 
 async function listExpiredAppeals() {
-  const supabase = getSupabaseClient();
   const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'Appeal')
-    .limit(1000);
-  if (error || !Array.isArray(data)) return [];
-  
-  return data.filter((row) => {
-    const d = row.data || {};
-    return d.status === 'pending' && d.autoResolveAt && d.autoResolveAt <= nowIso;
-  }).map((row) => ({ _id: row.id, ...row.data }));
+  const rows = await listDocsByModel('Appeal', {
+    dataEq: { status: 'pending' },
+    dataLte: { autoResolveAt: nowIso },
+    limit: 1000,
+  });
+
+  return rows.filter((row) => row.autoResolveAt && row.autoResolveAt <= nowIso);
 }
 
 async function countAppeals(filters) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'Appeal')
-    .limit(5000);
-  if (error || !Array.isArray(data)) return 0;
-  
-  return data.filter((row) => {
-    const d = row.data || {};
-    if (filters.againstUser && String(d.againstUser) !== String(filters.againstUser)) return false;
-    if (filters.complainant && String(d.complainant) !== String(filters.complainant)) return false;
-    if (filters.status && d.status !== filters.status) return false;
-    if (filters.resolvedAt && d.resolvedAt && d.resolvedAt < filters.resolvedAt) return false;
-    if (filters.createdAt && d.createdAt && d.createdAt < filters.createdAt) return false;
+  const rows = await listDocsByModel('Appeal', {
+    dataEq: {
+      againstUser: filters.againstUser ? String(filters.againstUser) : undefined,
+      complainant: filters.complainant ? String(filters.complainant) : undefined,
+      status: filters.status || undefined,
+    },
+    limit: 5000,
+  });
+
+  return rows.filter((row) => {
+    if (filters.resolvedAt && row.resolvedAt && row.resolvedAt < filters.resolvedAt) return false;
+    if (filters.createdAt && row.createdAt && row.createdAt < filters.createdAt) return false;
     return true;
   }).length;
 }

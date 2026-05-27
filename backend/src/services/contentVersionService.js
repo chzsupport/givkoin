@@ -1,48 +1,23 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc, listAllDocsByModel } = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeContentVersionDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : data.createdAt || null,
-    updatedAt: row.updated_at ? new Date(row.updated_at) : data.updatedAt || null,
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function listContentVersionDocs({ entityType, entityId, pageSize = 1000 } = {}) {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = Math.max(1, Math.min(2000, Number(pageSize) || 1000));
-
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', 'ContentVersion')
-      .range(from, from + size - 1);
-
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    const rows = data
-      .map(mapDocRow)
-      .filter(Boolean)
-      .filter((row) => String(row?.entityType || '') === String(entityType) && String(row?.entityId || '') === String(entityId));
-
-    out.push(...rows);
-    if (data.length < size) break;
-    from += size;
-  }
-
-  return out;
+  const rows = await listAllDocsByModel('ContentVersion', { pageSize });
+  return rows
+    .map(normalizeContentVersionDoc)
+    .filter(Boolean)
+    .filter((row) => String(row?.entityType || '') === String(entityType) && String(row?.entityId || '') === String(entityId));
 }
 
 async function insertContentVersionDoc(payload) {
-  const supabase = getSupabaseClient();
   const id = payload && (payload._id || payload.id)
     ? String(payload._id || payload.id)
     : `ContentVersion_${Date.now()}`;
@@ -51,13 +26,12 @@ async function insertContentVersionDoc(payload) {
   delete doc._id;
   delete doc.id;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({ id, model: 'ContentVersion', data: doc })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    const inserted = await insertDoc({ id, model: 'ContentVersion', data: doc });
+    return normalizeContentVersionDoc(inserted);
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function getNextVersion(entityType, entityId) {

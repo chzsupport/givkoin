@@ -5,35 +5,28 @@ const { runSystemJob } = require('./systemJobsService');
 const battleService = require('./battleService');
 const { deleteScheduledBattleTotally } = require('./adminCleanupService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const {
+  getDocByModelAndId,
+  insertDoc,
+  listAllDocsByModel,
+  updateDocByModel,
+} = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeModelDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function getModelDocById(model, id) {
   if (!id) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', String(model))
-    .eq('id', String(id))
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return normalizeModelDoc(await getDocByModelAndId(model, id));
 }
 
 async function insertModelDoc(model, payload) {
-  const supabase = getSupabaseClient();
   const id = payload && (payload._id || payload.id)
     ? String(payload._id || payload.id)
     : `${String(model)}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`;
@@ -42,18 +35,15 @@ async function insertModelDoc(model, payload) {
   delete doc._id;
   delete doc.id;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({ id, model: String(model), data: doc })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeModelDoc(await insertDoc({ id, model: String(model), data: doc }));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function updateModelDoc(model, id, patch) {
   if (!id || !patch || typeof patch !== 'object') return null;
-  const supabase = getSupabaseClient();
 
   const current = await getModelDocById(model, id);
   if (!current) return null;
@@ -64,35 +54,16 @@ async function updateModelDoc(model, id, patch) {
   delete next.createdAt;
   delete next.updatedAt;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .update({ data: next })
-    .eq('model', String(model))
-    .eq('id', String(id))
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeModelDoc(await updateDocByModel(model, id, next));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function listModelDocs(model) {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = 1000;
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', String(model))
-      .range(from, from + size - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < size) break;
-    from += data.length;
-  }
-  return out;
+  const docs = await listAllDocsByModel(model, { pageSize: 1000 });
+  return docs.map(normalizeModelDoc).filter(Boolean);
 }
 
 function getUserData(row) {

@@ -1,6 +1,4 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc } = require('./documentStore');
 
 function extractRequestId(req) {
   return String(req?.headers?.['x-request-id'] || '').trim();
@@ -11,17 +9,9 @@ function extractIp(req) {
 }
 
 async function insertSystemErrorEvent(doc) {
-  const supabase = getSupabaseClient();
   const id = `see_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-  const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).insert({
-    model: 'SystemErrorEvent',
-    id,
-    data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
-  return { ...doc, _id: id };
+  const inserted = await insertDoc({ model: 'SystemErrorEvent', id, data: doc });
+  return { ...doc, _id: inserted?._id || id };
 }
 
 async function logSystemErrorEvent({

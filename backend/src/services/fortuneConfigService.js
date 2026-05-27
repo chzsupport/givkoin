@@ -22,7 +22,7 @@ const DEFAULT_CONFIG = {
       { label: '90', value: 90, type: 'k', weight: 5, enabled: true },
       { label: '100', value: 100, type: 'k', weight: 2, enabled: true },
       { label: '+1', value: 0, type: 'spin', weight: 50, enabled: true },
-      { label: '0.5⭐', value: 0.5, type: 'star', weight: 1, enabled: true },
+      { label: '0.1⭐', value: 0.1, type: 'star', weight: 1, enabled: true },
     ],
   },
   lottery: {

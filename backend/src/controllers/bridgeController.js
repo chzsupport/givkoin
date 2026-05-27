@@ -12,6 +12,14 @@ const { awardRadianceForActivity } = require('../services/activityRadianceServic
 
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const {
+    countDocsByModel,
+    deleteDocsByModel,
+    getDocByModelAndId,
+    insertDoc,
+    listDocsByModel,
+    updateDocByModel,
+} = require('../services/documentStore');
+const {
     clearPageCacheByPrefix,
     getOrLoadPage,
     makePageCacheKey,
@@ -19,10 +27,6 @@ const {
 } = require('../services/pageCacheService');
 
 const { deleteBridgeTotally } = require('../services/adminCleanupService');
-
-
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 
 
@@ -67,64 +71,25 @@ function parsePagination(query = {}) {
 
 
 async function listBridges(filters = {}, pagination = {}) {
-
-    const supabase = getSupabaseClient();
-
-    let query = supabase
-
-        .from(DOC_TABLE)
-
-        .select('id,data,created_at,updated_at', { count: 'exact' })
-
-        .eq('model', 'Bridge')
-
-        .order('updated_at', { ascending: false });
-
-
-
-    if (filters.createdBy) {
-
-        query = query.eq('data->>createdBy', String(filters.createdBy));
-
-    }
-
-    if (filters.status) {
-
-        query = query.eq('data->>status', String(filters.status));
-
-    }
-
-
-
     const safeLimit = Math.max(1, Number(pagination.limit) || 1000);
 
     const safeOffset = Math.max(0, Number(pagination.offset) || 0);
 
-    query = query.range(safeOffset, safeOffset + safeLimit - 1);
+    const dataEq = {
+        createdBy: filters.createdBy ? String(filters.createdBy) : undefined,
+        status: filters.status ? String(filters.status) : undefined,
+    };
 
-
-
-    const { data, error, count } = await query;
-
-    if (error || !Array.isArray(data)) {
-
-        return { bridges: [], total: 0 };
-
-    }
-
-
-
-    const bridges = data.map((row) => ({
-
-        _id: row.id,
-
-        ...row.data,
-
-        createdAt: row.created_at,
-
-        updatedAt: row.updated_at,
-
-    }));
+    const [bridges, total] = await Promise.all([
+        listDocsByModel('Bridge', {
+            dataEq,
+            orderBy: 'updated_at',
+            ascending: false,
+            limit: safeLimit,
+            offset: safeOffset,
+        }),
+        countDocsByModel('Bridge', { dataEq }),
+    ]);
 
 
 
@@ -132,7 +97,7 @@ async function listBridges(filters = {}, pagination = {}) {
 
         bridges,
 
-        total: Math.max(0, Number(count) || 0),
+        total: Math.max(0, Number(total) || 0),
 
     };
 
@@ -141,70 +106,35 @@ async function listBridges(filters = {}, pagination = {}) {
 
 
 async function findBridgeById(id) {
-
-    const supabase = getSupabaseClient();
-
-    const { data, error } = await supabase
-
-        .from(DOC_TABLE)
-
-        .select('id,data,created_at,updated_at')
-
-        .eq('model', 'Bridge')
-
-        .eq('id', String(id))
-
-        .maybeSingle();
-
-    if (error || !data) return null;
-
-    return { _id: data.id, ...data.data, createdAt: data.created_at, updatedAt: data.updated_at };
+    return getDocByModelAndId('Bridge', id);
 
 }
 
 
 
 async function findBridgeByCountries(fromCountry, toCountry) {
+    const directRows = await listDocsByModel('Bridge', {
+        dataEq: { fromCountry, toCountry },
+        limit: 1,
+    });
+    if (directRows[0]) return directRows[0];
 
-    const supabase = getSupabaseClient();
-
-    const { data, error } = await supabase
-
-        .from(DOC_TABLE)
-
-        .select('id,data')
-
-        .eq('model', 'Bridge')
-
-        .limit(500);
-
-    if (error || !Array.isArray(data)) return null;
-
-    
-
-    return data.find((row) => {
-
-        const d = row.data || {};
-
-        return (d.fromCountry === fromCountry && d.toCountry === toCountry) ||
-
-               (d.fromCountry === toCountry && d.toCountry === fromCountry);
-
-    }) || null;
+    const reverseRows = await listDocsByModel('Bridge', {
+        dataEq: { fromCountry: toCountry, toCountry: fromCountry },
+        limit: 1,
+    });
+    return reverseRows[0] || null;
 
 }
 
 
 
 async function insertBridge(doc) {
-
-    const supabase = getSupabaseClient();
-
     const id = `bridge_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 
     const nowIso = new Date().toISOString();
 
-    await supabase.from(DOC_TABLE).insert({
+    const inserted = await insertDoc({
 
         model: 'Bridge',
 
@@ -212,109 +142,68 @@ async function insertBridge(doc) {
 
         data: doc,
 
-        created_at: nowIso,
+        createdAt: nowIso,
 
-        updated_at: nowIso,
+        updatedAt: nowIso,
 
     });
 
-    return { _id: id, ...doc, createdAt: nowIso, updatedAt: nowIso };
+    return inserted || { _id: id, ...doc, createdAt: nowIso, updatedAt: nowIso };
 
 }
 
 
 
 async function updateBridge(id, patch) {
-
-    const supabase = getSupabaseClient();
-
-    const { data: existing, error: findError } = await supabase
-
-        .from(DOC_TABLE)
-
-        .select('id,data')
-
-        .eq('model', 'Bridge')
-
-        .eq('id', String(id))
-
-        .maybeSingle();
-
-    if (findError || !existing) return null;
+    const existing = await getDocByModelAndId('Bridge', id);
+    if (!existing) return null;
 
     
 
-    const nextData = { ...existing.data, ...patch };
+    const { _id, createdAt, updatedAt, ...existingData } = existing;
+    void _id;
+    void createdAt;
+    void updatedAt;
+
+    const nextData = { ...existingData, ...patch };
 
     const nowIso = new Date().toISOString();
 
-    const { data, error } = await supabase
+    const updated = await updateDocByModel('Bridge', id, nextData, { updatedAt: nowIso }).catch(() => null);
+    if (!updated) return null;
 
-        .from(DOC_TABLE)
+    const { createdAt: ignoredCreatedAt, updatedAt: ignoredUpdatedAt, ...updatedData } = updated;
+    void ignoredCreatedAt;
+    void ignoredUpdatedAt;
 
-        .update({ data: nextData, updated_at: nowIso })
-
-        .eq('id', String(id))
-
-        .select('id,data')
-
-        .maybeSingle();
-
-    if (error) return null;
-
-    return { _id: data.id, ...data.data, updatedAt: nowIso };
+    return { ...updatedData, updatedAt: nowIso };
 
 }
 
 
 
 async function deleteBridge(id) {
-
-    const supabase = getSupabaseClient();
-
-    const { error } = await supabase
-
-        .from(DOC_TABLE)
-
-        .delete()
-
-        .eq('model', 'Bridge')
-
-        .eq('id', String(id));
-
-    return !error;
+    const deleted = await deleteDocsByModel('Bridge', [id]).catch(() => 0);
+    return deleted > 0;
 
 }
 
 
 
 async function countBridges(filters = {}) {
-
-    const supabase = getSupabaseClient();
-
-    const { data, error } = await supabase
-
-        .from(DOC_TABLE)
-
-        .select('id,data')
-
-        .eq('model', 'Bridge')
-
-        .limit(5000);
-
-    if (error || !Array.isArray(data)) return 0;
+    const rows = await listDocsByModel('Bridge', {
+        dataEq: {
+            createdBy: filters.createdBy ? String(filters.createdBy) : undefined,
+            status: filters.status ? String(filters.status) : undefined,
+        },
+        limit: 5000,
+    });
 
     
 
-    return data.filter((row) => {
+    return rows.filter((row) => {
 
-        const d = row.data || {};
-
-        if (filters.createdBy && String(d.createdBy) !== String(filters.createdBy)) return false;
-
-        if (filters.status && d.status !== filters.status) return false;
-
-        if (filters.createdAt && d.createdAt && d.createdAt < filters.createdAt) return false;
+        if (filters.createdAt && row.createdAt && row.createdAt < filters.createdAt) return false;
 
         return true;
 

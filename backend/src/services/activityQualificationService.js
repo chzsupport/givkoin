@@ -1,6 +1,5 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { listDocsByModel, upsertDoc } = require('./documentStore');
 
 const DAY_ACTIVE_MINUTES = 5;
 const DAY_ACTIVE_K_ACTIONS = 5;
@@ -165,17 +164,17 @@ function appendKTransaction(acc, row) {
 
 function appendAdSession(acc, row) {
   if (!acc || !row) return;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+  const data = row.data && typeof row.data === 'object' ? row.data : row;
   if (String(data.eventType || '') !== 'session') return;
   const seconds = Number(data.durationSeconds) || 0;
   if (!(seconds > 0)) return;
-  addVisitDay(acc, row.created_at || row.createdAt || new Date());
+  addVisitDay(acc, row.createdAt || row.created_at || new Date());
   addMinutes(acc, seconds / 60);
 }
 
 function appendRadiance(acc, row) {
   if (!acc || !row) return;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+  const data = row.data && typeof row.data === 'object' ? row.data : row;
   const activityType = String(data.activityType || '').trim();
   if (!activityType || activityType.startsWith('referral_')) return;
   acc.radianceActions += 1;
@@ -263,7 +262,6 @@ async function appendTransactionRows({ userIds, since, until, accumulators }) {
 }
 
 async function appendAdSessionRows({ userIds, since, until, accumulators }) {
-  const supabase = getSupabaseClient();
   const sinceIso = toDate(since).toISOString();
   const untilIso = toDate(until).toISOString();
 
@@ -271,18 +269,22 @@ async function appendAdSessionRows({ userIds, since, until, accumulators }) {
     const chunk = userIds.slice(i, i + USER_CHUNK_SIZE);
     // eslint-disable-next-line no-await-in-loop
     await readPaged(
-      (from, to) => supabase
-        .from(DOC_TABLE)
-        .select('id,data,created_at')
-        .eq('model', 'AdImpression')
-        .in('data->>userId', chunk)
-        .eq('data->>eventType', 'session')
-        .gte('created_at', sinceIso)
-        .lt('created_at', untilIso)
-        .range(from, to),
+      async (from, to) => {
+        const data = await listDocsByModel('AdImpression', {
+          limit: to - from + 1,
+          offset: from,
+          dataEq: { eventType: 'session' },
+          dataIn: { userId: chunk },
+          columnGte: { created_at: sinceIso },
+          columnLt: { created_at: untilIso },
+          orderBy: 'created_at',
+          ascending: true,
+        });
+        return { data, error: null };
+      },
       (rows) => {
         rows.forEach((row) => {
-          const userId = normalizeId(row?.data?.userId);
+          const userId = normalizeId(row?.userId);
           appendAdSession(getAccumulator(accumulators, userId), row);
         });
       }
@@ -291,7 +293,6 @@ async function appendAdSessionRows({ userIds, since, until, accumulators }) {
 }
 
 async function appendRadianceRows({ userIds, since, until, accumulators }) {
-  const supabase = getSupabaseClient();
   const sinceIso = toDate(since).toISOString();
   const untilIso = toDate(until).toISOString();
 
@@ -299,17 +300,19 @@ async function appendRadianceRows({ userIds, since, until, accumulators }) {
     const chunk = userIds.slice(i, i + USER_CHUNK_SIZE);
     // eslint-disable-next-line no-await-in-loop
     await readPaged(
-      (from, to) => supabase
-        .from(DOC_TABLE)
-        .select('id,data,created_at')
-        .eq('model', 'RadianceEarning')
-        .in('data->>user', chunk)
-        .gte('data->>occurredAt', sinceIso)
-        .lt('data->>occurredAt', untilIso)
-        .range(from, to),
+      async (from, to) => ({
+        data: await listDocsByModel('RadianceEarning', {
+          limit: to - from + 1,
+          offset: from,
+          dataIn: { user: chunk },
+          dataGte: { occurredAt: sinceIso },
+          dataLt: { occurredAt: untilIso },
+        }),
+        error: null,
+      }),
       (rows) => {
         rows.forEach((row) => {
-          const userId = normalizeId(row?.data?.user);
+          const userId = normalizeId(row?.user);
           appendRadiance(getAccumulator(accumulators, userId), row);
         });
       }
@@ -399,7 +402,6 @@ async function upsertDailyActivityReport({ userId, dayKey, range, decision }) {
   const safeDayKey = normalizeId(dayKey);
   if (!safeUserId || !safeDayKey || !decision) return null;
 
-  const supabase = getSupabaseClient();
   const nowIso = new Date().toISOString();
   const id = `daily_activity:${safeUserId}:${safeDayKey}`;
   const payload = {
@@ -413,23 +415,17 @@ async function upsertDailyActivityReport({ userId, dayKey, range, decision }) {
     updatedAt: nowIso,
   };
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .upsert({
+  try {
+    return upsertDoc({
       model: 'UserDailyActivityReport',
       id,
       data: payload,
-      created_at: nowIso,
-      updated_at: nowIso,
-    }, {
-      onConflict: 'model,id',
-      ignoreDuplicates: false,
-    })
-    .select('id,data')
-    .maybeSingle();
-
-  if (error) return null;
-  return data || null;
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function listDailyActivityReports(userIds, { since, until, start, end } = {}) {
@@ -438,26 +434,27 @@ async function listDailyActivityReports(userIds, { since, until, start, end } = 
 
   const sinceKey = getUtcDayKey(since || start || getLastDaysRangeUtc().start);
   const untilKey = getUtcDayKey(until || end || new Date());
-  const supabase = getSupabaseClient();
   const out = [];
 
   for (let i = 0; i < ids.length; i += USER_CHUNK_SIZE) {
     const chunk = ids.slice(i, i + USER_CHUNK_SIZE);
     // eslint-disable-next-line no-await-in-loop
     await readPaged(
-      (from, to) => supabase
-        .from(DOC_TABLE)
-        .select('id,data,created_at,updated_at')
-        .eq('model', 'UserDailyActivityReport')
-        .in('data->>userId', chunk)
-        .gte('data->>dayKey', sinceKey)
-        .lt('data->>dayKey', untilKey)
-        .range(from, to),
+      async (from, to) => ({
+        data: await listDocsByModel('UserDailyActivityReport', {
+          limit: to - from + 1,
+          offset: from,
+          dataIn: { userId: chunk },
+          dataGte: { dayKey: sinceKey },
+          dataLt: { dayKey: untilKey },
+        }),
+        error: null,
+      }),
       (rows) => out.push(...rows)
     );
   }
 
-  return out.map((row) => row?.data || null).filter(Boolean);
+  return out.filter(Boolean);
 }
 
 function combineDailyReports(userIds, reports = []) {

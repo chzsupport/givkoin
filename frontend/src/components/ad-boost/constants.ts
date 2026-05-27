@@ -1,0 +1,10 @@
+export const DAO_PREROLL_VIDEO_ID = 'givkoin-ad-boost-video';
+export const DAO_PREROLL_CREATIVE_ID = 'dao_preroll_61874';
+export const DAO_PREROLL_SOURCE_ID = 61874;
+export const DAO_PREROLL_SCRIPT_SRC = 'https://video.agenteimmobiliare.info/d-video.js?b=32';
+export const DAO_PREROLL_TAG_URL = 'https://video.agenteimmobiliare.info/api/video/tag?sourceId=61874&tmax=500&video-skipafter=30&count=1';
+export const DAO_PREROLL_MIN_REWARD_DELAY_MS = 30_000;
+export const DAO_PREROLL_MANAGER_TIMEOUT_MS = 20_000;
+export const DAO_PREROLL_MANAGER_POLL_MS = 100;
+export const DAO_REWARD_NOTICE_MS = 1_400;
+export const TECHNICAL_VIDEO_SRC = '/bonus.mp4';

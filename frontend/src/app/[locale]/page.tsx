@@ -2,79 +2,43 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { useEffect } from 'react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/context/I18nContext';
-
-
-
-function ParallaxSection({ children, className = '', id = '' }: { children: React.ReactNode; className?: string; id?: string }) {
-    return (
-        <div id={id} className={`relative flex min-h-screen items-center justify-center p-6 ${className}`}>
-            {children}
-        </div>
-    );
-}
+import { LandingActivityCard } from '@/components/home/LandingActivityCard';
+import { LandingAgeBranchCard } from '@/components/home/LandingAgeBranchCard';
+import { LandingBackground } from '@/components/home/LandingBackground';
+import { ParallaxSection } from '@/components/home/ParallaxSection';
+import { useSmoothWheelScroll } from '@/components/home/useSmoothWheelScroll';
 
 export default function LandingPage() {
     const router = useRouter();
     const { isAuthenticated } = useAuth();
     const { t, localePath } = useI18n();
+    useSmoothWheelScroll();
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        if (!window.matchMedia('(pointer: fine)').matches) return;
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ageBranches = [
+        { age: '18–25', title: t('tree.young_branch'), description: t('tree.find_age_rhythm') },
+        { age: '26–35', title: t('tree.adult_branch'), description: t('tree.conversations_support') },
+        { age: '36–51', title: t('tree.experienced_branch'), description: t('tree.conversations_support') },
+        { age: '52+', title: t('tree.wise_branch'), description: t('tree.warm_conversations') },
+    ];
 
-        let current = window.scrollY;
-        let target = current;
-        let rafId = 0;
-
-        const clampTarget = () => {
-            const max = document.documentElement.scrollHeight - window.innerHeight;
-            target = Math.max(0, Math.min(target, max));
-        };
-
-        const step = () => {
-            current += (target - current) * 0.12;
-            window.scrollTo(0, current);
-            if (Math.abs(target - current) > 0.5) {
-                rafId = requestAnimationFrame(step);
-            } else {
-                rafId = 0;
-            }
-        };
-
-        const onWheel = (e: WheelEvent) => {
-            e.preventDefault();
-            target += e.deltaY;
-            clampTarget();
-            if (!rafId) {
-                rafId = requestAnimationFrame(step);
-            }
-        };
-
-        window.addEventListener('wheel', onWheel, { passive: false });
-        return () => {
-            window.removeEventListener('wheel', onWheel);
-            if (rafId) cancelAnimationFrame(rafId);
-        };
-    }, []);
+    const activityCards = [
+        { icon: '⚔️', title: t('cabinet.battles'), description: t('tree.defend_darkness') },
+        { icon: '💬', title: t('tree.communication'), description: t('tree.find_people_talk') },
+        { icon: '🌉', title: t('bridges.title'), description: t('tree.build_connections') },
+        { icon: '🌌', title: t('galaxy.title'), description: t('tree.support_dreams') },
+        { icon: '🎲', title: t('fortune.title'), description: t('tree.try_luck') },
+    ];
 
     return (
         <div className="relative min-h-screen bg-neutral-900 text-white selection:bg-primary-light/30">
             <Header />
 
-            {/* Background Layer - Parallax Tree */}
-            <div className="fixed inset-0 z-0 h-full w-full overflow-hidden bg-neutral-900">
-                <div className="absolute inset-x-0 top-0 h-[150vh] w-full">
-                    <div className="h-full w-full bg-[url('/ttrree.jpg')] bg-cover bg-top bg-fixed opacity-60 mix-blend-overlay" />
-                    <div className="absolute inset-0 bg-gradient-to-b from-neutral-900/30 via-transparent to-neutral-900" />
-                </div>
-            </div>
+            <LandingBackground />
 
             {/* Content Layer */}
             <div className="relative z-10">
@@ -212,30 +176,17 @@ export default function LandingPage() {
                 {/* КАК ЭТО РАБОТАЕТ */}
                 <section id="branches" className="relative py-24">
                     <div className="container mx-auto px-6">
-                        <div className="mx-auto max-w-5xl">
+                        <div className="mx-auto max-w-6xl">
                             <h2 className="mb-12 text-center text-h2 text-white">{t('tree.branches_by_age')}</h2>
-                            <div className="grid gap-6 md:grid-cols-3">
-                                <div className="group relative overflow-hidden rounded-2xl border border-glass-white bg-white/5 p-8 transition-all hover:-translate-y-1 hover:bg-white/10">
-                                    <div className="mb-4 text-4xl font-bold text-primary-dark/40">14–25</div>
-                                    <h3 className="mb-2 text-h3 text-white">{t('tree.young_at_top')}</h3>
-                                    <p className="text-secondary text-neutral-400">
-                                        {t('tree.find_age_rhythm')}
-                                    </p>
-                                </div>
-                                <div className="group relative overflow-hidden rounded-2xl border border-glass-white bg-white/5 p-8 transition-all hover:-translate-y-1 hover:bg-white/10">
-                                    <div className="mb-4 text-4xl font-bold text-primary-dark/40">26–50</div>
-                                    <h3 className="mb-2 text-h3 text-white">{t('tree.central_branches')}</h3>
-                                    <p className="text-secondary text-neutral-400">
-                                        {t('tree.conversations_support')}
-                                    </p>
-                                </div>
-                                <div className="group relative overflow-hidden rounded-2xl border border-glass-white bg-white/5 p-8 transition-all hover:-translate-y-1 hover:bg-white/10">
-                                    <div className="mb-4 text-4xl font-bold text-primary-dark/40">51+</div>
-                                    <h3 className="mb-2 text-h3 text-white">{t('tree.wisdom_below')}</h3>
-                                    <p className="text-secondary text-neutral-400">
-                                        {t('tree.warm_conversations')}
-                                    </p>
-                                </div>
+                            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+                                {ageBranches.map((branch) => (
+                                    <LandingAgeBranchCard
+                                        key={branch.age}
+                                        age={branch.age}
+                                        description={branch.description}
+                                        title={branch.title}
+                                    />
+                                ))}
                             </div>
 
                             <div className="mt-10 text-center">
@@ -312,31 +263,14 @@ export default function LandingPage() {
                         <div className="mx-auto max-w-6xl">
                             <h2 className="mb-12 text-center text-h2 text-white">{t('activity.title')}</h2>
                             <div className="grid gap-6 md:grid-cols-5">
-                                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-md">
-                                    <div className="text-3xl">⚔️</div>
-                                    <div className="mt-3 text-secondary font-semibold text-white">{t('cabinet.battles')}</div>
-                                    <div className="mt-2 text-tiny text-white/60">{t('tree.defend_darkness')}</div>
-                                </div>
-                                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-md">
-                                    <div className="text-3xl">💬</div>
-                                    <div className="mt-3 text-secondary font-semibold text-white">{t('tree.communication')}</div>
-                                    <div className="mt-2 text-tiny text-white/60">{t('tree.find_people_talk')}</div>
-                                </div>
-                                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-md">
-                                    <div className="text-3xl">🌉</div>
-                                    <div className="mt-3 text-secondary font-semibold text-white">{t('bridges.title')}</div>
-                                    <div className="mt-2 text-tiny text-white/60">{t('tree.build_connections')}</div>
-                                </div>
-                                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-md">
-                                    <div className="text-3xl">🌌</div>
-                                    <div className="mt-3 text-secondary font-semibold text-white">{t('galaxy.title')}</div>
-                                    <div className="mt-2 text-tiny text-white/60">{t('tree.support_dreams')}</div>
-                                </div>
-                                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-md">
-                                    <div className="text-3xl">🎲</div>
-                                    <div className="mt-3 text-secondary font-semibold text-white">{t('fortune.title')}</div>
-                                    <div className="mt-2 text-tiny text-white/60">{t('tree.try_luck')}</div>
-                                </div>
+                                {activityCards.map((card) => (
+                                    <LandingActivityCard
+                                        key={card.title}
+                                        description={card.description}
+                                        icon={card.icon}
+                                        title={card.title}
+                                    />
+                                ))}
                             </div>
 
                             <div className="mt-10 text-center">

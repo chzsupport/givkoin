@@ -1,0 +1,4 @@
+export const CHAT_STRICT_PHASE_MS = 5 * 60 * 1000;
+export const CHAT_STRICT_HEARTBEAT_MS = 5 * 1000;
+export const CHAT_RELAXED_HEARTBEAT_MS = 15 * 1000;
+export const CHAT_HEARTBEAT_ACTIVITY_GRACE_MS = 5 * 60 * 1000;

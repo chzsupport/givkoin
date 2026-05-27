@@ -1,12 +1,15 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const {
     clearPageCacheByPrefix,
     getOrLoadPage,
     makePageCacheKey,
     warmPage,
 } = require('../services/pageCacheService');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const {
+    countDocsByModel,
+    insertDoc,
+    listDocsByModel,
+    updateDocByModel,
+} = require('../services/documentStore');
 
 function parsePositiveInt(value, fallback) {
     const parsed = parseInt(value, 10);
@@ -29,80 +32,60 @@ function parseMultiValueFilter(value) {
     return values;
 }
 
-function applyNotificationFilters(query, userId, filters = {}, { unreadOnly = false } = {}) {
-    let next = query
-        .eq('model', 'Notification')
-        .eq('data->>userId', String(userId));
+function buildNotificationDocFilters(userId, filters = {}, { unreadOnly = false } = {}) {
+    const dataEq = { userId: String(userId) };
+    const dataIn = {};
 
     const types = Array.isArray(filters.type) ? filters.type.filter(Boolean) : [];
     if (types.length === 1) {
-        next = next.eq('data->>type', types[0]);
+        dataEq.type = types[0];
     } else if (types.length > 1) {
-        next = next.in('data->>type', types);
+        dataIn.type = types;
     }
 
     const eventKeys = Array.isArray(filters.eventKey) ? filters.eventKey.filter(Boolean) : [];
     if (eventKeys.length === 1) {
-        next = next.eq('data->>eventKey', eventKeys[0]);
+        dataEq.eventKey = eventKeys[0];
     } else if (eventKeys.length > 1) {
-        next = next.in('data->>eventKey', eventKeys);
+        dataIn.eventKey = eventKeys;
     }
 
     if (unreadOnly) {
-        next = next.eq('data->>isRead', 'false');
+        dataEq.isRead = false;
     }
 
-    return next;
+    return { dataEq, dataIn };
 }
 
 function mapNotificationRow(row) {
+    const { _id, createdAt, updatedAt, ...data } = row || {};
     return {
-        _id: row.id,
-        ...(row.data || {}),
-        createdAt: row.created_at,
+        _id,
+        ...data,
+        createdAt,
     };
 }
 
 async function listNotifications(userId, filters, page, limit) {
-    const supabase = getSupabaseClient();
     const offset = (page - 1) * limit;
-
-    const listQuery = applyNotificationFilters(
-        supabase
-            .from(DOC_TABLE)
-            .select('id,data,created_at'),
-        userId,
-        filters
-    )
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
-
-    const totalQuery = applyNotificationFilters(
-        supabase
-            .from(DOC_TABLE)
-            .select('id', { head: true, count: 'exact' }),
-        userId,
-        filters
-    );
-
-    const unreadQuery = applyNotificationFilters(
-        supabase
-            .from(DOC_TABLE)
-            .select('id', { head: true, count: 'exact' }),
-        userId,
-        filters,
-        { unreadOnly: true }
-    );
+    const listFilters = buildNotificationDocFilters(userId, filters);
+    const unreadFilters = buildNotificationDocFilters(userId, filters, { unreadOnly: true });
 
     const [
-        { data, error },
-        { count: totalCount, error: totalError },
-        { count: unreadCountValue, error: unreadError },
-    ] = await Promise.all([listQuery, totalQuery, unreadQuery]);
-
-    if (error || totalError || unreadError || !Array.isArray(data)) {
-        return { notifications: [], total: 0, unreadCount: 0 };
-    }
+        data,
+        totalCount,
+        unreadCountValue,
+    ] = await Promise.all([
+        listDocsByModel('Notification', {
+            ...listFilters,
+            limit,
+            offset,
+            orderBy: 'created_at',
+            ascending: false,
+        }),
+        countDocsByModel('Notification', listFilters),
+        countDocsByModel('Notification', unreadFilters),
+    ]);
 
     return {
         notifications: data.map(mapNotificationRow),
@@ -112,60 +95,36 @@ async function listNotifications(userId, filters, page, limit) {
 }
 
 async function countUnreadNotifications(userId, filters) {
-    const supabase = getSupabaseClient();
-    const { count, error } = await applyNotificationFilters(
-        supabase
-            .from(DOC_TABLE)
-            .select('id', { head: true, count: 'exact' }),
-        userId,
-        filters,
-        { unreadOnly: true }
-    );
-
-    if (error) {
-        return 0;
-    }
-
-    return Math.max(0, Number(count) || 0);
+    return countDocsByModel('Notification', buildNotificationDocFilters(userId, filters, { unreadOnly: true }));
 }
 
 async function loadNotificationsToMarkRead(userId, filters) {
-    const supabase = getSupabaseClient();
     const ids = Array.isArray(filters.ids)
         ? Array.from(new Set(filters.ids.map((value) => String(value || '').trim()).filter(Boolean)))
         : [];
+    const idSet = new Set(ids);
     const scopedFilters = ids.length > 0
         ? {}
         : filters;
+    const docFilters = buildNotificationDocFilters(userId, scopedFilters, { unreadOnly: true });
     const rows = [];
     const pageSize = 200;
     let from = 0;
 
     while (true) {
-        let query = applyNotificationFilters(
-            supabase
-                .from(DOC_TABLE)
-                .select('id,data,created_at'),
-            userId,
-            scopedFilters,
-            { unreadOnly: true }
-        );
+        const data = await listDocsByModel('Notification', {
+            ...docFilters,
+            limit: pageSize,
+            offset: from,
+            orderBy: 'created_at',
+            ascending: false,
+        });
 
-        if (ids.length === 1) {
-            query = query.eq('id', ids[0]);
-        } else if (ids.length > 1) {
-            query = query.in('id', ids);
-        }
-
-        const { data, error } = await query
-            .order('created_at', { ascending: false })
-            .range(from, from + pageSize - 1);
-
-        if (error || !Array.isArray(data) || data.length === 0) {
+        if (!Array.isArray(data) || data.length === 0) {
             break;
         }
 
-        rows.push(...data);
+        rows.push(...(idSet.size ? data.filter((row) => idSet.has(String(row?._id || ''))) : data));
         if (data.length < pageSize) {
             break;
         }
@@ -176,41 +135,26 @@ async function loadNotificationsToMarkRead(userId, filters) {
 }
 
 async function markNotificationsRead(userId, filters) {
-    const supabase = getSupabaseClient();
     const rows = await loadNotificationsToMarkRead(userId, filters);
     if (!rows.length) return;
 
-    const nowIso = new Date().toISOString();
-
     for (let index = 0; index < rows.length; index += 25) {
         const chunk = rows.slice(index, index + 25);
-        const results = await Promise.all(
-            chunk.map((row) => supabase
-                .from(DOC_TABLE)
-                .update({ data: { ...(row.data || {}), isRead: true }, updated_at: nowIso })
-                .eq('id', row.id))
-        );
-
-        const failed = results.find((result) => result?.error);
-        if (failed?.error) {
-            throw new Error(failed.error.message);
-        }
+        await Promise.all(chunk.map((row) => {
+            const next = { ...(row || {}), isRead: true };
+            delete next._id;
+            delete next.createdAt;
+            delete next.updatedAt;
+            return updateDocByModel('Notification', row._id, next);
+        }));
     }
 }
 
 async function insertNotification(doc) {
-    const supabase = getSupabaseClient();
     const id = `notif_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    const nowIso = new Date().toISOString();
-    await supabase.from(DOC_TABLE).insert({
-        model: 'Notification',
-        id,
-        data: doc,
-        created_at: nowIso,
-        updated_at: nowIso,
-    });
+    const inserted = await insertDoc({ model: 'Notification', id, data: doc });
     clearPageCacheByPrefix('notifications:list:');
-    return { ...doc, _id: id, createdAt: nowIso };
+    return { ...doc, _id: inserted?._id || id, createdAt: inserted?.createdAt || new Date().toISOString() };
 }
 
 exports.getNotifications = async (req, res, next) => {

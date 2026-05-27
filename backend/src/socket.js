@@ -14,8 +14,6 @@ const { configureSocketAdapter, closeSocketAdapter } = require('./services/socke
 const { getSupabaseClient } = require('./lib/supabaseClient');
 const { getSocketLanguage } = require('./utils/requestLanguage');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
 const BATTLE_ROOM = 'battle-room';
 const CHAT_ROOM_PREFIX = 'chat-';
 const allowedOrigins = getAllowedOrigins();

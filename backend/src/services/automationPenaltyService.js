@@ -1,8 +1,12 @@
 const { RISK_WINDOW_DAYS } = require('./automationRiskService');
 const { listActivities } = require('./activityService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const {
+  getDocByModelAndId,
+  insertDoc,
+  listDocsByModel,
+  updateDocByModel,
+} = require('./documentStore');
 
 function toId(value) {
   if (!value) return null;
@@ -116,18 +120,17 @@ async function buildPenaltyBase({ userId, relatedUserIds = [], since, until }) {
 
   const [transactionRows, activities, inboundTransfers] = await Promise.all([
     (async () => {
-      const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .select('id,data,created_at')
-        .eq('model', 'Transaction')
-        .eq('data->>user', String(userId))
-        .eq('data->>direction', 'credit')
-        .eq('data->>status', 'completed')
-        .gte('created_at', sinceIso)
-        .lte('created_at', untilIso)
-        .limit(5000);
-      if (error) return [];
-      return (data || []).map((row) => ({ _id: row.id, ...row.data, occurredAt: row.created_at }));
+      const rows = await listDocsByModel('Transaction', {
+        dataEq: {
+          user: String(userId),
+          direction: 'credit',
+          status: 'completed',
+        },
+        columnGte: { created_at: sinceIso },
+        columnLte: { created_at: untilIso },
+        limit: 5000,
+      });
+      return rows.map((row) => ({ ...row, occurredAt: row.occurredAt || row.createdAt }));
     })(),
     listActivities({
       userIds: [userId],
@@ -198,7 +201,6 @@ async function buildPenaltyBase({ userId, relatedUserIds = [], since, until }) {
 }
 
 async function createPenaltyTransactions({ userId, riskCaseId, confiscatedK, confiscatedLumens, penaltyPercent }) {
-  const supabase = getSupabaseClient();
   const nowIso = new Date().toISOString();
   const created = [];
   
@@ -213,12 +215,12 @@ async function createPenaltyTransactions({ userId, riskCaseId, confiscatedK, con
       description: `Штраф ${penaltyPercent}% за подтвержденную автоматизацию`,
       relatedEntity: riskCaseId,
     };
-    await supabase.from(DOC_TABLE).insert({
+    await insertDoc({
       model: 'Transaction',
       id,
       data: txData,
-      created_at: nowIso,
-      updated_at: nowIso,
+      createdAt: nowIso,
+      updatedAt: nowIso,
     });
     created.push({ _id: id, ...txData });
   }
@@ -234,12 +236,12 @@ async function createPenaltyTransactions({ userId, riskCaseId, confiscatedK, con
       description: `Штраф ${penaltyPercent}% за подтвержденную автоматизацию`,
       relatedEntity: riskCaseId,
     };
-    await supabase.from(DOC_TABLE).insert({
+    await insertDoc({
       model: 'Transaction',
       id,
       data: txData,
-      created_at: nowIso,
-      updated_at: nowIso,
+      createdAt: nowIso,
+      updatedAt: nowIso,
     });
     created.push({ _id: id, ...txData });
   }
@@ -256,22 +258,14 @@ async function applyRiskPenalty({
 }) {
   const safePercent = Math.min(100, Math.max(0, safeNumber(penaltyPercent, 80)));
   const now = new Date();
-  const supabase = getSupabaseClient();
   
-  const { data: riskCaseRow, error: findError } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'RiskCase')
-    .eq('id', String(riskCaseId))
-    .maybeSingle();
+  const riskCase = await getDocByModelAndId('RiskCase', riskCaseId);
   
-  if (!riskCaseRow) {
+  if (!riskCase) {
     const err = new Error('Риск-кейс не найден');
     err.status = 404;
     throw err;
   }
-  
-  const riskCase = { _id: riskCaseRow.id, ...riskCaseRow.data };
 
   if (riskCase.status === 'penalized' || riskCase?.penalty?.appliedAt) {
     const err = new Error('Штраф по этому риск-кейсу уже применён');
@@ -371,12 +365,12 @@ async function applyRiskPenalty({
     },
   };
   
-  await supabase.from(DOC_TABLE).insert({
+  await insertDoc({
     model: 'AutomationPenalty',
     id: penaltyId,
     data: penaltyData,
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
   });
   
   const penalty = { _id: penaltyId, ...penaltyData };
@@ -398,8 +392,11 @@ async function applyRiskPenalty({
   };
 
   const evidence = Array.isArray(riskCase.evidence) ? [sanctionEvidence, ...riskCase.evidence] : [sanctionEvidence];
+  const { _id: riskCaseDocId, createdAt: riskCaseCreatedAt, updatedAt: riskCaseUpdatedAt, ...riskCaseData } = riskCase;
+  void riskCaseCreatedAt;
+  void riskCaseUpdatedAt;
   const updatedRiskCaseData = {
-    ...riskCaseRow.data,
+    ...riskCaseData,
     status: 'penalized',
     penalty: {
       appliedAt: now.toISOString(),
@@ -421,10 +418,7 @@ async function applyRiskPenalty({
     },
   };
   
-  await supabase
-    .from(DOC_TABLE)
-    .update({ data: updatedRiskCaseData, updated_at: now.toISOString() })
-    .eq('id', riskCaseRow.id);
+  await updateDocByModel('RiskCase', riskCaseDocId, updatedRiskCaseData, { updatedAt: now.toISOString() });
 
   return {
     riskCase: { ...riskCase, status: 'penalized', penalty: updatedRiskCaseData.penalty, evidence: updatedRiskCaseData.evidence, meta: updatedRiskCaseData.meta },

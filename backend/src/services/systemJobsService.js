@@ -1,10 +1,14 @@
 const crypto = require('crypto');
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const { createFullBackup, restoreFullBackup } = require('./backupService');
 const { clearCacheByZone } = require('./cacheService');
 const { cleanupBattleEmergency } = require('./adminCleanupService');
+const {
+  getDocByModelAndId,
+  insertDoc,
+  listDocsByModel,
+  updateDocByModel,
+} = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const JOB_MODEL = 'SystemJobRun';
 
 const SYSTEM_JOB_DEFINITIONS = {
@@ -78,14 +82,12 @@ function getSystemJobDefinition(jobName) {
   return SYSTEM_JOB_DEFINITIONS[key] || null;
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeJobRunDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
@@ -110,57 +112,33 @@ function serializeRun(run) {
 }
 
 async function insertJobRun(doc) {
-  const supabase = getSupabaseClient();
   const id = doc.runId || buildRunId();
   const payload = { ...doc };
   delete payload._id;
   delete payload.id;
 
-  const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({
-      model: JOB_MODEL,
-      id,
-      data: payload,
-      created_at: nowIso,
-      updated_at: nowIso,
-    })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeJobRunDoc(await insertDoc({ model: JOB_MODEL, id, data: payload }));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function updateJobRun(runId, patch) {
-  const supabase = getSupabaseClient();
-  const { data: existing, error: readErr } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', JOB_MODEL)
-    .eq('id', String(runId))
-    .maybeSingle();
+  const current = await getDocByModelAndId(JOB_MODEL, runId);
+  if (!current) return null;
 
-  if (readErr || !existing) return null;
-
-  const current = existing.data && typeof existing.data === 'object' ? existing.data : {};
   const next = { ...current, ...patch };
   delete next._id;
   delete next.id;
   delete next.createdAt;
   delete next.updatedAt;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .update({ data: next, updated_at: new Date().toISOString() })
-    .eq('model', JOB_MODEL)
-    .eq('id', String(runId))
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeJobRunDoc(await updateDocByModel(JOB_MODEL, runId, next));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function runSystemJob({ jobName, requestedBy, params = {}, relatedApproval = null }) {
@@ -223,34 +201,17 @@ async function runSystemJob({ jobName, requestedBy, params = {}, relatedApproval
 }
 
 async function getSystemJobRunByRunId(runId) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', JOB_MODEL)
-    .eq('id', String(runId))
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return serializeRun(mapDocRow(data));
+  return serializeRun(normalizeJobRunDoc(await getDocByModelAndId(JOB_MODEL, runId)));
 }
 
 async function listSystemJobRuns({ limit = 20, status, jobName } = {}) {
   const safeLimit = Math.max(1, Math.min(200, Number(limit) || 20));
-  const supabase = getSupabaseClient();
-
-  let query = supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', JOB_MODEL)
-    .order('created_at', { ascending: false })
-    .limit(safeLimit);
-
-  // Загружаем все и фильтруем в JS (фильтрация по jsonb-полям)
-  const { data, error } = await query;
-  if (error || !Array.isArray(data)) return [];
-
-  let runs = data.map(mapDocRow).filter(Boolean);
+  let runs = await listDocsByModel(JOB_MODEL, {
+    limit: safeLimit,
+    orderBy: 'created_at',
+    ascending: false,
+  });
+  runs = runs.map(normalizeJobRunDoc).filter(Boolean);
 
   if (status) {
     runs = runs.filter((r) => r.status === status);

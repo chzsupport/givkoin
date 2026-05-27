@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { describeNewsMedia } from '@/utils/newsMedia';
 import { useI18n } from '@/context/I18nContext';
 
@@ -44,11 +45,14 @@ export function NewsMediaBlock({ url, title }: NewsMediaBlockProps) {
     if (media.kind === 'image') {
         return (
             <div className="w-full bg-black/20">
-                <img
+                <Image
                     src={media.url}
                     alt={title}
+                    width={1200}
+                    height={675}
+                    sizes="100vw"
+                    unoptimized
                     className="block h-auto w-full"
-                    loading="lazy"
                     onError={() => setFailedUrl(media.url)}
                 />
             </div>

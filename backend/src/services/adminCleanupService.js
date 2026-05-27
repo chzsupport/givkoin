@@ -1,8 +1,12 @@
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const battleService = require('./battleService');
 const battleRuntimeStore = require('./battleRuntimeStore');
+const {
+  deleteDocsByModel,
+  getDocByModelAndId,
+  listAllDocsByModel,
+} = require('./documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const RUNTIME_TABLE = 'battle_runtime_entries';
 
 const BATTLE_RUNTIME_MODELS_WITH_PREFIX = [
@@ -41,14 +45,12 @@ function toId(value, depth = 0) {
   return '';
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
@@ -63,57 +65,20 @@ function chunkArray(items, size = 200) {
 }
 
 async function listModelDocs(model, { pageSize = 1000 } = {}) {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = Math.max(1, Math.min(2000, Number(pageSize) || 1000));
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', String(model))
-      .range(from, from + size - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < size) break;
-    from += data.length;
-  }
-  return out;
+  const docs = await listAllDocsByModel(model, { pageSize });
+  return docs.map(normalizeDoc).filter(Boolean);
 }
 
 async function getModelDocById(model, id) {
   const safeId = toId(id);
   if (!model || !safeId) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', String(model))
-    .eq('id', safeId)
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return normalizeDoc(await getDocByModelAndId(model, safeId));
 }
 
 async function deleteModelDocs(model, ids) {
   const safeIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => toId(id)).filter(Boolean)));
   if (!safeIds.length) return 0;
-
-  const supabase = getSupabaseClient();
-  let deleted = 0;
-  for (const chunk of chunkArray(safeIds, 200)) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .delete()
-      .eq('model', String(model))
-      .in('id', chunk)
-      .select('id');
-    if (error) throw error;
-    deleted += Array.isArray(data) ? data.length : 0;
-  }
-  return deleted;
+  return deleteDocsByModel(model, safeIds);
 }
 
 async function deleteTableRowsByField(table, field, value) {

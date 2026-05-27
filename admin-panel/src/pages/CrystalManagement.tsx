@@ -22,12 +22,8 @@ export default function CrystalManagement() {
     const loadData = async () => {
         setLoading(true);
         try {
-            console.log('[Admin] Fetching crystal data...');
             const statsData = await fetchCrystalStats();
             const locationsData = await fetchCrystalLocations();
-            
-            console.log('[Admin] Stats received:', statsData);
-            console.log('[Admin] Locations received:', locationsData);
             
             // 1. Обработка статистики (участников)
             if (Array.isArray(statsData)) {
@@ -37,7 +33,6 @@ export default function CrystalManagement() {
                 setStats(Array.isArray(statsData.users) ? statsData.users : []);
                 setSuspicious(Array.isArray(statsData.suspicious) ? statsData.suspicious : []);
             } else {
-                console.warn('[Admin] Stats is not an array:', statsData);
                 setStats([]);
                 setSuspicious([]);
             }
@@ -52,7 +47,6 @@ export default function CrystalManagement() {
                 }
             }
             
-            console.log('[Admin] Final locations state:', locs);
             setLocations(locs);
         } catch (error) {
             console.error('[Admin] Failed to load crystal data:', error);
@@ -70,7 +64,6 @@ export default function CrystalManagement() {
         setGenerating(true);
         try {
             const result = await generateCrystals();
-            console.log('Generate result:', result);
             alert(result?.message || 'Кристаллы пересозданы');
             
             // После успешной генерации обновляем локации и статы

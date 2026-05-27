@@ -7,8 +7,8 @@ const { getTotalRewardMultiplier } = require('../services/kService');
 const { recordTransaction } = require('../services/kService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc, listDocsByModel } = require('../services/documentStore');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 const fruitRewardCache = new Map();
 
 function normalizeLang(value) {
@@ -19,47 +19,31 @@ function pickLang(lang, ru, en) {
     return normalizeLang(lang) === 'en' ? en : ru;
 }
 
-function mapDocRow(row) {
-    if (!row) return null;
-    const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeTreeDoc(doc) {
+    if (!doc) return null;
     return {
-        ...data,
-        _id: String(row.id),
-        createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-        updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+        ...doc,
+        createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+        updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
     };
 }
 
 async function getTreeDoc() {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .select('id,data,created_at,updated_at')
-        .eq('model', 'Tree')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    if (error || !data) return null;
-    return mapDocRow(data);
+    const rows = await listDocsByModel('Tree', {
+        limit: 1,
+        orderBy: 'created_at',
+        ascending: false,
+    });
+    return normalizeTreeDoc(rows[0] || null);
 }
 
 async function createTreeDoc(initialData) {
-    const supabase = getSupabaseClient();
     const id = `tree_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    const nowIso = new Date().toISOString();
-    const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .insert({
-            model: 'Tree',
-            id,
-            data: initialData,
-            created_at: nowIso,
-            updated_at: nowIso,
-        })
-        .select('id,data,created_at,updated_at')
-        .maybeSingle();
-    if (error || !data) return null;
-    return mapDocRow(data);
+    try {
+        return normalizeTreeDoc(await insertDoc({ model: 'Tree', id, data: initialData }));
+    } catch (_error) {
+        return null;
+    }
 }
 
 function getDayStart(date) {

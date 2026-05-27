@@ -3,22 +3,13 @@ const { SHOP_ITEMS, listLocalizedShopItems, localizeShopItem } = require('../con
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { createAdBoostOffer } = require('../services/adBoostService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
+const { insertDoc } = require('../services/documentStore');
 const { getRequestLanguage, pickRequestLanguage } = require('../utils/requestLanguage');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
 async function insertWarehouseItem(doc) {
-  const supabase = getSupabaseClient();
   const id = `wi_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-  const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).insert({
-    model: 'WarehouseItem',
-    id,
-    data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
-  return { ...doc, _id: id };
+  const inserted = await insertDoc({ model: 'WarehouseItem', id, data: doc });
+  return { ...doc, _id: inserted?._id || id };
 }
 
 exports.getCatalog = async (req, res) => {

@@ -7,86 +7,11 @@ import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/context/I18nContext";
 import { apiGet, apiPost } from "@/utils/api";
 import { getCachedDailyStreakState, setCachedDailyStreakState } from "@/utils/sessionWarmup";
-
-type DailyStreakStateResponse = {
-  serverDay: string;
-  cycleStartDay: string | null;
-  claimedDays: number[];
-  missedDays: number[];
-  questDoneDays: number[];
-  lastSeenServerDay: string | null;
-  lastWelcomeShownServerDay: string | null;
-  currentDayIndex: number;
-  today: {
-    day: number;
-    tasks: {
-      energyCollected: boolean;
-      bridgeStoneLaid: boolean;
-      rouletteSpins3: boolean;
-    };
-    claim: {
-      clickedToday: boolean;
-    };
-    quest: {
-      completedToday: boolean;
-    };
-  };
-};
-
-type DailyStreakActionResponse = {
-  ok: boolean;
-  already?: boolean;
-  kReward?: number;
-  user?: {
-    k?: number;
-  };
-  state: DailyStreakStateResponse;
-};
-
-function getRewardEmoji(day: number) {
-  if (day % 3 === 0) return "🎁";
-  return "💰";
-}
-
-function isPrizeDay(day: number) {
-  return day % 3 === 0;
-}
-
-type DailyStreakCalendarProps = {
-  enableWelcomeModal?: boolean;
-  inline?: boolean;
-  displayMode?: "summary" | "full";
-};
-
-function MiniQuestInline({
-  energyCollected,
-  bridgeStoneLaid,
-  rouletteSpins3,
-  t,
-}: {
-  energyCollected?: boolean;
-  bridgeStoneLaid?: boolean;
-  rouletteSpins3?: boolean;
-  t: (key: string, fallback?: string) => string;
-}) {
-  const Item = ({ ok, text }: { ok?: boolean; text: string }) => (
-    <div className="flex items-center justify-between gap-3">
-      <div className="text-caption text-white/70">{text}</div>
-      <div className="text-caption font-bold text-white/80">{ok ? "✓" : "—"}</div>
-    </div>
-  );
-
-  return (
-    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="mb-2 text-label text-white/50">{t("daily_streak.day_tasks")}</div>
-      <div className="space-y-1">
-        <Item ok={energyCollected} text={t("daily_streak.task_collect_charge")} />
-        <Item ok={bridgeStoneLaid} text={t("daily_streak.task_place_stone")} />
-        <Item ok={rouletteSpins3} text={t("daily_streak.task_roulette_3")} />
-      </div>
-    </div>
-  );
-}
+import { DailyStreakCalendarGrid } from "@/components/cabinet/daily-streak/DailyStreakCalendarGrid";
+import { DailyStreakQuestChecklist } from "@/components/cabinet/daily-streak/DailyStreakQuestChecklist";
+import { MiniQuestInline } from "@/components/cabinet/daily-streak/MiniQuestInline";
+import { buildDayProgress, buildDayState, getRewardEmoji } from "@/components/cabinet/daily-streak/dailyStreakUtils";
+import type { DailyStreakActionResponse, DailyStreakCalendarProps, DailyStreakStateResponse } from "@/components/cabinet/daily-streak/types";
 
 export function DailyStreakCalendar({
   enableWelcomeModal = true,
@@ -164,42 +89,12 @@ export function DailyStreakCalendar({
   const currentDayIndex = state?.currentDayIndex || 1;
 
   const dayState = useMemo(() => {
-    const stateByDay = new Map<number, "claimed" | "active" | "locked" | "missed">();
-    const claimed = state?.claimedDays || [];
-    const missed = state?.missedDays || [];
-
-    for (let day = 1; day <= 30; day += 1) {
-      if (day > currentDayIndex) {
-        stateByDay.set(day, "locked");
-        continue;
-      }
-      if (claimed.includes(day)) {
-        stateByDay.set(day, "claimed");
-        continue;
-      }
-      if (day === currentDayIndex) {
-        stateByDay.set(day, "active");
-        continue;
-      }
-      stateByDay.set(day, missed.includes(day) ? "missed" : "locked");
-    }
-
-    return stateByDay;
-  }, [currentDayIndex, state?.claimedDays, state?.missedDays]);
+    return buildDayState({ currentDayIndex, state });
+  }, [currentDayIndex, state]);
 
   const dayProgress = useMemo(() => {
-    const map = new Map<number, { done: number; total: 2 }>();
-    const claimed = state?.claimedDays || [];
-    const questDone = state?.questDoneDays || [];
-
-    for (let day = 1; day <= 30; day += 1) {
-      const markDone = claimed.includes(day) ? 1 : 0;
-      const quest = questDone.includes(day) ? 1 : 0;
-      map.set(day, { done: markDone + quest, total: 2 });
-    }
-
-    return map;
-  }, [state?.claimedDays, state?.questDoneDays]);
+    return buildDayProgress(state);
+  }, [state]);
 
   const openClaimModalForDay = (day: number) => {
     setClaimModalDay(day);
@@ -240,110 +135,6 @@ export function DailyStreakCalendar({
     }
   };
 
-  const QuestChecklist = ({ day }: { day: number }) => {
-    const isToday = day === currentDayIndex;
-    const tasks = state?.today.tasks;
-    const isQuestCompletedToday = !!tasks?.energyCollected && !!tasks?.bridgeStoneLaid && !!tasks?.rouletteSpins3;
-    const questCompleted = day === currentDayIndex ? !!state?.today.quest.completedToday : !!state?.questDoneDays.includes(day);
-    const canComplete = isToday && isQuestCompletedToday && !questCompleted && !isSubmitting;
-
-    return (
-      <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="mb-2 text-tiny uppercase tracking-widest text-white/60">{t("daily_streak.mini_quest_title")}</div>
-        <div className="space-y-2 text-sm text-white/80">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <span>1.</span>
-              <span>{t("daily_streak.mini_quest_step_1")}</span>
-            </div>
-            <div className="text-sm font-bold text-white">{tasks?.energyCollected ? "✓" : "—"}</div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <span>2.</span>
-              <span>{t("daily_streak.mini_quest_step_2")}</span>
-            </div>
-            <div className="text-sm font-bold text-white">{tasks?.bridgeStoneLaid ? "✓" : "—"}</div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <span>3.</span>
-              <span>{t("daily_streak.mini_quest_step_3")}</span>
-            </div>
-            <div className="text-sm font-bold text-white">{tasks?.rouletteSpins3 ? "✓" : "—"}</div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => void completeQuest()}
-          disabled={!canComplete}
-          className={`mt-3 w-full rounded-xl border px-4 py-2 text-tiny font-bold uppercase tracking-widest transition-all active:scale-95 ${(!canComplete)
-            ? "border-white/10 bg-white/5 text-white/40 cursor-not-allowed"
-            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/15"}`}
-        >
-          {questCompleted ? t("daily_streak.mini_quest_done") : t("daily_streak.mini_quest_submit")}
-        </button>
-      </div>
-    );
-  };
-
-  const DayCell = ({ day }: { day: number }) => {
-    const st = dayState.get(day) || "locked";
-    const rewardEmoji = getRewardEmoji(day);
-    const progress = day === currentDayIndex
-      ? {
-        done: (state?.today.claim.clickedToday ? 1 : 0) + (state?.today.quest.completedToday ? 1 : 0),
-        total: 2,
-      }
-      : (dayProgress.get(day) || { done: 0, total: 2 });
-
-    const clickable = st === "active";
-
-    return (
-      <button
-        type="button"
-        onClick={() => clickable && openClaimModalForDay(day)}
-        disabled={!clickable}
-        className={`relative overflow-hidden rounded-2xl border p-3 text-left transition-all active:scale-[0.98]
-          ${st === "claimed" ? "border-white/10 bg-white/5 opacity-50 cursor-default" : ""}
-          ${st === "active" ? "border-emerald-500/40 bg-emerald-500/10 shadow-[0_0_25px_-8px_rgba(16,185,129,0.45)] cursor-pointer" : ""}
-          ${st === "locked" ? "border-white/5 bg-white/5 opacity-30 cursor-not-allowed" : ""}
-          ${st === "missed" ? "border-white/10 bg-white/5 opacity-25 cursor-not-allowed" : ""}`}
-      >
-        <div className="relative z-10 flex items-start justify-between gap-2">
-          <div>
-            <div className="text-sm font-black text-white">{t("daily_streak.day")} {day}</div>
-            <div
-              className={`mt-1 text-caption uppercase tracking-widest ${isPrizeDay(day) ? "text-amber-200/90" : "text-white/50"}`}
-            >
-              {isPrizeDay(day) ? t("daily_streak.prize_day") : t("daily_streak.normal_day")}
-            </div>
-          </div>
-          <div className="text-2xl opacity-80">{rewardEmoji}</div>
-        </div>
-
-        <div className="relative z-10 mt-2 flex items-center justify-between text-caption text-white/60">
-          <span>{t("daily_streak.progress")}</span>
-          <span className="font-mono font-bold text-white/70">{progress.done}/{progress.total}</span>
-        </div>
-
-        {st === "claimed" && <div className="absolute bottom-2 right-2 text-white/70">✓</div>}
-      </button>
-    );
-  };
-
-  const CalendarGrid = () => (
-    <div className="grid grid-cols-5 gap-2 sm:grid-cols-6 lg:grid-cols-10">
-      {Array.from({ length: 30 }).map((_, idx) => {
-        const day = idx + 1;
-        return <DayCell key={day} day={day} />;
-      })}
-    </div>
-  );
-
   if (isLoading && !state) {
     if (!inline) return null;
     return (
@@ -354,6 +145,26 @@ export function DailyStreakCalendar({
   const todayTasks = state?.today.tasks;
   const todayProgressDone = (state?.today.claim.clickedToday ? 1 : 0) + (state?.today.quest.completedToday ? 1 : 0);
   const isFullMode = displayMode === "full";
+  const calendarGrid = (
+    <DailyStreakCalendarGrid
+      currentDayIndex={currentDayIndex}
+      state={state}
+      dayState={dayState}
+      dayProgress={dayProgress}
+      t={t}
+      onOpenClaimDay={openClaimModalForDay}
+    />
+  );
+  const renderQuestChecklist = (day: number) => (
+    <DailyStreakQuestChecklist
+      day={day}
+      currentDayIndex={currentDayIndex}
+      state={state}
+      isSubmitting={isSubmitting}
+      t={t}
+      onCompleteQuest={() => void completeQuest()}
+    />
+  );
 
   return (
     <>
@@ -441,7 +252,7 @@ export function DailyStreakCalendar({
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.85fr)]">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <CalendarGrid />
+              {calendarGrid}
             </div>
 
             <div className="space-y-4">
@@ -472,7 +283,7 @@ export function DailyStreakCalendar({
                 </div>
               </div>
 
-              <QuestChecklist day={currentDayIndex} />
+              {renderQuestChecklist(currentDayIndex)}
             </div>
           </div>
         </div>
@@ -508,7 +319,7 @@ export function DailyStreakCalendar({
                 </button>
               </div>
 
-              <CalendarGrid />
+              {calendarGrid}
             </motion.div>
           </motion.div>
         )}
@@ -609,7 +420,7 @@ export function DailyStreakCalendar({
                 </div>
               )}
 
-              {claimModalDay != null && <QuestChecklist day={claimModalDay} />}
+              {claimModalDay != null && renderQuestChecklist(claimModalDay)}
 
               <div className="mt-5 flex gap-2">
                 <button

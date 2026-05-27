@@ -1,11 +1,9 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
+const { getDocById, insertDoc, listDocsByModel, updateDoc } = require('./documentStore');
 const { getSetting } = require('../utils/settings');
 const {
   buildLocalizedText,
   normalizeLocalizedTextInput,
 } = require('../utils/localizedContent');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
 
 const STATIC_PAGES_CACHE_TTL_MS = Math.max(0, Number(process.env.STATIC_PAGES_CACHE_TTL_MS) || 30_000);
 let staticPagesCachePayload = null;
@@ -56,33 +54,23 @@ function buildLocalizedPageContent(page) {
   );
 }
 
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeContentPageDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : (data.createdAt || null),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : (data.updatedAt || null),
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function findContentPageBySlug(slug) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', 'ContentPage')
-    .range(0, 999);
-  if (error || !Array.isArray(data)) return null;
-
-  const rows = data
-    .map(mapDocRow)
-    .filter(Boolean)
-    .filter((row) => row.slug === slug);
+  const rows = await listDocsByModel('ContentPage', {
+    dataEq: { slug: String(slug || '').trim() },
+    limit: 1,
+  });
 
   if (!rows.length) return null;
-  return rows[0];
+  return normalizeContentPageDoc(rows[0]);
 }
 
 async function findContentPageBySlugAndStatus(slug) {
@@ -98,22 +86,23 @@ async function findContentPageBySlugAndStatus(slug) {
 }
 
 async function upsertContentPageDoc(id, doc) {
-  const supabase = getSupabaseClient();
   const payload = { ...doc };
   delete payload._id;
   delete payload.id;
 
-  const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).upsert(
-    {
-      model: 'ContentPage',
-      id: String(id),
-      data: payload,
-      created_at: doc.createdAt ? new Date(doc.createdAt).toISOString() : nowIso,
-      updated_at: nowIso,
-    },
-    { onConflict: 'model,id', ignoreDuplicates: false }
-  );
+  const existing = await getDocById(id);
+  if (existing) {
+    await updateDoc(id, payload);
+    return;
+  }
+
+  await insertDoc({
+    model: 'ContentPage',
+    id: String(id),
+    data: payload,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(),
+    updatedAt: new Date(),
+  });
 }
 
 async function getCmsPageContent(slug) {

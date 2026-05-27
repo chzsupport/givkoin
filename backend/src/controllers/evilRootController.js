@@ -3,37 +3,40 @@ const { recordActivity } = require('../services/activityService');
 const { awardRadianceForActivity } = require('../services/activityRadianceService');
 const { getSupabaseClient } = require('../lib/supabaseClient');
 const {
+  getDocByModelAndId,
+  insertDoc,
+  listDocsByModel,
+  updateDocByModel,
+} = require('../services/documentStore');
+const {
   EVIL_ROOT_DAILY_SESSIONS,
 } = require('../config/constants');
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
 async function findEvilRootSession(userId, sessionId) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'EvilRootSession')
-    .limit(500);
-  if (error || !Array.isArray(data)) return null;
-  return data.find((row) => String(row.data?.user) === String(userId) && row.data?.sessionId === sessionId) || null;
+  const rows = await listDocsByModel('EvilRootSession', {
+    limit: 1,
+    dataEq: {
+      user: String(userId),
+      sessionId: String(sessionId),
+    },
+  });
+  const found = rows[0] || null;
+  return found ? { id: found._id, data: found } : null;
 }
 
 async function upsertEvilRootSession(userId, sessionId, dateKey, doc) {
-  const supabase = getSupabaseClient();
-  const nowIso = new Date().toISOString();
-  
   const existing = await findEvilRootSession(userId, sessionId);
-  
+
   if (existing) {
     const nextData = { ...existing.data, ...doc };
-    await supabase
-      .from(DOC_TABLE)
-      .update({ data: nextData, updated_at: nowIso })
-      .eq('id', existing.id);
+    try {
+      await updateDocByModel('EvilRootSession', existing.id, nextData);
+    } catch (_error) {
+      // keep the old best-effort behavior
+    }
     return { _id: existing.id, ...nextData };
   }
-  
+
   const id = `ers_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const newData = {
     user: userId,
@@ -46,37 +49,33 @@ async function upsertEvilRootSession(userId, sessionId, dateKey, doc) {
     radianceUnitsAwarded: 0,
     ...doc,
   };
-  await supabase.from(DOC_TABLE).insert({
-    model: 'EvilRootSession',
-    id,
-    data: newData,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
+  try {
+    await insertDoc({ model: 'EvilRootSession', id, data: newData });
+  } catch (_error) {
+    // keep the old best-effort behavior
+  }
   return { _id: id, ...newData };
 }
 
 async function findEvilRootDaily(userId, dateKeyVal) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'EvilRootDaily')
-    .limit(500);
-  if (error || !Array.isArray(data)) return null;
-  return data.find((row) => String(row.data?.user) === String(userId) && row.data?.dateKey === dateKeyVal) || null;
+  const rows = await listDocsByModel('EvilRootDaily', {
+    limit: 1,
+    dataEq: {
+      user: String(userId),
+      dateKey: String(dateKeyVal),
+    },
+  });
+  const found = rows[0] || null;
+  return found ? { id: found._id, data: found } : null;
 }
 
 async function upsertEvilRootDaily(userId, dateKeyVal) {
-  const supabase = getSupabaseClient();
-  const nowIso = new Date().toISOString();
-  
   const existing = await findEvilRootDaily(userId, dateKeyVal);
-  
+
   if (existing) {
     return { _id: existing.id, ...existing.data };
   }
-  
+
   const id = `erd_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
   const newData = {
     user: userId,
@@ -84,30 +83,27 @@ async function upsertEvilRootDaily(userId, dateKeyVal) {
     sessionsRewarded: 0,
     radianceRewardsCount: 0,
   };
-  await supabase.from(DOC_TABLE).insert({
-    model: 'EvilRootDaily',
-    id,
-    data: newData,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
+  try {
+    await insertDoc({ model: 'EvilRootDaily', id, data: newData });
+  } catch (_error) {
+    // keep the old best-effort behavior
+  }
   return { _id: id, ...newData };
 }
 
 async function incrementEvilRootDailySessionsRewarded(dailyId) {
-  const supabase = getSupabaseClient();
-  const { data: existing, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('id', dailyId)
-    .maybeSingle();
-  if (error || !existing) return null;
-  
-  const nextData = { ...existing.data, sessionsRewarded: (Number(existing.data?.sessionsRewarded) || 0) + 1 };
-  await supabase
-    .from(DOC_TABLE)
-    .update({ data: nextData, updated_at: new Date().toISOString() })
-    .eq('id', dailyId);
+  const existing = await getDocByModelAndId('EvilRootDaily', dailyId);
+  if (!existing) return null;
+
+  const nextData = { ...existing, sessionsRewarded: (Number(existing?.sessionsRewarded) || 0) + 1 };
+  delete nextData._id;
+  delete nextData.createdAt;
+  delete nextData.updatedAt;
+  try {
+    await updateDocByModel('EvilRootDaily', dailyId, nextData);
+  } catch (_error) {
+    // keep the old best-effort behavior
+  }
   return nextData;
 }
 

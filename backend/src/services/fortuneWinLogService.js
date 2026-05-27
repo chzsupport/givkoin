@@ -1,6 +1,4 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { deleteDoc, insertDoc, listDocsByModel } = require('./documentStore');
 
 const RETENTION_DAYS_DEFAULT = 90;
 
@@ -11,17 +9,9 @@ function toDate(value) {
 }
 
 async function insertFortuneWinLog(doc) {
-  const supabase = getSupabaseClient();
   const id = `fwl_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-  const nowIso = new Date().toISOString();
-  await supabase.from(DOC_TABLE).insert({
-    model: 'FortuneWinLog',
-    id,
-    data: doc,
-    created_at: nowIso,
-    updated_at: nowIso,
-  });
-  return { ...doc, _id: id };
+  const inserted = await insertDoc({ model: 'FortuneWinLog', id, data: doc });
+  return { ...doc, _id: inserted?._id || id };
 }
 
 async function recordFortuneWin({
@@ -57,26 +47,25 @@ async function cleanupOldFortuneWins(retentionDays = RETENTION_DAYS_DEFAULT) {
   const threshold = new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000);
   const thresholdIso = threshold.toISOString();
   
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data')
-    .eq('model', 'FortuneWinLog')
-    .limit(5000);
-  
-  if (error || !Array.isArray(data)) {
-    return { threshold, deletedCount: 0 };
-  }
+  const data = await listDocsByModel('FortuneWinLog', {
+    dataLt: { occurredAt: thresholdIso },
+    limit: 5000,
+  });
   
   const toDelete = data.filter((row) => {
-    const occurred = row.data?.occurredAt;
+    const occurred = row?.occurredAt;
     return occurred && occurred < thresholdIso;
   });
   
   let deletedCount = 0;
   for (const row of toDelete) {
-    const { error: delError } = await supabase.from(DOC_TABLE).delete().eq('id', row.id);
-    if (!delError) deletedCount++;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteDoc(row._id);
+      deletedCount++;
+    } catch (_error) {
+      // keep cleanup best-effort, as before
+    }
   }
   
   return {

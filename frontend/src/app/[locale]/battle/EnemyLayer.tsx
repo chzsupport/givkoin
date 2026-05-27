@@ -11,8 +11,6 @@ import React, {
 } from 'react';
 import type { EnemyHitEvent } from './enemyZones';
 import {
-    ENEMY_ZONES,
-    getZoneNormalizedBounds,
     isPointWithinOutline,
     normalizePointToOutline,
 } from './enemyZones';
@@ -23,21 +21,17 @@ import {
     getBattleViewportLayout,
     type BattleSceneLayout,
 } from './battleLayout';
+import {
+    DebugGridOverlay,
+    ImpactFlashLayer,
+    IMPACT_FLASH_DURATION_MS,
+    REACTION_FADE_DURATION_MS,
+    ReactionVideoOverlay,
+    type ImpactFlash,
+} from './EnemyLayerOverlays';
+import { useEnemyMaskSampler } from './useEnemyMaskSampler';
 
 type WeaponId = 1 | 2 | 3;
-
-type MaskSampler = {
-    width: number;
-    height: number;
-    data: Uint8ClampedArray;
-};
-
-type ImpactFlash = {
-    id: number;
-    x: number;
-    y: number;
-    at: number;
-};
 
 export type EnemyLayerHit = EnemyHitEvent & { id: number };
 
@@ -47,126 +41,9 @@ const WEAPON_TRIGGER_THRESHOLDS: Record<WeaponId, number> = {
     3: 1,
 };
 
-const REACTION_FADE_DURATION_MS = 600;
 const REACTION_RETRY_DELAY_MS = 250;
 const MAX_REACTION_RETRIES = 3;
-const IMPACT_FLASH_DURATION_MS = 650;
 const MAX_IMPACT_FLASHES = 24;
-const IMPACT_PULSE_KEYFRAMES = `
-@keyframes impactPulseAnimation {
-  0% {
-    transform: scale(0.4);
-    opacity: 0.95;
-  }
-  60% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  100% {
-    transform: scale(1.4);
-    opacity: 0;
-  }
-}
-
-@keyframes hitFlashPulse {
-  0% {
-    opacity: 1;
-    filter: drop-shadow(0 0 15px #00ffff) drop-shadow(0 0 25px #0099ff);
-  }
-  100% {
-    opacity: 0;
-    filter: drop-shadow(0 0 5px #00ffff) drop-shadow(0 0 10px #0099ff);
-  }
-}`;
-
-type ReactionVideoOverlayProps = {
-    isVisible: boolean;
-    videoRef: React.MutableRefObject<HTMLVideoElement | null>;
-    onEnded: () => void;
-    onError?: () => void;
-    opacity: number;
-    src: string;
-};
-
-function ReactionVideoOverlay({
-    isVisible,
-    videoRef,
-    onEnded,
-    onError,
-    opacity,
-    src,
-}: ReactionVideoOverlayProps) {
-    const clampedOpacity = Math.max(0, Math.min(1, opacity));
-    const containerStyle: React.CSSProperties = {
-        opacity: isVisible ? clampedOpacity : 0,
-        transition: `opacity ${REACTION_FADE_DURATION_MS}ms ease-out`,
-    };
-    return (
-        <div className="absolute inset-0 z-10 pointer-events-none" style={containerStyle} aria-hidden={!isVisible}>
-            <video
-                ref={videoRef}
-                className="w-full h-full object-cover"
-                src={src}
-                playsInline
-                muted
-                preload="auto"
-                onEnded={onEnded}
-                onError={onError}
-            />
-        </div>
-    );
-}
-
-function ImpactFlashLayer({ flashes }: { flashes: ImpactFlash[] }) {
-    if (flashes.length === 0) return null;
-    return (
-        <div className="absolute inset-0 z-15 pointer-events-none">
-            <style>{IMPACT_PULSE_KEYFRAMES}</style>
-            {flashes.map((flash) => (
-                <div
-                    key={flash.id}
-                    className="absolute"
-                    style={{
-                        left: `${flash.x * 100}%`,
-                        top: `${(1 - flash.y) * 100}%`,
-                        transform: 'translate(-50%, -50%)',
-                    }}
-                >
-                    <div
-                        style={{
-                            width: '72px',
-                            height: '72px',
-                            borderRadius: '50%',
-                            background:
-                                'radial-gradient(circle, rgba(0,255,255,0.9) 0%, rgba(0,255,255,0.15) 55%, rgba(0,255,255,0) 90%)',
-                            boxShadow: '0 0 20px rgba(0,255,255,0.8), 0 0 36px rgba(0,153,255,0.65)',
-                            animation: 'impactPulseAnimation 450ms ease-out forwards',
-                            willChange: 'transform, opacity',
-                        }}
-                    />
-                </div>
-            ))}
-        </div>
-    );
-}
-
-function DebugGridOverlay() {
-    if (ENEMY_ZONES.length === 0) return null;
-    const outline = ENEMY_ZONES[0];
-    const { left, right, top, bottom } = getZoneNormalizedBounds(outline);
-    const style: React.CSSProperties = {
-        left: `${left * 100}%`,
-        top: `${100 - top * 100}%`,
-        width: `${(right - left) * 100}%`,
-        height: `${(top - bottom) * 100}%`,
-        transform: 'translate(1px, -2px)',
-    };
-    return (
-        <div className="absolute inset-0 z-5 pointer-events-none">
-            <div className="absolute border-2 border-yellow-400/60 bg-yellow-100/5" style={style} />
-        </div>
-    );
-}
 
 export interface EnemyLayerProps {
     onValidHit?: (event: EnemyHitEvent) => void;
@@ -216,7 +93,6 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
     const hitsTrackerRef = useRef<{ byWeapon: Record<WeaponId, number> }>({
         byWeapon: { 1: 0, 2: 0, 3: 0 },
     });
-    const maskSamplerRef = useRef<MaskSampler | null>(null);
     const impactIdRef = useRef(0);
     const impactQueueRef = useRef<ImpactFlash[]>([]);
     const impactFlushFrameRef = useRef<number | null>(null);
@@ -369,65 +245,10 @@ export const EnemyLayer = React.memo(forwardRef<EnemyLayerHandle, EnemyLayerProp
         };
     }, [disableBackgroundVideo, isLowTier, performanceTier]);
 
-    useEffect(() => {
-        let cancelled = false;
-        const img = new Image();
-        img.src = silhouetteSrc;
-        img.onload = () => {
-            if (cancelled) return;
-            const naturalWidth = img.naturalWidth || img.width || 1440;
-            const naturalHeight = img.naturalHeight || img.height || 735;
-            if (naturalWidth === 0 || naturalHeight === 0) {
-                maskSamplerRef.current = null;
-                return;
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = naturalWidth;
-            canvas.height = naturalHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                maskSamplerRef.current = null;
-                return;
-            }
-            ctx.drawImage(img, 0, 0, naturalWidth, naturalHeight);
-            const imageData = ctx.getImageData(0, 0, naturalWidth, naturalHeight);
-            maskSamplerRef.current = {
-                width: naturalWidth,
-                height: naturalHeight,
-                data: imageData.data,
-            };
-        };
-        img.onerror = () => {
-            if (!cancelled) maskSamplerRef.current = null;
-        };
-        return () => {
-            cancelled = true;
-        };
-    }, [silhouetteSrc]);
-
-    const isPointInsideSilhouette = useCallback((worldX: number, worldY: number) => {
-        const sampler = maskSamplerRef.current;
-        if (!sampler) return false;
-        const { width, height, data } = sampler;
-
-        const point = mapPointToSilhouette(worldX, worldY);
-        if (!point) return false;
-
-        // Convert to pixel coordinates in the mask image
-        const px = Math.min(width - 1, Math.max(0, Math.round(point.localX * (width - 1))));
-        // Note: ny=0 is bottom in 3D world but top=0 in image, so we flip
-        const py = Math.min(height - 1, Math.max(0, Math.round((1 - point.localY) * (height - 1))));
-
-        const index = (py * width + px) * 4;
-        const alpha = data[index + 3];
-
-        // Alpha > 16 means there's visible content at this pixel
-        return alpha > 16;
-    }, [mapPointToSilhouette]);
-
-    const isPointInsideMask = useCallback((worldX: number, worldY: number) => {
-        return isPointInsideSilhouette(worldX, worldY);
-    }, [isPointInsideSilhouette]);
+    const { isPointInsideMask, isPointInsideSilhouette } = useEnemyMaskSampler({
+        silhouetteSrc,
+        mapPointToSilhouette,
+    });
 
     useEffect(() => {
         if (!enemyHit) {

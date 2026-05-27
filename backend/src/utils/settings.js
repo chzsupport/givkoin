@@ -1,42 +1,32 @@
-const { getSupabaseClient } = require('../lib/supabaseClient');
-
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
+const { insertDoc, listDocsByModel, updateDoc } = require('../services/documentStore');
 
 const SETTINGS_CACHE_TTL_MS = Math.max(0, Number(process.env.SETTINGS_CACHE_TTL_MS) || 30_000);
 const settingsCache = new Map();
 
 async function findSettingByKey(key) {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-        .from(DOC_TABLE)
-        .select('id,data,created_at,updated_at')
-        .eq('model', 'Settings')
-        .limit(500);
-    if (error || !Array.isArray(data)) return null;
-    return data.find((row) => row.data?.key === key) || null;
+    const settings = await listDocsByModel('Settings', { limit: 500 });
+    const setting = settings.find((row) => row?.key === key) || null;
+    if (!setting) return null;
+    return {
+        id: setting._id,
+        data: {
+            key: setting.key,
+            value: setting.value,
+            description: setting.description,
+            updatedBy: setting.updatedBy
+        }
+    };
 }
 
 async function upsertSetting(id, data) {
-    const supabase = getSupabaseClient();
-    const nowIso = new Date().toISOString();
-    
     if (id) {
-        await supabase
-            .from(DOC_TABLE)
-            .update({ data, updated_at: nowIso })
-            .eq('id', id);
-        return { ...data, _id: id };
+        const updated = await updateDoc(id, data);
+        return { ...data, _id: updated?._id || id };
     }
     
     const newId = `set_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
-    await supabase.from(DOC_TABLE).insert({
-        model: 'Settings',
-        id: newId,
-        data,
-        created_at: nowIso,
-        updated_at: nowIso,
-    });
-    return { ...data, _id: newId };
+    const inserted = await insertDoc({ id: newId, model: 'Settings', data });
+    return { ...data, _id: inserted?._id || newId };
 }
 
 /**

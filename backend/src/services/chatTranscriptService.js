@@ -413,7 +413,11 @@ async function cleanupTranscript(chatId) {
 }
 
 async function cleanupExpiredTranscripts(now = new Date()) {
-  const rows = await listDocsByModel(STATE_MODEL, { limit: 2000 });
+  const rows = await listDocsByModel(STATE_MODEL, {
+    dataEq: { status: 'complaint_pending' },
+    dataLte: { autoResolveAt: now.toISOString() },
+    limit: 2000,
+  });
   const nowMs = now.getTime();
   let cleaned = 0;
 

@@ -1,6 +1,12 @@
 const crypto = require('crypto');
-const { getSupabaseClient } = require('../lib/supabaseClient');
 const { recomputeRiskCases: recomputeAutomationRiskCases } = require('./automationRiskService');
+const {
+  getDocByModelAndId,
+  insertDoc,
+  listAllDocsByModel,
+  listDocsByModel,
+  updateDocByModel,
+} = require('./documentStore');
 
 const ACCESS_RESTRICTION_CACHE_TTL_MS = Math.max(
   1000,
@@ -14,54 +20,34 @@ let accessRestrictionCache = {
   blocked: new Map(),
 };
 
-const DOC_TABLE = String(process.env.SUPABASE_TABLE || 'app_documents').trim() || 'app_documents';
-
-function mapDocRow(row) {
-  if (!row) return null;
-  const data = row.data && typeof row.data === 'object' ? row.data : {};
+function normalizeModelDoc(doc) {
+  if (!doc) return null;
   return {
-    ...data,
-    _id: String(row.id),
-    createdAt: row.created_at ? new Date(row.created_at) : data.createdAt || null,
-    updatedAt: row.updated_at ? new Date(row.updated_at) : data.updatedAt || null,
+    ...doc,
+    createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
+    updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
   };
 }
 
 async function listModelDocs(model, { pageSize = 1000 } = {}) {
-  const supabase = getSupabaseClient();
-  const out = [];
-  let from = 0;
-  const size = Math.max(1, Math.min(2000, Number(pageSize) || 1000));
-  while (true) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await supabase
-      .from(DOC_TABLE)
-      .select('id,data,created_at,updated_at')
-      .eq('model', String(model))
-      .range(from, from + size - 1);
-    if (error || !Array.isArray(data) || data.length === 0) break;
-    out.push(...data.map(mapDocRow).filter(Boolean));
-    if (data.length < size) break;
-    from += size;
-  }
-  return out;
+  const docs = await listAllDocsByModel(model, { pageSize });
+  return docs.map(normalizeModelDoc).filter(Boolean);
+}
+
+async function listFilteredModelDocs(model, { dataEq = {}, limit = 1000 } = {}) {
+  const docs = await listDocsByModel(model, {
+    dataEq,
+    limit: Math.max(1, Math.min(5000, Number(limit) || 1000)),
+  });
+  return docs.map(normalizeModelDoc).filter(Boolean);
 }
 
 async function getModelDocById(model, id) {
   if (!id) return null;
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .select('id,data,created_at,updated_at')
-    .eq('model', String(model))
-    .eq('id', String(id))
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  return normalizeModelDoc(await getDocByModelAndId(model, id));
 }
 
 async function insertModelDoc(model, payload) {
-  const supabase = getSupabaseClient();
   const id = payload && (payload._id || payload.id)
     ? String(payload._id || payload.id)
     : `${String(model)}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`;
@@ -70,18 +56,15 @@ async function insertModelDoc(model, payload) {
   delete doc._id;
   delete doc.id;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .insert({ id, model: String(model), data: doc })
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeModelDoc(await insertDoc({ id, model: String(model), data: doc }));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function updateModelDoc(model, id, patch) {
   if (!id || !patch || typeof patch !== 'object') return null;
-  const supabase = getSupabaseClient();
   const existing = await getModelDocById(model, id);
   if (!existing) return null;
 
@@ -91,15 +74,11 @@ async function updateModelDoc(model, id, patch) {
   delete next.createdAt;
   delete next.updatedAt;
 
-  const { data, error } = await supabase
-    .from(DOC_TABLE)
-    .update({ data: next })
-    .eq('model', String(model))
-    .eq('id', String(id))
-    .select('id,data,created_at,updated_at')
-    .maybeSingle();
-  if (error || !data) return null;
-  return mapDocRow(data);
+  try {
+    return normalizeModelDoc(await updateDocByModel(model, id, next));
+  } catch (_error) {
+    return null;
+  }
 }
 
 function normalizeSignalValue(value) {
@@ -137,19 +116,12 @@ function invalidateAccessRestrictionCache() {
 }
 
 async function listIpRules({ ruleType, isWhitelist, isActive } = {}) {
-  const query = {};
-  if (ruleType) query.ruleType = ruleType;
-  if (isWhitelist !== undefined) query.isWhitelist = Boolean(isWhitelist);
-  if (isActive !== undefined) query.isActive = Boolean(isActive);
+  const dataEq = {};
+  if (ruleType) dataEq.ruleType = ruleType;
+  if (isWhitelist !== undefined) dataEq.isWhitelist = Boolean(isWhitelist);
+  if (isActive !== undefined) dataEq.isActive = Boolean(isActive);
 
-  const all = await listModelDocs('IpBlockRule', { pageSize: 2000 });
-  const rules = (Array.isArray(all) ? all : [])
-    .filter((row) => {
-      if (query.ruleType && String(row?.ruleType || '') !== String(query.ruleType)) return false;
-      if (query.isWhitelist !== undefined && Boolean(row?.isWhitelist) !== Boolean(query.isWhitelist)) return false;
-      if (query.isActive !== undefined && Boolean(row?.isActive) !== Boolean(query.isActive)) return false;
-      return true;
-    })
+  const rules = (await listFilteredModelDocs('IpBlockRule', { dataEq, limit: 2000 }))
     .sort((a, b) => {
       const aTime = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bTime = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -157,6 +129,21 @@ async function listIpRules({ ruleType, isWhitelist, isActive } = {}) {
     })
     .slice(0, 500);
   return rules;
+}
+
+async function findIpRule({ ruleType, value, isWhitelist = false }) {
+  const safeType = String(ruleType || '').trim();
+  const safeValue = normalizeSignalValue(value);
+  if (!safeType || !safeValue) return null;
+  const rows = await listFilteredModelDocs('IpBlockRule', {
+    dataEq: {
+      ruleType: safeType,
+      value: safeValue,
+      isWhitelist: Boolean(isWhitelist),
+    },
+    limit: 1,
+  });
+  return rows[0] || null;
 }
 
 async function upsertIpRule({ ruleType, value, reason, isWhitelist = false, actorId = null, expiresAt = null }) {
@@ -173,12 +160,7 @@ async function upsertIpRule({ ruleType, value, reason, isWhitelist = false, acto
     throw err;
   }
 
-  const all = await listModelDocs('IpBlockRule', { pageSize: 2000 });
-  const existing = (Array.isArray(all) ? all : []).find((row) => (
-    String(row?.ruleType || '') === safeType
-    && String(row?.value || '') === safeValue
-    && Boolean(row?.isWhitelist) === Boolean(isWhitelist)
-  )) || null;
+  const existing = await findIpRule({ ruleType: safeType, value: safeValue, isWhitelist });
 
   if (!existing) {
     const created = await insertModelDoc('IpBlockRule', {
@@ -207,12 +189,7 @@ async function upsertIpRule({ ruleType, value, reason, isWhitelist = false, acto
 async function disableIpRule({ ruleType, value, isWhitelist = false }) {
   const safeType = String(ruleType || '').trim();
   const safeValue = normalizeSignalValue(value);
-  const all = await listModelDocs('IpBlockRule', { pageSize: 2000 });
-  const existing = (Array.isArray(all) ? all : []).find((row) => (
-    String(row?.ruleType || '') === safeType
-    && String(row?.value || '') === safeValue
-    && Boolean(row?.isWhitelist) === Boolean(isWhitelist)
-  )) || null;
+  const existing = await findIpRule({ ruleType: safeType, value: safeValue, isWhitelist });
   if (!existing) return null;
   const saved = await updateModelDoc('IpBlockRule', existing._id, { isActive: false });
   invalidateAccessRestrictionCache();
