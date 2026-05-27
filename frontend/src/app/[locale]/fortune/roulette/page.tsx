@@ -21,6 +21,7 @@ export default function RoulettePage() {
         fetchUserStats,
         globalStats,
         nextResetAt,
+        plannedSpins,
         setPlannedSpins,
         setSpinsLeft,
         setTodayWins,
@@ -47,6 +48,7 @@ export default function RoulettePage() {
         fetchUserStats,
         recordSpinHistory,
         refreshUser,
+        plannedSpins,
         setPlannedSpins,
         setSpinsLeft,
         setTodayWins,
@@ -56,13 +58,14 @@ export default function RoulettePage() {
         user,
     });
     const timeUntilReset = useRouletteTimer(nextResetAt, isSpinning);
+    const canSpin = !isSpinning && Boolean(user) && spinsLeft > 0 && plannedSpins.length > 0;
 
     if (isLandscape) {
         return (
             <RouletteLandscapeView
                 backHref={localePath('/fortune')}
                 backLabel={t('common.back')}
-                canSpin={!isSpinning && Boolean(user) && spinsLeft > 0}
+                canSpin={canSpin}
                 globalStats={globalStats}
                 history={history}
                 isSpinning={isSpinning}
@@ -89,7 +92,7 @@ export default function RoulettePage() {
         <RoulettePortraitView
             backHref={localePath('/fortune')}
             backLabel={t('common.back')}
-            canSpin={!isSpinning && Boolean(user) && spinsLeft > 0}
+            canSpin={canSpin}
             globalStats={globalStats}
             history={history}
             isSpinning={isSpinning}

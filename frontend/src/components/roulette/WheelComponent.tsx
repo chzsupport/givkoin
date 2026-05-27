@@ -3,9 +3,6 @@
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { Star } from 'lucide-react';
 import {
-    ROULETTE_ACCELERATION_SHARE,
-    ROULETTE_COAST_SHARE,
-    ROULETTE_DECELERATION_SHARE,
     ROULETTE_SECTORS,
     ROULETTE_SPIN_DURATION_MS,
 } from './constants';
@@ -58,9 +55,6 @@ export const WheelComponent = ({
         () => Array.from({ length: ROULETTE_SECTORS.length }, (_, index) => index * sectorAngle),
         [sectorAngle],
     );
-    const accelerationOffset = ROULETTE_ACCELERATION_SHARE;
-    const coastOffset = ROULETTE_ACCELERATION_SHARE + ROULETTE_COAST_SHARE;
-    const decelerationOffset = ROULETTE_ACCELERATION_SHARE + ROULETTE_COAST_SHARE + ROULETTE_DECELERATION_SHARE;
 
     useEffect(() => {
         const node = wheelRef.current;
@@ -74,40 +68,19 @@ export const WheelComponent = ({
         if (!node || !spinAnimation) return;
 
         const { startRotation, targetRotation } = spinAnimation;
-        const distance = targetRotation - startRotation;
-        const firstStage = startRotation + (distance * 0.18);
-        const secondStage = startRotation + (distance * 0.62);
-        const thirdStage = startRotation + (distance * 0.9);
 
         node.style.transform = `rotate(${startRotation}deg)`;
 
         const animation = node.animate([
             {
                 transform: `rotate(${startRotation}deg)`,
-                offset: 0,
-                easing: 'cubic-bezier(0.45, 0, 0.86, 0.52)',
-            },
-            {
-                transform: `rotate(${firstStage}deg)`,
-                offset: accelerationOffset,
-                easing: 'linear',
-            },
-            {
-                transform: `rotate(${secondStage}deg)`,
-                offset: coastOffset,
-                easing: 'cubic-bezier(0.18, 0.72, 0.08, 1)',
-            },
-            {
-                transform: `rotate(${thirdStage}deg)`,
-                offset: Math.min(0.92, decelerationOffset - 0.1),
-                easing: 'cubic-bezier(0.05, 0.78, 0.02, 1)',
             },
             {
                 transform: `rotate(${targetRotation}deg)`,
-                offset: 1,
             },
         ], {
             duration: ROULETTE_SPIN_DURATION_MS,
+            easing: 'cubic-bezier(0.18, 0, 0.08, 1)',
             iterations: 1,
             fill: 'forwards',
         });
@@ -120,7 +93,7 @@ export const WheelComponent = ({
         return () => {
             animation.cancel();
         };
-    }, [accelerationOffset, coastOffset, decelerationOffset, onSpinComplete, spinAnimation]);
+    }, [onSpinComplete, spinAnimation]);
 
     return (
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>

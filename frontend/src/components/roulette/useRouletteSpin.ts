@@ -41,6 +41,7 @@ export function useRouletteSpin({
     fetchUserStats,
     recordSpinHistory,
     refreshUser,
+    plannedSpins,
     setPlannedSpins,
     setSpinsLeft,
     setTodayWins,
@@ -53,6 +54,7 @@ export function useRouletteSpin({
     fetchUserStats: () => Promise<void>;
     recordSpinHistory: (label: string) => void;
     refreshUser: () => Promise<void>;
+    plannedSpins: RoulettePlannedSpin[];
     setPlannedSpins: Dispatch<SetStateAction<RoulettePlannedSpin[]>>;
     setSpinsLeft: Dispatch<SetStateAction<number>>;
     setTodayWins: Dispatch<SetStateAction<RouletteTodayWins>>;
@@ -93,9 +95,8 @@ export function useRouletteSpin({
     }, []);
 
     const handleSpinComplete = useCallback((finalRotation: number) => {
-        const normalizedRotation = normalizeRotation(finalRotation);
-        rotationRef.current = normalizedRotation;
-        setRotation(normalizedRotation);
+        rotationRef.current = finalRotation;
+        setRotation(finalRotation);
         setSpinAnimation(null);
 
         if (spinAnimationTimeoutRef.current) {
@@ -105,7 +106,7 @@ export function useRouletteSpin({
 
         const resolve = spinAnimationResolveRef.current;
         spinAnimationResolveRef.current = null;
-        if (resolve) resolve(normalizedRotation);
+        if (resolve) resolve(finalRotation);
     }, []);
 
     const startWheelAnimation = useCallback((winningIndex: number) => {
@@ -147,10 +148,9 @@ export function useRouletteSpin({
             label: getRouletteDisplayLabel(serverResult),
         };
         const remainingSpins = Number((res as { spinsLeft?: unknown }).spinsLeft);
-        const normalizedRotation = normalizeRotation(finalRotation);
-        rotationRef.current = normalizedRotation;
+        rotationRef.current = finalRotation;
         setIsSpinning(false);
-        setRotation(normalizedRotation);
+        setRotation(finalRotation);
         setWinResult(displayResult);
         if (Number.isFinite(remainingSpins)) setSpinsLeft(remainingSpins);
         setPlannedSpins((current) => current.slice(1));
@@ -188,6 +188,10 @@ export function useRouletteSpin({
         const spinRequest = apiPost<unknown>('/fortune/spin', {}, { suppressBoostOffer: true })
             .then((res) => ({ res } as const))
             .catch((error: unknown) => ({ error } as const));
+        const plannedSpin = plannedSpins[0] || null;
+        const plannedAnimationPromise = plannedSpin
+            ? startWheelAnimation(getVisualSectorIndex(parseSpinResult(plannedSpin.result), plannedSpin.sectorIndex))
+            : null;
 
         try {
             const spinResponse = await spinRequest;
@@ -196,7 +200,7 @@ export function useRouletteSpin({
             if (typeof res !== 'object' || res === null) throw new Error(t('fortune.invalid_server_response'));
             const serverResult = parseSpinResult((res as { result?: unknown }).result);
             const winningIndex = getVisualSectorIndex(serverResult, Number((res as { sectorIndex?: unknown }).sectorIndex));
-            const animationPromise = startWheelAnimation(winningIndex);
+            const animationPromise = plannedAnimationPromise || startWheelAnimation(winningIndex);
             await finishSpinAfterAnimation(Promise.resolve(spinResponse), animationPromise);
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : '';
@@ -213,6 +217,7 @@ export function useRouletteSpin({
         fetchUserStats,
         finishSpinAfterAnimation,
         isSpinning,
+        plannedSpins,
         spinsLeft,
         startWheelAnimation,
         t,

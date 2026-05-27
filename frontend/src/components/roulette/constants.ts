@@ -20,6 +20,3 @@ export const ROULETTE_SECTORS: RouletteSector[] = [
 
 export const ROULETTE_SPIN_DURATION_MS = 5200;
 export const ROULETTE_TOTAL_TURNS = 2;
-export const ROULETTE_ACCELERATION_SHARE = 0.24;
-export const ROULETTE_COAST_SHARE = 0.34;
-export const ROULETTE_DECELERATION_SHARE = 0.42;
