@@ -2,6 +2,17 @@ import type { RoulettePlannedSpin, RouletteSpinResult } from './types';
 
 export const normalizeRotation = (value: number) => ((value % 360) + 360) % 360;
 
+export const getRouletteDisplayLabel = (result: Pick<RouletteSpinResult, 'label' | 'type' | 'value'>) => {
+    if (result.type === 'k') {
+        const amount = Number(result.value);
+        return Number.isFinite(amount) && amount > 0 ? `${amount} K` : `${result.label} K`;
+    }
+
+    if (result.type === 'spin') return '+1';
+
+    return result.label;
+};
+
 export function emitRewardOffer(offer: unknown) {
     if (typeof window === 'undefined') return;
     if (!offer || typeof offer !== 'object' || !('id' in offer)) return;

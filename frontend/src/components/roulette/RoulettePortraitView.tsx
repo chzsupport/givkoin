@@ -4,7 +4,7 @@ import { RouletteBackground } from './RouletteBackground';
 import { RouletteHeader } from './RouletteHeader';
 import { RouletteHistoryRows } from './RouletteHistoryRows';
 import { SpinButton } from './SpinButton';
-import type { RouletteGlobalStats, RouletteHistoryItem, RouletteSpinResult, RouletteTodayWins } from './types';
+import type { RouletteGlobalStats, RouletteHistoryItem, RouletteSpinAnimation, RouletteSpinResult, RouletteTodayWins } from './types';
 import { WheelComponent } from './WheelComponent';
 import { WinModal } from './WinModal';
 
@@ -16,9 +16,11 @@ export function RoulettePortraitView({
     history,
     isSpinning,
     onSpin,
+    onSpinComplete,
     onWinClose,
     portraitWheelSize,
     rotation,
+    spinAnimation,
     spinsLeft,
     t,
     timeUntilReset,
@@ -36,9 +38,11 @@ export function RoulettePortraitView({
     history: RouletteHistoryItem[];
     isSpinning: boolean;
     onSpin: () => void;
+    onSpinComplete: (rotation: number) => void;
     onWinClose: () => void;
     portraitWheelSize: number;
     rotation: number;
+    spinAnimation: RouletteSpinAnimation | null;
     spinsLeft: number;
     t: (key: string) => string;
     timeUntilReset: string;
@@ -98,6 +102,8 @@ export function RoulettePortraitView({
                             size={portraitWheelSize}
                             isSpinning={isSpinning}
                             rotation={rotation}
+                            spinAnimation={spinAnimation}
+                            onSpinComplete={onSpinComplete}
                         />
                         <SpinButton
                             onClick={onSpin}

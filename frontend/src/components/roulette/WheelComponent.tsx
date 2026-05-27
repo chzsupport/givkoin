@@ -1,8 +1,15 @@
 'use client';
 
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import { Star } from 'lucide-react';
-import { ROULETTE_SECTORS } from './constants';
+import {
+    ROULETTE_ACCELERATION_SHARE,
+    ROULETTE_COAST_SHARE,
+    ROULETTE_SECTORS,
+    ROULETTE_SPIN_DURATION_MS,
+} from './constants';
+import { getRouletteDisplayLabel } from './rouletteUtils';
+import type { RouletteSpinAnimation } from './types';
 
 const CENTER = 50;
 const OUTER_RADIUS = 48;
@@ -34,17 +41,78 @@ export const WheelComponent = ({
     size,
     isSpinning,
     rotation,
+    spinAnimation,
+    onSpinComplete,
 }: {
     size: number;
     isSpinning: boolean;
     rotation: number;
+    spinAnimation: RouletteSpinAnimation | null;
+    onSpinComplete: (rotation: number) => void;
 }) => {
     const gradientId = useId().replace(/:/g, '');
+    const wheelRef = useRef<HTMLDivElement | null>(null);
     const sectorAngle = 360 / ROULETTE_SECTORS.length;
     const ticks = useMemo(
         () => Array.from({ length: ROULETTE_SECTORS.length }, (_, index) => index * sectorAngle),
         [sectorAngle],
     );
+    const accelerationOffset = ROULETTE_ACCELERATION_SHARE;
+    const coastOffset = ROULETTE_ACCELERATION_SHARE + ROULETTE_COAST_SHARE;
+
+    useEffect(() => {
+        const node = wheelRef.current;
+        if (!node || spinAnimation) return;
+
+        node.style.transform = `rotate(${rotation}deg)`;
+    }, [rotation, spinAnimation]);
+
+    useEffect(() => {
+        const node = wheelRef.current;
+        if (!node || !spinAnimation) return;
+
+        const { startRotation, targetRotation } = spinAnimation;
+        const distance = targetRotation - startRotation;
+        const firstStage = startRotation + (distance * 0.16);
+        const secondStage = startRotation + (distance * 0.74);
+
+        node.style.transform = `rotate(${startRotation}deg)`;
+
+        const animation = node.animate([
+            {
+                transform: `rotate(${startRotation}deg)`,
+                offset: 0,
+                easing: 'cubic-bezier(0.35, 0, 0.8, 0.45)',
+            },
+            {
+                transform: `rotate(${firstStage}deg)`,
+                offset: accelerationOffset,
+                easing: 'linear',
+            },
+            {
+                transform: `rotate(${secondStage}deg)`,
+                offset: coastOffset,
+                easing: 'cubic-bezier(0.08, 0.72, 0, 1)',
+            },
+            {
+                transform: `rotate(${targetRotation}deg)`,
+                offset: 1,
+            },
+        ], {
+            duration: ROULETTE_SPIN_DURATION_MS,
+            iterations: 1,
+            fill: 'forwards',
+        });
+
+        animation.onfinish = () => {
+            node.style.transform = `rotate(${targetRotation}deg)`;
+            onSpinComplete(targetRotation);
+        };
+
+        return () => {
+            animation.cancel();
+        };
+    }, [accelerationOffset, coastOffset, onSpinComplete, spinAnimation]);
 
     return (
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
@@ -60,6 +128,7 @@ export const WheelComponent = ({
             </div>
 
             <div
+                ref={wheelRef}
                 className="relative h-full w-full rounded-full border border-yellow-200/30 bg-[#090914] shadow-[0_18px_70px_rgba(0,0,0,0.55),0_0_42px_rgba(234,179,8,0.20)]"
                 style={{
                     transform: `rotate(${rotation}deg)`,
@@ -92,7 +161,7 @@ export const WheelComponent = ({
                         const endAngle = startAngle + sectorAngle;
                         const labelAngle = startAngle + sectorAngle / 2;
                         const labelPoint = polarPoint(labelAngle, LABEL_RADIUS);
-                        const label = sector.type === 'k' ? `${sector.label}K` : sector.label;
+                        const label = getRouletteDisplayLabel(sector);
 
                         return (
                             <g key={`${sector.type}-${sector.label}-${index}`}>

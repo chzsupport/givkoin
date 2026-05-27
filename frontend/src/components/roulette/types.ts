@@ -28,6 +28,12 @@ export type RouletteTodayWins = {
     count: number;
 };
 
+export type RouletteSpinAnimation = {
+    id: number;
+    startRotation: number;
+    targetRotation: number;
+};
+
 export type RouletteGlobalStats = {
     roulette?: {
         activeUsers?: number;

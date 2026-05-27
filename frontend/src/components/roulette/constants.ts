@@ -14,7 +14,7 @@ export const ROULETTE_SECTORS: RouletteSector[] = [
     { label: '80', value: 80, type: 'k', color: '#eab308' },
     { label: '90', value: 90, type: 'k', color: '#84cc16' },
     { label: '100', value: 100, type: 'k', color: '#22c55e' },
-    { label: '+1', value: 'spin', type: 'bonus', color: '#06b6d4' },
+    { label: '+1', value: 0, type: 'spin', color: '#06b6d4' },
     { label: '0.1⭐', value: 0.1, type: 'star', color: '#fbbf24' },
 ];
 
